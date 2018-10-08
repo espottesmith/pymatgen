@@ -30,15 +30,26 @@ logger = logging.getLogger(__name__)
 
 class BondDissociationEnergies(MSONable):
 
-    def __init__(self, molecule_entry, fragment_entries, allow_additional_charge_separation, multibreak):
+    def __init__(self, molecule_entry, fragment_entries, allow_additional_charge_separation=False, multibreak=False):
         """
-        Standard constructor for bond dissociation energies.
+        Standard constructor for bond dissociation energies. All bonds in the principle molecule are
+        looped through and their dissociation energies are calculated given the energies of the resulting
+        fragments, or, in the case of a ring bond, from the energy of the molecule obtained from breaking
+        the bond and opening the ring. This class should only be called after the energies of the optimized
+        principle molecule and all relevant optimized fragments have been determined, either from quantum
+        chemistry or elsewhere. It was written to provide the analysis after running an Atomate fragmentation
+        workflow.
+
+        Note that the entries passed by the user must have the following keys: formula_pretty, initial_molecule,
+        final_molecule. If a PCM is present, all entries should also have a pcm_dielectric key.
 
         Args:
-            molecule_entry(dict)
-            fragment_entries(list of dicts)
-            allow_additional_charge_separation (bool)
-            multibreak (bool)
+            molecule_entry (dict): Entry for the principle molecule. Should have the keys mentioned above.
+            fragment_entries (list of dicts): List of fragment entries. Each should have the keys mentioned above.
+            allow_additional_charge_separation (bool): If True, consider larger than normal charge separation
+                                                       among fragments. Defaults to False. See the definition
+                                                       of self.expected_charges below for more specific information.
+            multibreak (bool): If True, additionally attempt to break pairs of bonds. Defaults to False.
 
         """
 
@@ -49,6 +60,16 @@ class BondDissociationEnergies(MSONable):
         self.done_frag_pairs = []
         self.done_RO_frags = []
         self.ring_bonds = []
+
+        required_keys = ["formula_pretty", "initial_molecule", "final_molecule"]
+        if "pcm_dielectric" in self.molecule_entry:
+            required_keys.append("pcm_dielectric")
+        for key in required_keys:
+            if key not in self.molecule_entry:
+                raise RuntimeError(key + " must be present in molecule entry! Exiting...")
+            for entry in self.filtered_entries:
+                if key not in entry:
+                    raise RuntimeError(key + " must be present in all fragment entries! Exiting...")
 
         # Define expected charges
         if not allow_additional_charge_separation:
@@ -107,13 +128,13 @@ class BondDissociationEnergies(MSONable):
                     opened_entries = self.search_fragment_entries(RO_frag)
                     good_entries = []
                     # We will start by looking at entries with no structure change
-                    for frag in opened_entries[0]:
+                    for frag in opened_entries[0]: # 0 -> no structural change
                         # Since a ring opening still yields a single molecule, it should have the same charge as the principle:
                         if frag["initial_molecule"]["charge"] == self.molecule_entry["final_molecule"]["charge"]:
                             good_entries.append(frag)
                     # If we didn't find any good entries, let's also look at those that exhibit structural changes:
                     if len(good_entries) == 0:
-                        for frag in opened_entries[0]:
+                        for frag in opened_entries[1]: # 1 -> YES structural change
                             if frag["initial_molecule"]["charge"] == self.molecule_entry["final_molecule"]["charge"]:
                                 good_entries.append(frag)
                     # If we still have no good entries, something must have gone wrong with the calculations:
@@ -121,7 +142,8 @@ class BondDissociationEnergies(MSONable):
                         bb = BabelMolAdaptor.from_molecule_graph(RO_frag)
                         pbmol = bb.pybel_mol
                         smiles = pbmol.write(str("smi")).split()[0]
-                        print("Missing ring opening fragment resulting from the breakage of bond " + str(bonds[0][0]) + " " + str(bonds[0][1]) + " which would yield a molecule with this SMILES string: " + smiles)
+                        specie = nx.get_node_attributes(self.mol_graph.graph, "specie")
+                        print("Missing ring opening fragment resulting from the breakage of " + specie[bonds[0][0]] + " " + specie[bonds[0][1]] + " bond " + str(bonds[0][0]) + " " + str(bonds[0][1]) + " which would yield a molecule with this SMILES string: " + smiles)
                     elif len(good_entries) == 1:
                         # If we have only one good entry, format it and addd it to the list that will eventually return:
                         self.bond_dissociation_energies += [self.build_new_entry(good_entries, bonds)]

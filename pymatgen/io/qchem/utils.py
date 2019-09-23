@@ -377,8 +377,14 @@ def orient_molecule(mol_1, mol_2, rotate=True):
     Determine the translation vector that minimizes the distances between
     corresponding atoms in two (isomorphic) molecules.
 
+    NOTE: there must be at least 6 atoms (6 independent equations) to use
+    rotation optimization (rotate=True). There must be at least 3 atoms to
+    use this function at all.
+
     :param mol_1: MoleculeGraph of the molecule that is not to be translated
     :param mol_2: MoleculeGraph of the molecule that is to be translated
+    :param rotate: bool. If True (default), optimize rotation angles and
+        translation. If False, only optimize translation.
 
     :return: np.ndarray representing a translation vector for mol_2
     """
@@ -386,14 +392,16 @@ def orient_molecule(mol_1, mol_2, rotate=True):
     def atom_dist(n, vec):
         copy_2 = copy.deepcopy(mol_2)
         # Get distance between atom n in mol_1 and mol_2 after transformation
-        trans = vec[:3]
         if rotate:
+            trans = vec[:3]
             rot = vec[3:]
 
             for index, vec in enumerate([[1, 0, 0], [0, 1, 0], [0, 0, 1]]):
                 copy_2.molecule.rotate_sites(theta=rot[index],
                                              axis=vec,
                                              anchor=copy_2.molecule.center_of_mass)
+        else:
+            trans = vec
 
         coord_n = copy_2.molecule.cart_coords[n] + trans
 

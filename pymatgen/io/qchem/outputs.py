@@ -329,6 +329,13 @@ class QCOutput(MSONable):
             self._read_string_geometries()
             self._read_growing_string_data()
 
+            self.data["completion"] = read_pattern(
+                self.text, {
+                    "key":
+                        r"A miracle has come to pass!\s+The string has converged!"
+                },
+                terminate_on_match=True).get('key')
+
         self.data["force_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*force"

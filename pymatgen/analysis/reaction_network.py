@@ -17,6 +17,7 @@ from pymatgen.analysis.fragmenter import metal_edge_extender
 import networkx as nx
 from networkx.algorithms import bipartite
 from pymatgen.entries.mol_entry import MoleculeEntry
+from pymatgen.entries.rxn_entry import ReactionEntry
 
 
 __author__ = "Samuel Blau"
@@ -661,3 +662,107 @@ class ReactionNetwork(MSONable):
                         sinks.append(node)
         return sinks
 
+
+def entries_from_reaction_label(network, label):
+    """
+    Extract MoleculeEntries from a ReactionNetwork reaction node's label.
+
+    Args:
+        network (ReactionNetwork): The network of reactions and molecules to be
+            referenced for MoleculeEntries
+        label (str): Reaction node label to be parsed for molecule information
+
+    Returns:
+        rct_entries (list), pro_entries (list): lists of MoleculeEntries for the
+            reactants and products of a reaction
+    """
+
+    ind_names = label.split(",")
+    rct_inds = [int(e) for e in ind_names[0].replace("PR_", "").split("+")]
+    pro_inds = [int(e) for e in ind_names[1].replace("PR_", "").split("+")]
+
+    rct_entries = list()
+    pro_entries = list()
+    for entry in network.entries_list:
+        if entry.parameters["ind"] in rct_inds:
+            rct_entries.append(entry)
+        elif entry.parameters["ind"] in pro_inds:
+            pro_entries.append(entry)
+
+    return rct_entries, pro_entries
+
+
+def generate_reaction_entries(network, transition_states, method="EBEP"):
+    """
+    From a ReactionNetwork and a set of transition state MoleculeEntries,
+    generate a set of ReactionEntries including thermodynamic and kinetic
+    properties.
+
+    Note: this function treats forwards and reverse reactions as distinct, but
+    does not allow duplicate reactions in one of these reactions
+
+    Args:
+        network (ReactionNetwork): The network of reactions and molecules to be
+            compiled into ReactionEntries
+        transition_states (dict): A dictionary {rxn_id: transition_state}, where
+            transition_state is either a MoleculeEntry representing a
+            reaction transition state, OR is a string representing the ID of
+            another reaction in the network. transition_state=None means that
+            the reaction will not be made into a ReactionEntry
+        method: For cases where no transition state is available, an approximate
+            method to predict the kinetic properties must be used. By default,
+            this is "EBEP", meaning the ExpandedBEPRateCalculator will be used.
+            "BEP" is also valid; this means that BEPRateCalculator will be used.
+
+    Returns:
+        rxn_entries (dict): dict {rxn_id: entry}, where entry is a
+        ReactionEntry, with one entry for each unique reaction in the network
+    """
+
+    rxn_nodes = {n for n, d in network.graph.nodes(data=True) if d['bipartite'] == 1}
+
+    rxn_entries = dict()
+    no_ts = dict()
+    finished = set()
+    for rxn, ts in transition_states.items():
+        # Invalid reaction id; skip
+        if rxn not in rxn_nodes:
+            continue
+
+        base_label = rxn.replace("PR_", "")
+
+        # No ts nor reference given; skip
+        if ts is None:
+            rxn_entries[base_label] = None
+            continue
+        # ts references another reaction; skip for now, come back
+        elif ts in rxn_nodes:
+            no_ts[base_label] = ts
+            continue
+
+        if base_label not in finished:
+            rct_entries, pro_entries = entries_from_reaction_label(network, rxn)
+
+            rxn_entries[base_label] = ReactionEntry(rct_entries, pro_entries,
+                                                    transition_state=ts,
+                                                    approximate_method=method,
+                                                    entry_id=rxn)
+            finished.add(base_label)
+
+    # Come back to reactions that refer to other reaction
+    for base_label, ref in no_ts.items():
+        # Reactions cannot reference reactions that do not themselves have
+        # associated transition states
+        if rxn_entries.get(ref, None) is None or ref in no_ts:
+            rxn_entries[base_label] = None
+        else:
+            if base_label not in finished:
+                rct_entries, pro_entries = entries_from_reaction_label(network, rxn)
+
+                rxn_entries[base_label] = ReactionEntry(rct_entries, pro_entries,
+                                                        reference_reaction=rxn_entries[ref],
+                                                        approximate_method=method,
+                                                        entry_id=rxn)
+                finished.add(base_label)
+
+    return rxn_entries

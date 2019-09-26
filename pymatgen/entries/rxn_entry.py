@@ -7,16 +7,10 @@ import json
 
 from monty.json import MontyEncoder, MontyDecoder
 
-from pymatgen.core.composition import Composition
 from monty.json import MSONable
-from pymatgen.core.structure import Molecule
-from pymatgen.analysis.graphs import MoleculeGraph, MolGraphSplitError
-from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.analysis.reaction_rates import (ReactionRateCalculator,
                                               BEPRateCalculator,
                                               ExpandedBEPRateCalculator)
-from pymatgen.io.babel import BabelMolAdaptor
-from pymatgen.analysis.fragmenter import metal_edge_extender
 
 """
 
@@ -38,7 +32,8 @@ class ReactionEntry(MSONable):
 
     def __init__(self, reactants, products, transition_state=None,
                  reference_reaction=None, approximate_method="EBEP",
-                 parameters=None, entry_id=None, attribute=None):
+                 alpha=None, kappa=1.0, parameters=None, entry_id=None,
+                 attribute=None):
         """
         An object which represents a chemical reaction (in terms of reactants,
         transition state, and products)
@@ -51,15 +46,21 @@ class ReactionEntry(MSONable):
                 for kinetics) will be approximated.
             reference_reaction (ReactionEntry): if transition_state is None
                 (default), another reaction must be used to estimate the
-                reaction kinetics. This reference need not have a transition
-                state of its own, technically, but note that at some point a
-                ReactionEntry must have a transition state for any
-                approximations to be made.
+                reaction kinetics. This reference NEEDS TO HAVE A TRANSITION
+                STATE OF ITS OWN.
             approximate_method (str): If transition_state is None (default),
                 some method must be used to estimate the reaction kinetics.
                 By default, this is "EBEP", meaning the
                 ExpandedBEPRateCalculator will be used. "BEP", for
                 BEPRateCalculator, is also a valid option.
+            alpha (float): Reaction coordinate for the reaction (default is
+                None, meaning that some assumptions will be made)
+            kappa (float): Depending on the rate calculator used, kappa
+                represents either the transmission coefficient or the steric
+                factor. In both cases, the meaning is similar; a low kappa
+                indicates that a reaction is not likely to happen, while a high
+                kappa indicates that the reaction is likely to happen. Default
+                is 1.0.
             parameters (dict): An optional dict of parameters associated with
                 the reaction. Defaults to None.
             entry_id (obj): An optional id to uniquely identify the entry.
@@ -78,6 +79,20 @@ class ReactionEntry(MSONable):
         self.transition_state = transition_state
         self.reference_reaction = reference_reaction
 
+        self.parameters = parameters if parameters else dict()
+        self.entry_id = entry_id
+        self.attribute = attribute
+
+        if alpha is None:
+            self.alpha = 0.5
+        else:
+            self.alpha = alpha
+
+        if kappa is None:
+            self.kappa = 1.0
+        else:
+            self.kappa = kappa
+
         if approximate_method in ["BEP", "EBEP"]:
             self.approximate_method = approximate_method
         else:
@@ -90,22 +105,126 @@ class ReactionEntry(MSONable):
                                  "reference_reaction == None!")
             else:
                 if approximate_method.upper() == "BEP":
-                    ea = self.reference_reaction.calculator.calculate_act_energy
-                    delta_h = self.reference_reaction.calculator.net_enthalpy
-                    try:
-                        alpha = self.reference_reaction.calculator.alpha
-                    except AttributeError:
-                        alpha = 0.5
+                    ea = self.reference_reaction.rate.calculate_act_energy()
+                    delta_h = self.reference_reaction.rate.net_enthalpy
 
-                    self.calculator = BEPRateCalculator(self.reactants,
-                                                        self.products,
-                                                        ea,
-                                                        delta_h,
-                                                        alpha=alpha)
+                    self.rate = BEPRateCalculator(self.reactants,
+                                                  self.products,
+                                                  ea,
+                                                  delta_h,
+                                                  alpha=self.alpha)
                 elif approximate_method.upper() == "EBEP":
-                    ga = self.reference_reaction.calculator.calculate_act_gibbs
+                    ea = self.reference_reaction.rate.calculate_act_energy()
+                    ha = self.reference_reaction.rate.calculate_act_enthalpy()
+                    sa = self.reference_reaction.rate.calculate_act_entropy()
+                    delta_e = self.reference_reaction.rate.net_energy
+                    delta_h = self.reference_reaction.rate.net_enthalpy
+                    delta_s = self.reference_reaction.rate.net_entropy
 
+                    self.rate = ExpandedBEPRateCalculator(self.reactants,
+                                                          self.products,
+                                                          ea, ha, sa,
+                                                          delta_e,
+                                                          delta_h,
+                                                          delta_s,
+                                                          alpha=self.alpha)
                 else:
                     # This should never be reached
-                    self.calculator = None
+                    self.rate = None
         else:
+            self.rate = ReactionRateCalculator(self.reactants,
+                                               self.products,
+                                               self.transition_state)
+
+        self.reaction = self.rate.reaction
+        self.delta_e = self.rate.net_energy
+        self.delta_h = self.rate.net_enthalpy
+        self.delta_s = self.rate.net_entropy
+
+    @property
+    def reaction_string(self):
+        """
+        Return a string representation of the reaction
+
+        Args:
+            None
+
+        Returns:
+            str()
+        """
+
+        return str(self.reaction)
+
+    def delta_g(self, temperature=298.0):
+        """
+        Calculate net reaction Gibbs free energy at a given temperature.
+
+        ΔG = ΔH - T ΔS
+
+        Args:
+            temperature (float): absolute temperature in Kelvin
+
+        Returns:
+            float: net Gibbs free energy (in eV)
+        """
+
+        return self.rate.calculate_net_gibbs(temperature=temperature)
+
+    def rate_constant(self, temperature=298.0):
+        """
+        Calculate the rate constant k by the Eyring-Polanyi equation of
+        transition state theory (possible if the transition state is known, or
+        if the EBEP method is being used), or by collision theory (if BEP is
+        being used).
+
+        Args:
+            temperature (float): absolute temperature in Kelvin
+
+        Returns:
+            k_rate (float): temperature-dependent rate constant
+        """
+
+        return self.rate.calculate_rate_constant(temperature=temperature,
+                                                 kappa=self.kappa)
+
+    def reaction_rate(self, concentrations, temperature=298.0):
+        """
+        Calculate the based on the reaction stoichiometry.
+
+        NOTE: Here, we assume that the reaction is an elementary step.
+
+        Args:
+            concentrations (list): concentrations of reactant molecules.
+                Order of the reactants DOES matter.
+            temperature (float): absolute temperature in Kelvin
+
+        Returns:
+            rate (float): reaction rate, based on the stoichiometric rate law
+                and the rate constant
+        """
+
+        return self.rate.calculate_rate(concentrations, temperature=temperature,
+                                        kappa=self.kappa)
+
+    def __repr__(self):
+        name = "ReactionEntry {}".format(self.entry_id)
+        rxn_str = "Reaction: {}".format(self.reaction_string)
+        rct_str = " + ".join([r.molecule.composition.alphabetical_formula for r in self.reactants])
+        pro_str = " + ".join([p.molecule.composition.alphabetical_formula for p in self.products])
+        from_alpha = "With Alphabetical Formulas: {} --> {}".format(rct_str, pro_str)
+        thermo_head = "Net Thermodynamic Properties:"
+        thermo_vals = {"Energy": self.delta_e,
+                       "Enthalpy": self.delta_h,
+                       "Entropy": self.delta_s,
+                       "Gibbs Free Energy (T=298.0K)": self.delta_g()}
+        thermo_body = "\n".join(["\t{}: {}".format(k, v) for k, v in thermo_vals.items()])
+        kinetic_head = "Standard Kinetic Properties:"
+        kinetic_vals = {"Rate Constant (T=298.0K)": self.rate_constant(),
+                        "Reaction Rate (T=298.0K, 1M concentrations)": self.reaction_rate([1 for _ in self.reactants])}
+        kinetic_body = "\n".join(["\t{}: {}".format(k, v) for k, v in kinetic_vals.items()])
+
+        return "\n".join([name, rxn_str, from_alpha, thermo_head, thermo_body,
+                          kinetic_head, kinetic_body])
+
+    def __str__(self):
+        return self.__repr__()

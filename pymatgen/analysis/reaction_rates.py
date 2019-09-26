@@ -52,36 +52,17 @@ class ReactionRateCalculator:
         self.transition_state = transition_state
 
         if reaction is None:
-            rct_mols = [r.mol_graph.molecule for r in self.reactants]
-            pro_mols = [p.mol_graph.molecule for p in self.products]
             try:
-                self.reaction = self.generate_reaction(rct_mols, pro_mols)
+                rct_mols = [r.mol_graph.molecule for r in self.reactants]
+                pro_mols = [p.mol_graph.molecule for p in self.products]
+                rct_comps = [r.composition for r in rct_mols]
+                pro_comps = [p.composition for p in pro_mols]
+                self.reaction = Reaction(rct_comps, pro_comps)
             except ReactionError:
                 # Reaction cannot be balanced
                 self.reaction = None
         else:
             self.reaction = reaction
-
-    @classmethod
-    def generate_reaction(cls, rct_mols, pro_mols):
-        """
-        Generate a pymatgen Reaction object, given lists of reactant and product Molecule objects.
-
-        Args:
-            rct_mols (list): list of Molecule objects representing reactants
-            pro_mols (list): list of Molecule objects representing products
-
-        Note: if reaction cannot be balanced, this method will raise a ReactionError
-
-        Returns:
-            reaction (Reaction): pymatgen Reaction object representing the reaction between the
-                reactants and products.
-        """
-
-        rct_comps = [r.composition for r in rct_mols]
-        pro_comps = [p.composition for p in pro_mols]
-
-        return Reaction(rct_comps, pro_comps)
 
     @property
     def net_energy(self):
@@ -113,7 +94,7 @@ class ReactionRateCalculator:
 
         return (sum(pro_entropies) - sum(rct_entropies)) * 43.363
 
-    def calculate_net_gibbs(self, temperature):
+    def calculate_net_gibbs(self, temperature=298.0):
         """
         Calculate net reaction Gibbs free energy at a given temperature.
 
@@ -131,7 +112,7 @@ class ReactionRateCalculator:
 
         return sum(pro_gibbs) - sum(rct_gibbs)
 
-    def calculate_net_thermo(self, temperature=300.0):
+    def calculate_net_thermo(self, temperature=298.0):
         """
         Calculate net energy, enthalpy, and entropy for the reaction.
 
@@ -215,7 +196,7 @@ class ReactionRateCalculator:
             rct_entropies = [r.entropy for r in self.reactants]
             return (trans_entropy - sum(rct_entropies)) * 43.363
 
-    def calculate_act_gibbs(self, temperature, reverse=False):
+    def calculate_act_gibbs(self, temperature=298.0, reverse=False):
         """
         Calculate Gibbs free energy of activation at a given temperature.
 
@@ -236,7 +217,7 @@ class ReactionRateCalculator:
 
         return act_energy + act_enthalpy - temperature * act_entropy
 
-    def calculate_act_thermo(self, temperature=300.0, reverse=False):
+    def calculate_act_thermo(self, temperature=298.0, reverse=False):
         """
         Calculate thermodynamics of activation for the reaction.
 
@@ -256,7 +237,7 @@ class ReactionRateCalculator:
 
         return act_thermo
 
-    def calculate_rate_constant(self, temperature=300.0, reverse=False, kappa=1.0):
+    def calculate_rate_constant(self, temperature=298.0, reverse=False, kappa=1.0):
         """
         Calculate the rate constant k by the Eyring-Polanyi equation of transition state theory.
 
@@ -277,7 +258,7 @@ class ReactionRateCalculator:
         k_rate = kappa * k * temperature / h * np.exp(-gibbs / (R * temperature))
         return k_rate
 
-    def calculate_rate(self, concentrations, temperature=300.0, reverse=False, kappa=1.0):
+    def calculate_rate(self, concentrations, temperature=298.0, reverse=False, kappa=1.0):
         """
         Calculate the based on the reaction stoichiometry.
 
@@ -308,6 +289,14 @@ class ReactionRateCalculator:
         rate = rate_constant * product(np.array(concentrations) ** exponents)
 
         return rate
+
+    def __repr__(self):
+        rct_str = " + ".join([r.molecule.composition.alphabetical_formula for r in self.reactants])
+        pro_str = " + ".join([p.molecule.composition.alphabetical_formula for p in self.products])
+        return "Rate Calculator for: {} --> {}".format(rct_str, pro_str)
+
+    def __str__(self):
+        return self.__repr__()
 
 
 class BEPRateCalculator(ReactionRateCalculator):
@@ -382,11 +371,11 @@ class BEPRateCalculator(ReactionRateCalculator):
         raise NotImplementedError("Method calculate_act_gibbs is not valid for "
                                   "BEPRateCalculator,")
 
-    def calculate_activation_thermo(self, temperature=300.0, reverse=False):
+    def calculate_activation_thermo(self, temperature=298.0, reverse=False):
         raise NotImplementedError("Method calculate_activation_thermo is not valid for "
                                   "BEPRateCalculator,")
 
-    def calculate_rate_constant(self, temperature=300.0, reverse=False, kappa=None):
+    def calculate_rate_constant(self, temperature=298.0, reverse=False, kappa=None):
         """
         Calculate the rate constant predicted by collision theory.
 
@@ -407,7 +396,7 @@ class BEPRateCalculator(ReactionRateCalculator):
 
         return k_rate
 
-    def calculate_rate(self, concentrations, temperature=300.0, reverse=False, kappa=1.0):
+    def calculate_rate(self, concentrations, temperature=298.0, reverse=False, kappa=1.0):
         """
         Calculate the rate using collision theory.
 
@@ -528,7 +517,7 @@ class ExpandedBEPRateCalculator(ReactionRateCalculator):
         raise NotImplementedError("Method calculate_act_entropy is not valid for "
                                   "ExpandedBEPCalculator,")
 
-    def calculate_act_gibbs(self, temperature, reverse=False):
+    def calculate_act_gibbs(self, temperature=298.0, reverse=False):
         """
         Calculate Gibbs free energy of activation at a given temperature.
 
@@ -555,11 +544,11 @@ class ExpandedBEPRateCalculator(ReactionRateCalculator):
 
         return delta_ga
 
-    def calculate_activation_thermo(self, temperature=300.0, reverse=False):
+    def calculate_activation_thermo(self, temperature=298.0, reverse=False):
         raise NotImplementedError("Method calculate_activation_thermo is not valid for "
                                   "BellEvansPolanyiRateCalculator,")
 
-    def calculate_rate_constant(self, temperature=300.0, reverse=False, kappa=1.0):
+    def calculate_rate_constant(self, temperature=298.0, reverse=False, kappa=1.0):
         """
         Calculate the rate constant k by the Eyring-Polanyi equation of transition state theory.
 

@@ -214,5 +214,10 @@ class TestReactionNetwork(PymatgenTest):
     #     self.assertEqual(paths[9]["overall_free_energy_change"],-5.13165788713941)
     #     self.assertEqual(paths[9]["hardest_step_deltaG"],2.7270388301945787)
 
+
+class TestReactionNetworkUtils(PymatgenTest):
+    pass
+
+
 if __name__ == "__main__":
     unittest.main()

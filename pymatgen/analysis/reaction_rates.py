@@ -82,7 +82,7 @@ class ReactionRateCalculator:
         rct_enthalpies = [r.enthalpy for r in self.reactants]
         pro_enthalpies = [p.enthalpy for p in self.products]
 
-        return (sum(pro_enthalpies) - sum(rct_enthalpies)) * 0.043363
+        return (sum(pro_enthalpies) - sum(rct_enthalpies)) * 0.0433641
 
     @property
     def net_entropy(self):
@@ -92,7 +92,7 @@ class ReactionRateCalculator:
         rct_entropies = [r.entropy for r in self.reactants]
         pro_entropies = [p.entropy for p in self.products]
 
-        return (sum(pro_entropies) - sum(rct_entropies)) * 43.363
+        return (sum(pro_entropies) - sum(rct_entropies)) * 0.0000433641
 
     def calculate_net_gibbs(self, temperature=298.0):
         """
@@ -169,10 +169,10 @@ class ReactionRateCalculator:
 
         if reverse:
             pro_enthalpies = [p.enthalpy for p in self.products]
-            return (trans_enthalpy - sum(pro_enthalpies)) * 0.043363
+            return (trans_enthalpy - sum(pro_enthalpies)) * 0.0433641
         else:
             rct_enthalpies = [r.enthalpy for r in self.reactants]
-            return (trans_enthalpy - sum(rct_enthalpies)) * 0.043363
+            return (trans_enthalpy - sum(rct_enthalpies)) * 0.0433641
 
     def calculate_act_entropy(self, reverse=False):
         """
@@ -191,10 +191,10 @@ class ReactionRateCalculator:
 
         if reverse:
             pro_entropies = [p.entropy for p in self.products]
-            return (trans_entropy - sum(pro_entropies)) * 43.363
+            return (trans_entropy - sum(pro_entropies)) * 0.0000433641
         else:
             rct_entropies = [r.entropy for r in self.reactants]
-            return (trans_entropy - sum(rct_entropies)) * 43.363
+            return (trans_entropy - sum(rct_entropies)) * 0.0000433641
 
     def calculate_act_gibbs(self, temperature=298.0, reverse=False):
         """

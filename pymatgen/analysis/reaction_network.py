@@ -692,7 +692,9 @@ def entries_from_reaction_label(network, label):
     return rct_entries, pro_entries
 
 
-def generate_reaction_entries(network, transition_states, method="EBEP"):
+def generate_reaction_entries(network, transition_states=None,
+                              universal_reference=None,
+                              method="EBEP"):
     """
     From a ReactionNetwork and a set of transition state MoleculeEntries,
     generate a set of ReactionEntries including thermodynamic and kinetic
@@ -701,14 +703,22 @@ def generate_reaction_entries(network, transition_states, method="EBEP"):
     Note: this function treats forwards and reverse reactions as distinct, but
     does not allow duplicate reactions in one of these reactions
 
+    Further note: Either a transition_states dict or a universal_reference
+        ReactionEntry must be provided for this method to function.
+
     Args:
         network (ReactionNetwork): The network of reactions and molecules to be
             compiled into ReactionEntries
         transition_states (dict): A dictionary {rxn_id: transition_state}, where
             transition_state is either a MoleculeEntry representing a
             reaction transition state, OR is a string representing the ID of
-            another reaction in the network. transition_state=None means that
-            the reaction will not be made into a ReactionEntry
+            another reaction in the network. If, for a rxn_id, transition_state
+            is None, the reaction will not be made into a ReactionEntry. Default
+            is None.
+        universal_reference (ReactionEntry): A ReactionEntry (with a transition
+            state) that will be used as a reference for all reactions in the
+            network. Note that this reaction does not actually need to be in
+            the network itself. Default is None.
         method: For cases where no transition state is available, an approximate
             method to predict the kinetic properties must be used. By default,
             this is "EBEP", meaning the ExpandedBEPRateCalculator will be used.
@@ -724,45 +734,62 @@ def generate_reaction_entries(network, transition_states, method="EBEP"):
     rxn_entries = dict()
     no_ts = dict()
     finished = set()
-    for rxn, ts in transition_states.items():
-        # Invalid reaction id; skip
-        if rxn not in rxn_nodes:
-            continue
+    if transition_states is not None:
+        for rxn, ts in transition_states.items():
+            # Invalid reaction id; skip
+            if rxn not in rxn_nodes:
+                continue
 
-        base_label = rxn.replace("PR_", "")
+            base_label = rxn.replace("PR_", "")
 
-        # No ts nor reference given; skip
-        if ts is None:
-            rxn_entries[base_label] = None
-            continue
-        # ts references another reaction; skip for now, come back
-        elif ts in rxn_nodes:
-            no_ts[base_label] = ts
-            continue
+            # No ts nor reference given; skip
+            if ts is None:
+                rxn_entries[base_label] = None
+                continue
+            # ts references another reaction; skip for now, come back
+            elif ts in rxn_nodes:
+                no_ts[base_label] = ts
+                continue
 
-        if base_label not in finished:
-            rct_entries, pro_entries = entries_from_reaction_label(network, rxn)
-
-            rxn_entries[base_label] = ReactionEntry(rct_entries, pro_entries,
-                                                    transition_state=ts,
-                                                    approximate_method=method,
-                                                    entry_id=rxn)
-            finished.add(base_label)
-
-    # Come back to reactions that refer to other reaction
-    for base_label, ref in no_ts.items():
-        # Reactions cannot reference reactions that do not themselves have
-        # associated transition states
-        if rxn_entries.get(ref, None) is None or ref in no_ts:
-            rxn_entries[base_label] = None
-        else:
             if base_label not in finished:
                 rct_entries, pro_entries = entries_from_reaction_label(network, rxn)
 
                 rxn_entries[base_label] = ReactionEntry(rct_entries, pro_entries,
-                                                        reference_reaction=rxn_entries[ref],
+                                                        transition_state=ts,
                                                         approximate_method=method,
                                                         entry_id=rxn)
                 finished.add(base_label)
+
+        # Come back to reactions that refer to other reaction
+        for base_label, ref in no_ts.items():
+            # Reactions cannot reference reactions that do not themselves have
+            # associated transition states
+            if rxn_entries.get(ref, None) is None or ref in no_ts:
+                rxn_entries[base_label] = None
+            else:
+                if base_label not in finished:
+                    rct_entries, pro_entries = entries_from_reaction_label(network, rxn)
+
+                    rxn_entries[base_label] = ReactionEntry(rct_entries, pro_entries,
+                                                            reference_reaction=rxn_entries[ref],
+                                                            approximate_method=method,
+                                                            entry_id=rxn)
+                    finished.add(base_label)
+
+    elif universal_reference is not None:
+        for rxn in rxn_nodes:
+            base_label = rxn.replace("PR_", "")
+
+            if base_label not in finished:
+                rct_entries, pro_entries = entries_from_reaction_label(network, rxn)
+                rxn_entries[base_label] = ReactionEntry(rct_entries, pro_entries,
+                                                        reference_reaction=universal_reference,
+                                                        approximate_method=method,
+                                                        entry_id=rxn)
+                finished.add(base_label)
+
+    else:
+        raise ValueError("Both transition_state and universal_reference cannot "
+                         "be None! Please provide one.")
 
     return rxn_entries

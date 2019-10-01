@@ -10,6 +10,7 @@ from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.util.testing import PymatgenTest
 from pymatgen.analysis.reaction_network import ReactionNetwork
 from pymatgen.entries.mol_entry import MoleculeEntry
+from pymatgen.entries.rxn_entry import ReactionEntry
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.fragmenter import metal_edge_extender
 
@@ -216,7 +217,30 @@ class TestReactionNetwork(PymatgenTest):
 
 
 class TestReactionNetworkUtils(PymatgenTest):
-    pass
+
+    def setUp(self) -> None:
+        comp_entries = loadfn(os.path.join(test_dir, "single_completed_reaction.json"))
+        self.reference = ReactionEntry(comp_entries["rcts"],
+                                       comp_entries["pros"],
+                                       transition_state=comp_entries["ts"])
+
+        entries = loadfn(os.path.join(test_dir, "LiEC_extended_entries.json"))
+        extended_entries = list()
+        for entry in entries:
+            if "optimized_molecule" in entry["output"]:
+                mol = entry["output"]["optimized_molecule"]
+            else:
+                mol = entry["output"]["initial_molecule"]
+            e = float(entry["output"]["final_energy"])
+            h = float(entry["output"]["enthalpy"])
+            s = float(entry["output"]["entropy"])
+            mol_entry = MoleculeEntry(molecule=mol, energy=e, enthalpy=h, entropy=s,
+                                      entry_id=entry["task_id"])
+            extended_entries.append(mol_entry)
+
+        self.network = ReactionNetwork(extended_entries,
+                                       electron_free_energy=-2.15)
+        self.entries = extended_entries
 
 
 if __name__ == "__main__":

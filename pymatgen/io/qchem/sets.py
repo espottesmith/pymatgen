@@ -31,6 +31,7 @@ class QChemDictSet(QCInput):
                  pcm_dielectric=None,
                  smd_solvent=None,
                  custom_smd=None,
+                 scan_variables=None,
                  max_scf_cycles=200,
                  geom_opt_max_cycles=200,
                  overwrite_inputs=None):
@@ -42,6 +43,9 @@ class QChemDictSet(QCInput):
             scf_algorithm (str)
             dft_rung (int)
             pcm_dielectric (str)
+            smd_solvent (str)
+            custom_smd (str)
+            scan_variables (dict)
             max_scf_cycles (int)
             geom_opt_max_cycles (int)
             overwrite_inputs (dict): This is dictionary of QChem input sections to add or overwrite variables,
@@ -60,6 +64,7 @@ class QChemDictSet(QCInput):
         self.pcm_dielectric = pcm_dielectric
         self.smd_solvent = smd_solvent
         self.custom_smd = custom_smd
+        self.scan_variables = scan_variables
         self.max_scf_cycles = max_scf_cycles
         self.geom_opt_max_cycles = geom_opt_max_cycles
         self.overwrite_inputs = overwrite_inputs
@@ -72,10 +77,15 @@ class QChemDictSet(QCInput):
             "vdwscale": "1.1"
         }
 
-        mypcm = {}
-        mysolvent = {}
-        mysmx = {}
-        myrem = {}
+        mypcm = dict()
+        mysolvent = dict()
+        mysmx = dict()
+        if self.scan_variables is None:
+            myscan = dict()
+        else:
+            myscan = self.scan_variables
+
+        myrem = dict()
         myrem["job_type"] = job_type
         myrem["basis"] = self.basis_set
         myrem["max_scf_cycles"] = self.max_scf_cycles
@@ -150,9 +160,13 @@ class QChemDictSet(QCInput):
                     temp_smx = lower_and_check_unique(sec_dict)
                     for k, v in temp_smx.items():
                         mysmx[k] = v
+                if sec == "scan":
+                    temp_scan = lower_and_check_unique(sec_dict)
+                    for k, v in temp_scan.items():
+                        myscan[k] = v
 
-        super().__init__(
-            self.molecule, rem=myrem, pcm=mypcm, solvent=mysolvent, smx=mysmx)
+        super().__init__(self.molecule, rem=myrem, pcm=mypcm, solvent=mysolvent,
+                         smx=mysmx, scan=myscan)
 
     def write(self, input_file):
         self.write_file(input_file)
@@ -349,6 +363,51 @@ class GrowingStringSet(QChemDictSet):
             pcm_dielectric=pcm_dielectric,
             smd_solvent=smd_solvent,
             custom_smd=custom_smd,
+            basis_set=self.basis_set,
+            scf_algorithm=self.scf_algorithm,
+            max_scf_cycles=self.max_scf_cycles,
+            overwrite_inputs=overwrite_inputs)
+
+
+class PESScanSet(QChemDictSet):
+    """
+    QChemDictSet for a potential energy surface scan (PES_SCAN) calculation,
+    used primarily to identify possible transition states or to sample different
+    geometries.
+
+    Note: Because there are no defaults that can be used for a PES scan (the
+    variables are completely dependent on the molecular structure), by default
+    scan_variables = None. However, a PES Scan job should not be run with less
+    than one variable (or more than two variables).
+    """
+
+    def __init__(self,
+                 molecule,
+                 dft_rung=3,
+                 basis_set="def2-tzvppd",
+                 pcm_dielectric=None,
+                 smd_solvent=None,
+                 custom_smd=None,
+                 scan_variables=None,
+                 scf_algorithm="diis_gdm",
+                 max_scf_cycles=200,
+                 overwrite_inputs=None):
+        self.basis_set = basis_set
+        self.scf_algorithm = scf_algorithm
+        self.max_scf_cycles = max_scf_cycles
+
+        if scan_variables is None:
+            raise ValueError("Cannot run a pes_scan job without some variable "
+                             "to scan over!")
+
+        super(PESScanSet, self).__init__(
+            molecule=molecule,
+            job_type="pes_scan",
+            dft_rung=dft_rung,
+            pcm_dielectric=pcm_dielectric,
+            smd_solvent=smd_solvent,
+            custom_smd=custom_smd,
+            scan_variables=scan_variables,
             basis_set=self.basis_set,
             scf_algorithm=self.scf_algorithm,
             max_scf_cycles=self.max_scf_cycles,

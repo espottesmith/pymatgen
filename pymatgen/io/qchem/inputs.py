@@ -48,15 +48,23 @@ class QCInput(MSONable):
             values are a list of strings. Stings must be formatted as instructed by the QChem manual.
             The different opt sections are: CONSTRAINT, FIXED, DUMMY, and CONNECT
             Ex. opt = {"CONSTRAINT": ["tors 2 3 4 5 25.0", "tors 2 5 7 9 80.0"], "FIXED": ["2 XY"]}
+        scan (dict of lists):
+            A dictionary of scan variables. Because two constraints of the same type are allowed (for instance, two
+            torsions or two bond stretches), each TYPE of variable (stre, bend, tors) should be its own key in the dict,
+            rather than each variable. Note that the total number of variable (sum of lengths of all lists) CANNOT be
+            more than two.
+            Ex. scan = {"stre": ["3 6 1.5 1.9 0.1"], "tors": ["1 2 3 4 -180 180 15"]}
     """
 
-    def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None, smx=None):
+    def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None,
+                 smx=None, scan=None):
         self.molecule = molecule
         self.rem = lower_and_check_unique(rem)
         self.opt = opt
         self.pcm = lower_and_check_unique(pcm)
         self.solvent = lower_and_check_unique(solvent)
         self.smx = lower_and_check_unique(smx)
+        self.scan = lower_and_check_unique(scan)
 
         # Make sure molecule is valid
 
@@ -121,7 +129,8 @@ class QCInput(MSONable):
         #   - Has a method or DFT exchange functional
         #   - Has a valid job_type or jobtype
 
-        valid_job_types = ["opt", "optimization", "sp", "freq", "frequency", "force", "fsm", "nmr", "ts", "gsm"]
+        valid_job_types = ["opt", "optimization", "sp", "freq", "frequency",
+                           "force", "fsm", "nmr", "ts", "gsm", "pes_scan"]
 
         if "basis" not in self.rem:
             raise ValueError("The rem dictionary must contain a 'basis' entry")
@@ -192,6 +201,7 @@ class QCInput(MSONable):
         pcm = None
         solvent = None
         smx = None
+        scan = None
         if "opt" in sections:
             opt = cls.read_opt(string)
         if "pcm" in sections:
@@ -200,7 +210,10 @@ class QCInput(MSONable):
             solvent = cls.read_solvent(string)
         if "smx" in sections:
             smx = cls.read_smx(string)
-        return cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx)
+        if "scan" in sections:
+            scan = cls.read_scan(string)
+        return cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx,
+                   scan=scan)
 
     def write_file(self, filename):
         with zopen(filename, 'wt') as f:
@@ -383,6 +396,21 @@ class QCInput(MSONable):
                     key=key, value=value))
         smx_list.append("$end")
         return '\n'.join(smx_list)
+
+    @staticmethod
+    def scan_template(scan):
+        scan_list = list()
+        scan_list.append("$scan")
+        total_vars = sum([len(v) for v in scan.values()])
+        if total_vars > 2:
+            raise ValueError("Q-Chem only supports PES_SCAN with two or less "
+                             "variables.")
+        for var_type, variables in scan.items():
+            for var in variables:
+                scan_list.append("   {var_type} {var}".format(
+                    var_type=var_type, var=var))
+        scan_list.append("$end")
+        return '\n'.join(scan_list)
 
     @staticmethod
     def find_sections(string):
@@ -620,13 +648,44 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        if smx_table == []:
+        if smx_table == list():
             print(
                 "No valid smx inputs found. Note that there should be no '=' chracters in smx input lines."
             )
-            return {}
+            return dict()
         else:
             smx = {key: val for key, val in smx_table[0]}
             if smx["solvent"] == "tetrahydrofuran":
                 smx["solvent"] = "thf"
             return smx
+
+    @staticmethod
+    def read_scan(string):
+        header = r"^\s*\$scan"
+        row = r"\s*(stre|bend|tors|STRE|BEND|TORS)\s+((?:[\-\.0-9]+\s*)+)"
+        footer = r"^\s*\$end"
+        scan_table = read_table_pattern(string,
+                                        header_pattern=header,
+                                        row_pattern=row,
+                                        footer_pattern=footer)
+        if scan_table == list():
+            print(
+                "No valid scan inputs found. Note that there should be no '=' chracters in scan input lines."
+            )
+            return dict()
+        else:
+            stre = list()
+            bend = list()
+            tors = list()
+            for row in scan_table[0]:
+                if row[0].lower() == "stre":
+                    stre.append(row[1].replace("\n", "").rstrip())
+                elif row[0].lower() == "bend":
+                    bend.append(row[1].replace("\n", "").rstrip())
+                elif row[0].lower() == "tors":
+                    tors.append(row[1].replace("\n", "").rstrip())
+
+            if len(stre) + len(bend) + len(tors) > 2:
+                raise ValueError("No more than two variables are allows in the scan section!")
+
+            return {"stre": stre, "bend": bend, "tors": tors}

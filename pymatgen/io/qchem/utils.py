@@ -85,7 +85,7 @@ def read_table_pattern(text_str,
             be returned. Default to be True.
 
     Returns:
-        List of tables. 1) A table is a list of rows. 2) A row if either a list of
+        List of tables. 1) A table is a list of rows. 2) A row is either a list of
         attribute values in case the the capturing group is defined without name in
         row_pattern, or a dict in case that named capturing groups are defined by
         row_pattern.

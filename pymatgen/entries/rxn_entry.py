@@ -219,9 +219,7 @@ class ReactionEntry(MSONable):
                        "Gibbs Free Energy (T=298.0K)": self.delta_g()}
         thermo_body = "\n".join(["\t{}: {}".format(k, v) for k, v in thermo_vals.items()])
         kinetic_head = "Standard Kinetic Properties:"
-        kinetic_vals = {"Rate Constant (T=298.0K)": self.rate_constant(),
-                        "Reaction Rate (T=298.0K, 1M concentrations)": self.reaction_rate([1 for _ in self.reactants])}
-        kinetic_body = "\n".join(["\t{}: {}".format(k, v) for k, v in kinetic_vals.items()])
+        kinetic_body = "Rate Constant (T=298.0K): {}".format(self.rate_constant())
 
         return "\n".join([name, rxn_str, from_alpha, thermo_head, thermo_body,
                           kinetic_head, kinetic_body])

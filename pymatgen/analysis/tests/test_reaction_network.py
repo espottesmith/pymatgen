@@ -4,22 +4,26 @@
 import os
 import unittest
 import time
+
+from monty.serialization import dumpfn, loadfn
+
 from pymatgen.core.structure import Molecule
+from pymatgen.util.testing import PymatgenTest
 from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.analysis.local_env import OpenBabelNN
-from pymatgen.util.testing import PymatgenTest
-from pymatgen.analysis.reaction_network import ReactionNetwork
 from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.entries.rxn_entry import ReactionEntry
-from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.fragmenter import metal_edge_extender
+from pymatgen.analysis.reaction_network import (ReactionNetwork,
+                                                entries_from_reaction_label,
+                                                generate_reaction_entries)
 
 try:
     import openbabel as ob
 except ImportError:
     ob = None
 
-__author__ = "Samuel Blau"
+__author__ = "Samuel Blau, Evan Spotte-Smith"
 __email__ = "samblau1@gmail.com"
 
 test_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..",
@@ -219,6 +223,8 @@ class TestReactionNetwork(PymatgenTest):
 class TestReactionNetworkUtils(PymatgenTest):
 
     def setUp(self) -> None:
+        self.maxDiff = None
+
         comp_entries = loadfn(os.path.join(test_dir, "single_completed_reaction.json"))
         self.reference = ReactionEntry(comp_entries["rcts"],
                                        comp_entries["pros"],
@@ -241,6 +247,57 @@ class TestReactionNetworkUtils(PymatgenTest):
         self.network = ReactionNetwork(extended_entries,
                                        electron_free_energy=-2.15)
         self.entries = extended_entries
+        self.rxn_nodes = {n for n, d in self.network.graph.nodes(data=True) if d['bipartite'] == 1}
+
+        # self.generate_test_files()
+
+    def generate_test_files(self):
+
+        rxn_to_mol = dict()
+        for rxn_node in self.rxn_nodes:
+            rct_entries, pro_entries = entries_from_reaction_label(self.network,
+                                                                   rxn_node)
+            rxn_to_mol[rxn_node] = {"reactants": rct_entries,
+                                    "products": pro_entries}
+
+        dumpfn(rxn_to_mol, os.path.join(test_dir,
+                                        "rxn_labels_to_mol_entries.json"))
+
+        all_rxn_entries = generate_reaction_entries(self.network,
+                                                    universal_reference=self.reference)
+        dumpfn(all_rxn_entries, os.path.join(test_dir,
+                                             "all_rxn_entries.json"))
+
+    def test_entries_from_reaction_label(self):
+        rxn_to_mol = loadfn(os.path.join(test_dir,
+                                         "rxn_labels_to_mol_entries.json"))
+
+        for rxn_node in self.rxn_nodes:
+            rct_entries, pro_entries = entries_from_reaction_label(self.network,
+                                                                   rxn_node)
+            rct_ids = set([e.entry_id for e in rct_entries])
+            pro_ids = set([e.entry_id for e in pro_entries])
+
+            self.assertSetEqual(rct_ids,
+                                set([e.entry_id for e in rxn_to_mol[rxn_node]["reactants"]]))
+            self.assertSetEqual(pro_ids,
+                                set([e.entry_id for e in rxn_to_mol[rxn_node]["products"]]))
+
+    def test_generate_reaction_entries(self):
+
+        all_rxn_entries = loadfn(os.path.join(test_dir, "all_rxn_entries.json"))
+
+        for rxn_node in self.rxn_nodes:
+            base_label = rxn_node.replace("PR_", "")
+
+            self.assertTrue(base_label in all_rxn_entries)
+
+            mol_entries = entries_from_reaction_label(self.network, rxn_node)
+            entry = ReactionEntry(mol_entries[0], mol_entries[1],
+                                  reference_reaction=self.reference,
+                                  approximate_method="EBEP",
+                                  entry_id=rxn_node)
+            self.assertEqual(str(entry), str(all_rxn_entries[base_label]))
 
 
 if __name__ == "__main__":

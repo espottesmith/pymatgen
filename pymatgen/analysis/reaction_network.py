@@ -17,6 +17,7 @@ from pymatgen.analysis.fragmenter import metal_edge_extender
 import networkx as nx
 from networkx.algorithms import bipartite
 from pymatgen.entries.mol_entry import MoleculeEntry
+from pymatgen.core.composition import CompositionError
 from pymatgen.entries.rxn_entry import ReactionEntry
 
 
@@ -112,9 +113,13 @@ class ReactionNetwork(MSONable):
         self.intramol_single_bond_change()
         self.intermol_single_bond_change()
         self.coordination_bond_change()
+        self.concerted_break1_form1()
+        self.concerted_break2_form2()
+        self.concerted_redox_single_bond_change()
 
         self.PR_record = self.build_PR_record()
         self.min_cost = {}
+        self.num_starts = None
 
     def one_electron_redox(self):
         # One electron oxidation / reduction without change to bonding
@@ -185,10 +190,8 @@ class ReactionNetwork(MSONable):
                                 bond = [(edge[0],edge[1])]
                                 try:
                                     frags = entry.mol_graph.split_molecule_subgraphs(bond, allow_reverse=True)
-                                    # graph0 = frags[0].graph
                                     formula0 = frags[0].molecule.composition.alphabetical_formula
                                     Nbonds0 = len(frags[0].graph.edges())
-                                    # graph1 = frags[1].graph
                                     formula1 = frags[1].molecule.composition.alphabetical_formula
                                     Nbonds1 = len(frags[1].graph.edges())
                                     if formula0 in self.entries and formula1 in self.entries:
@@ -261,11 +264,119 @@ class ReactionNetwork(MSONable):
                                                                     M_charge = entry.charge - nonM_charge
                                                                     if M_charge in M_entries[M_formula]:
                                                                         for nonM_entry in self.entries[nonM_formula][nonM_Nbonds][nonM_charge]:
-                                                                            if frag.isomorphic_to(nonM_entry):
+                                                                            if frag.isomorphic_to(nonM_entry.mol_graph):
                                                                                 self.add_reaction([entry],[nonM_entry,M_entries[M_formula][M_charge]],"coordination_bond_change")
                                                                                 break
                                         except MolGraphSplitError:
                                             pass
+
+    def concerted_break1_form1(self):
+        # A concerted reaction in which one bond is broken and one bond is formed
+        # A + B <-> C + D (case I) or A + B <-> C (case II)
+        # Case I:
+        #   Four entries with:
+        #     comp(A) + comp(B) = comp(C) + comp(D)
+        #     charge(A) + charge(B) = charge(C) + charge(D)
+        #     breaking a bond in A (or B) yields two disconnected subgraphs SG1 and SG2,
+        #     and joining one of those subgraphs to B (or A) will yield a molecule graph
+        #     isomorphic to C or D while the unjoined subgraph will be isomorphic to D or C.
+        # Case II:
+        #   Three entries with:
+        #     comp(A) + comp(B) = comp(C)
+        #     charge(A) + charge(B) = charge(C)
+        #     breaking a bond in A (or B) yields one connected subgraph, and joining that
+        #     subgroup to B (or A) will yield a molecule graph isomorphic to C.
+        for formula0 in self.entries:
+            print("formula0",formula0,len(self.graph.nodes))
+            for Nbonds0 in self.entries[formula0]:
+                if Nbonds0 > 0:
+                    for charge0 in self.entries[formula0][Nbonds0]:
+                        for entry0 in self.entries[formula0][Nbonds0][charge0]:
+                            for edge0 in entry0.edges:
+                                bond0 = [(edge0[0],edge0[1])]
+                                split_success0 = None
+                                try:
+                                    frags0 = entry0.mol_graph.split_molecule_subgraphs(bond0, allow_reverse=True)
+                                    split_success0 = True
+                                except MolGraphSplitError:
+                                    split_success0 = False
+
+                                if split_success0: # Case I
+                                    frags_to_join = []
+                                    for ii,frag in enumerate(frags0):
+                                        formula1 = frag.molecule.composition.alphabetical_formula
+                                        if formula1 in self.entries:
+                                            Nbonds1 = len(frag.graph.edges())
+                                            if Nbonds1 in self.entries[formula1]:
+                                                for charge1 in self.entries[formula1][Nbonds1]:
+                                                    for entry1 in self.entries[formula1][Nbonds1][charge1]:
+                                                        if frag.isomorphic_to(entry1.mol_graph):
+                                                            frags_to_join.append([entry1,frags0[1-ii],charge0-charge1])
+                                    for joinable in frags_to_join:
+                                        entry1 = joinable[0]
+                                        frag = joinable[1]
+                                        frag_charge = joinable[2]
+                                        frag_Nbonds = len(frag.graph.edges())
+                                        for formula2 in self.entries:
+                                            eg_Nbonds = list(self.entries[formula2].keys())[0]
+                                            eg_charge = list(self.entries[formula2][eg_Nbonds].keys())[0]
+                                            eg_comp = self.entries[formula2][eg_Nbonds][eg_charge][0].molecule.composition
+                                            pos_comp = False
+                                            try:
+                                                diff_comp = eg_comp - frag.molecule.composition
+                                                pos_comp = True
+                                            except CompositionError:
+                                                pass
+                                            if pos_comp:
+                                                formula3 = diff_comp.alphabetical_formula
+                                                if formula3 in self.entries:
+                                                    for Nbonds2 in self.entries[formula2]:
+                                                        if Nbonds2 > frag_Nbonds:
+                                                            Nbonds3 = Nbonds2 - frag_Nbonds - 1
+                                                            if Nbonds3 in self.entries[formula3]:
+                                                                for charge2 in self.entries[formula2][Nbonds2]:
+                                                                    charge3 = charge2 - frag_charge
+                                                                    if charge3 in self.entries[formula3][Nbonds3]:
+                                                                        for entry2 in self.entries[formula2][Nbonds2][charge2]:
+                                                                            for edge2 in entry2.edges:
+                                                                                bond2 = [(edge2[0],edge2[1])]
+                                                                                split_success2 = None
+                                                                                try:
+                                                                                    frags2 = entry2.mol_graph.split_molecule_subgraphs(bond2, allow_reverse=True)
+                                                                                    split_success2 = True
+                                                                                except MolGraphSplitError:
+                                                                                    split_success2 = False
+                                                                                if split_success2:
+                                                                                    for jj,frag2 in enumerate(frags2):
+                                                                                        if frag.isomorphic_to(frag2):
+                                                                                            for entry3 in self.entries[formula3][Nbonds3][charge3]:
+                                                                                                if frags2[1-jj].isomorphic_to(entry3.mol_graph):
+                                                                                                    self.add_reaction([entry0,entry3],[entry1,entry2],"concerted_break1_form1")
+                                                                                                    # print(entry0.parameters["ind"],entry3.parameters["ind"],entry1.parameters["ind"],entry2.parameters["ind"])
+                                                                                                    break
+                                                                                                    break
+                                else: # Case II
+                                    # mg = copy.deepcopy(entry0.mol_graph)
+                                    # mg.break_edge(edge0[0],edge0[1],allow_reverse=True)
+                                    # assert(nx.is_weakly_connected(mg.graph))
+                                    pass
+
+
+    def concerted_break2_form2(self):
+        # A concerted reaction in which two bonds are broken and two bonds are formed
+        # A + B <-> C + D
+        # Four entries with:
+        #     comp(A) + comp(B) = comp(C) + comp(D)
+        #     charge(A) + charge(B) = charge(C) + charge(D)
+        #     breaking a bond in A yields two disconnected subgraphs A1 and A2 and breaking
+        #     a bond in B yields two disconnected subgraphs B1 and B2 and joining A1 (or A2)
+        #     with B1 or B2 yields a molecule graph isomorphic to C or D while joining A2 (or A1)
+        #     with the unused B2 or B1 yields a molecule graph isomorphic to the unused D or C.
+        pass
+
+    def concerted_redox_single_bond_change(self):
+        # does this need to be different for inter vs intra bond changes?
+        pass
 
     def add_reaction(self,entries0,entries1,rxn_type):
         """
@@ -287,6 +398,12 @@ class ReactionNetwork(MSONable):
         elif rxn_type == "coordination_bond_change":
             if len(entries0) != 1 or len(entries1) != 2:
                 raise RuntimeError("Coordination bond change requires two lists that contain one entry and two entries, respectively!")
+        elif rxn_type == "concerted_break1_form1":
+            if len(entries0) != 2 or (len(entries1) != 2 and len(entries1) != 1):
+                raise RuntimeError("Concerted breaking and forming one bond requires two lists that contain two entries and one or two entries, respectively!")
+        elif rxn_type == "concerted_break2_form2":
+            if len(entries0) != 2 or len(entries1) != 2:
+                raise RuntimeError("Concerted breaking and forming two bonds requires two lists that each contain two entries!")
         else:
             raise RuntimeError("Reaction type "+rxn_type+" is not supported!")
         if rxn_type == "one_electron_redox" or rxn_type == "intramol_single_bond_change":
@@ -426,7 +543,123 @@ class ReactionNetwork(MSONable):
                                 exponent=0.0,
                                 weight=1.0)
 
-    def softplus(self, free_energy):
+        elif rxn_type == "concerted_break1_form1":
+            entryA = entries0[0]
+            entryB = entries0[1]
+            if entryA.parameters["ind"] <= entryB.parameters["ind"]:
+                AB_name = str(entryA.parameters["ind"])+"+"+str(entryB.parameters["ind"])
+            else:
+                AB_name = str(entryB.parameters["ind"])+"+"+str(entryA.parameters["ind"])
+            A_PR_B_name = str(entryA.parameters["ind"])+"+PR_"+str(entryB.parameters["ind"])
+            B_PR_A_name = str(entryB.parameters["ind"])+"+PR_"+str(entryA.parameters["ind"])
+
+            if len(entries1) == 2: # Case I
+                entryC = entries1[0]
+                entryD = entries1[1]
+                if entryC.parameters["ind"] <= entryD.parameters["ind"]:
+                    CD_name = str(entryC.parameters["ind"])+"+"+str(entryD.parameters["ind"])
+                else:
+                    CD_name = str(entryD.parameters["ind"])+"+"+str(entryC.parameters["ind"])
+                
+                C_PR_D_name = str(entryC.parameters["ind"])+"+PR_"+str(entryD.parameters["ind"])
+                D_PR_C_name = str(entryD.parameters["ind"])+"+PR_"+str(entryC.parameters["ind"])
+                node_name_1 = A_PR_B_name+","+CD_name
+                node_name_2 = B_PR_A_name+","+CD_name
+                node_name_3 = C_PR_D_name+","+AB_name
+                node_name_4 = D_PR_C_name+","+AB_name
+                AB_CD_energy = entryC.energy + entryD.energy - entryA.energy - entryB.energy
+                CD_AB_energy = entryA.energy + entryB.energy - entryC.energy - entryD.energy
+                if entryA.free_energy != None and entryB.free_energy != None and entryC.free_energy != None and entryD.free_energy != None:
+                    AB_CD_free_energy = entryC.free_energy + entryD.free_energy - entryA.free_energy - entryB.free_energy
+                    CD_AB_free_energy = entryA.free_energy + entryB.free_energy - entryC.free_energy - entryD.free_energy
+
+                self.graph.add_node(node_name_1,rxn_type=rxn_type,bipartite=1,energy=AB_CD_energy,free_energy=AB_CD_free_energy)
+                self.graph.add_edge(entryA.parameters["ind"],
+                                    node_name_1,
+                                    softplus=self.softplus(AB_CD_free_energy),
+                                    exponent=self.exponent(AB_CD_free_energy),
+                                    weight=1.0
+                                    )
+                self.graph.add_edge(node_name_1,
+                                    entryC.parameters["ind"],
+                                    softplus=0.0,
+                                    exponent=0.0,
+                                    weight=1.0
+                                    )
+                self.graph.add_edge(node_name_1,
+                                    entryD.parameters["ind"],
+                                    softplus=0.0,
+                                    exponent=0.0,
+                                    weight=1.0
+                                    )
+
+                self.graph.add_node(node_name_2,rxn_type=rxn_type,bipartite=1,energy=AB_CD_energy,free_energy=AB_CD_free_energy)
+                self.graph.add_edge(entryB.parameters["ind"],
+                                    node_name_2,
+                                    softplus=self.softplus(AB_CD_free_energy),
+                                    exponent=self.exponent(AB_CD_free_energy),
+                                    weight=1.0
+                                    )
+                self.graph.add_edge(node_name_2,
+                                    entryC.parameters["ind"],
+                                    softplus=0.0,
+                                    exponent=0.0,
+                                    weight=1.0
+                                    )
+                self.graph.add_edge(node_name_2,
+                                    entryD.parameters["ind"],
+                                    softplus=0.0,
+                                    exponent=0.0,
+                                    weight=1.0
+                                    )
+
+                self.graph.add_node(node_name_3,rxn_type=rxn_type,bipartite=1,energy=CD_AB_energy,free_energy=CD_AB_free_energy)
+                self.graph.add_edge(entryC.parameters["ind"],
+                                    node_name_3,
+                                    softplus=self.softplus(CD_AB_free_energy),
+                                    exponent=self.exponent(CD_AB_free_energy),
+                                    weight=1.0
+                                    )
+                self.graph.add_edge(node_name_3,
+                                    entryA.parameters["ind"],
+                                    softplus=0.0,
+                                    exponent=0.0,
+                                    weight=1.0
+                                    )
+                self.graph.add_edge(node_name_3,
+                                    entryB.parameters["ind"],
+                                    softplus=0.0,
+                                    exponent=0.0,
+                                    weight=1.0
+                                    )
+
+                self.graph.add_node(node_name_4,rxn_type=rxn_type,bipartite=1,energy=CD_AB_energy,free_energy=CD_AB_free_energy)
+                self.graph.add_edge(entryD.parameters["ind"],
+                                    node_name_4,
+                                    softplus=self.softplus(CD_AB_free_energy),
+                                    exponent=self.exponent(CD_AB_free_energy),
+                                    weight=1.0
+                                    )
+                self.graph.add_edge(node_name_4,
+                                    entryA.parameters["ind"],
+                                    softplus=0.0,
+                                    exponent=0.0,
+                                    weight=1.0
+                                    )
+                self.graph.add_edge(node_name_4,
+                                    entryB.parameters["ind"],
+                                    softplus=0.0,
+                                    exponent=0.0,
+                                    weight=1.0
+                                    )
+
+            elif len(entries1) == 1: # Case II
+                pass
+
+        elif rxn_type == "concerted_break2_form2":
+            pass
+
+    def softplus(self,free_energy):
         return np.log(1 + (273.0 / 500.0) * np.exp(free_energy))
 
     def exponent(self, free_energy):
@@ -476,7 +709,10 @@ class ReactionNetwork(MSONable):
                 path_dict["byproducts"].remove(PR)
                 if PR in self.min_cost:
                     path_dict["cost"] -= self.min_cost[PR]
+                else:
+                    print("Missing PR cost to remove:",PR)
         for PR in path_dict["all_prereqs"]:
+            # if len(PR_paths[PR].keys()) == self.num_starts:
             if PR in PR_paths:
                 path_dict["solved_prereqs"].append(PR)
             else:
@@ -486,6 +722,7 @@ class ReactionNetwork(MSONable):
             path_dict["overall_free_energy_change"] = 0.0
             path_dict["hardest_step"] = None
             path_dict["description"] = ""
+            path_dict["pure_cost"] = 0.0
 
             assert(len(path_dict["solved_prereqs"])==len(path_dict["all_prereqs"]))
             assert(len(path_dict["unsolved_prereqs"])==0)
@@ -497,7 +734,13 @@ class ReactionNetwork(MSONable):
             while len(PRs_to_join) > 0:
                 new_PRs = []
                 for PR in PRs_to_join:
-                    PR_path = PR_paths[PR]
+                    PR_path = None
+                    PR_min_cost = 1000000000000000.0
+                    for start in PR_paths[PR]:
+                        if PR_paths[PR][start] != "no_path":
+                            if PR_paths[PR][start]["cost"] < PR_min_cost:
+                                PR_min_cost = PR_paths[PR][start]["cost"]
+                                PR_path = PR_paths[PR][start]
                     assert(len(PR_path["solved_prereqs"])==len(PR_path["all_prereqs"]))
                     for new_PR in PR_path["all_prereqs"]:
                         new_PRs.append(new_PR)
@@ -509,10 +752,14 @@ class ReactionNetwork(MSONable):
 
             for PR in path_dict["all_prereqs"]:
                 if PR in path_dict["byproducts"]:
-                    print("WARNING: Matching prereq and byproduct found!")
+                    print("WARNING: Matching prereq and byproduct found!",PR)
 
             for ii,step in enumerate(full_path):
                 if self.graph.node[step]["bipartite"] == 1:
+                    if weight == "softplus":
+                        path_dict["pure_cost"] += self.softplus(self.graph.node[step]["free_energy"])
+                    elif weight == "exponent":
+                        path_dict["pure_cost"] += self.exponent(self.graph.node[step]["free_energy"])
                     path_dict["overall_free_energy_change"] += self.graph.node[step]["free_energy"]
                     if path_dict["description"] == "":
                         path_dict["description"] += self.graph.node[step]["rxn_type"]
@@ -524,65 +771,76 @@ class ReactionNetwork(MSONable):
                         path_dict["hardest_step"] = step
             del path_dict["path"]
             path_dict["full_path"] = full_path
-            path_dict["hardest_step_deltaG"] = self.graph.node[path_dict["hardest_step"]]["free_energy"]
+            if path_dict["hardest_step"] == None:
+                path_dict["hardest_step_deltaG"] = None
+            else:
+                path_dict["hardest_step_deltaG"] = self.graph.node[path_dict["hardest_step"]]["free_energy"]
         return path_dict
 
     def solve_prerequisites(self,starts,target,weight):
         PRs = {}
         old_solved_PRs = []
         new_solved_PRs = ["placeholder"]
-        no_path_to = {}
         orig_graph = copy.deepcopy(self.graph)
         ii = 0
         for start in starts:
-            no_path_to[start] = []
-        for start in starts:
-            PRs[start] = self.characterize_path([start],weight)
-        print(PRs)
+            PRs[start] = {}
+        for PR in PRs:
+            for start in starts:
+                if start == PR:
+                    PRs[PR][start] = self.characterize_path([start],weight)
+                else:
+                    PRs[PR][start] = "no_path"
+            old_solved_PRs.append(PR)
+            self.min_cost[PR] = PRs[PR][PR]["cost"]
+        for node in self.graph.nodes():
+            if self.graph.node[node]["bipartite"] == 0 and node != target:
+                if node not in PRs:
+                    PRs[node] = {}
         while len(new_solved_PRs) > 0:
             min_cost = {}
             for PR in PRs:
-                min_cost[PR] = PRs[PR]["cost"]
-            for start in starts:
-                for node in self.graph.nodes():
-                    if self.graph.node[node]["bipartite"] == 0 and node not in old_solved_PRs and node != target and node not in no_path_to[start]:
-                        path_exists = True
-                        try:
-                            length,dij_path = nx.algorithms.simple_paths._bidirectional_dijkstra(
-                                self.graph,
-                                source=hash(start),
-                                target=hash(node),
-                                ignore_nodes=self.find_or_remove_bad_nodes([target,node]),
-                                weight=weight)
-                        except nx.exception.NetworkXNoPath:
-                            # print("No path exists to node ",node)
-                            no_path_to[start].append(node)
-                            path_exists = False
-                        if path_exists:
-                            if len(dij_path) > 1 and len(dij_path)%2 == 1:
-                                path = self.characterize_path(dij_path,weight,PRs)
-                                if len(path["unsolved_prereqs"]) == 0:
-                                    if node in PRs:
-                                        if path["cost"] < PRs[node]["cost"]:
-                                            PRs[node] = path
-                                            min_cost[node] = path["cost"]
-                                    else:
-                                        PRs[node] = path
-                                        min_cost[node] = path["cost"]
-                                elif node in min_cost:
+                min_cost[PR] = 10000000000000000.0
+                for start in PRs[PR]:
+                    if PRs[PR][start] != "no_path":
+                        if PRs[PR][start]["cost"] < min_cost[PR]:
+                            min_cost[PR] = PRs[PR][start]["cost"]
+            for node in self.graph.nodes():
+                if self.graph.node[node]["bipartite"] == 0 and node not in old_solved_PRs and node != target:
+                    for start in starts:
+                        if start not in PRs[node]:
+                            path_exists = True
+                            try:
+                                length,dij_path = nx.algorithms.simple_paths._bidirectional_dijkstra(
+                                    self.graph,
+                                    source=hash(start),
+                                    target=hash(node),
+                                    ignore_nodes=self.find_or_remove_bad_nodes([target,node]),
+                                    weight=weight)
+                            except nx.exception.NetworkXNoPath:
+                                PRs[node][start] = "no_path"
+                                path_exists = False
+                            if path_exists:
+                                if len(dij_path) > 1 and len(dij_path)%2 == 1:
+                                    path = self.characterize_path(dij_path,weight,old_solved_PRs)
+                                    if len(path["unsolved_prereqs"]) == 0:
+                                        PRs[node][start] = path
+                                        # print("Solved PR",node,PRs[node])
                                     if path["cost"] < min_cost[node]:
                                         min_cost[node] = path["cost"]
                                 else:
-                                    min_cost[node] = path["cost"]
-                                    # print(node, path["prereqs"], len(path["path"]), path["cost"])
+                                    print("Does this ever happen?")
 
-            solved_PRs = list(PRs.keys())
+            solved_PRs = []
+            for PR in PRs:
+                if len(PRs[PR].keys()) == self.num_starts:
+                    solved_PRs.append(PR)
+
             new_solved_PRs = []
             for PR in solved_PRs:
                 if PR not in old_solved_PRs:
                     new_solved_PRs.append(PR)
-            # print()
-            # print(ii,old_solved_PRs,new_solved_PRs)
+
             print(ii,len(old_solved_PRs),len(new_solved_PRs))
             attrs = {}
 
@@ -594,6 +852,18 @@ class ReactionNetwork(MSONable):
             self.min_cost = copy.deepcopy(min_cost)
             old_solved_PRs = copy.deepcopy(solved_PRs)
             ii += 1
+
+        for PR in PRs:
+            path_found = False
+            for start in starts:
+                if PRs[PR][start] != "no_path":
+                    path_found = True
+                    path_dict = self.characterize_path(PRs[PR][start]["path"],weight,PRs,True)
+                    if abs(path_dict["cost"]-path_dict["pure_cost"])>0.0001:
+                        print("WARNING: cost mismatch for PR",PR,path_dict["cost"],path_dict["pure_cost"],path_dict["full_path"])
+            if not path_found:
+                print("No path found from any start to PR",PR)
+
         return PRs
 
     def find_or_remove_bad_nodes(self,nodes,remove_nodes=False):
@@ -627,6 +897,7 @@ class ReactionNetwork(MSONable):
         my_heapq = []
 
         print("Solving prerequisites...")
+        self.num_starts = len(starts)
         PR_paths = self.solve_prerequisites(starts,target,weight)
 
         print("Finding paths...")
@@ -641,6 +912,7 @@ class ReactionNetwork(MSONable):
                     heapq.heappush(my_heapq, (path_dict["cost"],next(c),path_dict))
 
         while len(paths) < num_paths and my_heapq:
+            # Check if any byproduct could yield a prereq cheaper than from starting molecule(s)?
             (cost, _, path_dict) = heapq.heappop(my_heapq)
             print(len(paths),cost,len(my_heapq),path_dict["all_prereqs"])
             paths.append(path_dict)

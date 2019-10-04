@@ -64,6 +64,24 @@ class ReactionRateCalculator:
         else:
             self.reaction = reaction
 
+        # Determine rate law
+        if self.reaction is not None:
+            rate_law = {"reactants": dict(), "products": dict()}
+            rct_comps = [r.mol_graph.molecule.composition for r in self.reactants]
+            pro_comps = [p.mol_graph.molecule.composition for p in self.products]
+
+            for ii, comp_r in enumerate(rct_comps):
+                rate_law["reactants"][ii] = abs(self.reaction.get_coeff(comp_r))
+            for jj, comp_p in enumerate(pro_comps):
+                rate_law["products"][jj] = abs(self.reaction.get_coeff(comp_p))
+        else:
+            # Given no information about rate law
+            # Assume rate law is first-order in terms of each reactant/product
+            rate_law = {"reactants": {ii: 1 for ii in range(len(self.reactants))},
+                        "products": {jj: 1 for jj in range(len(self.products))}}
+
+        self.rate_law = rate_law
+
     @property
     def net_energy(self):
         """
@@ -281,11 +299,10 @@ class ReactionRateCalculator:
                                                      kappa=kappa)
 
         if reverse:
-            comps = [p.mol_graph.molecule.composition for p in self.products]
+            exponents = np.array(list(self.rate_law["products"].values()))
         else:
-            comps = [r.mol_graph.molecule.composition for r in self.reactants]
+            exponents = np.array(list(self.rate_law["reactants"].values()))
 
-        exponents = np.abs(np.array([self.reaction.get_coeff(comp) for comp in comps]))
         rate = rate_constant * product(np.array(concentrations) ** exponents)
 
         return rate
@@ -416,12 +433,13 @@ class BEPRateCalculator(ReactionRateCalculator):
         k_rate = self.calculate_rate_constant(temperature=temperature, reverse=reverse)
 
         if reverse:
+            exponents = np.array(list(self.rate_law["products"].values()))
             mols = [p.mol_graph.molecule for p in self.products]
         else:
+            exponents = np.array(list(self.rate_law["reactants"].values()))
             mols = [r.mol_graph.molecule for r in self.reactants]
 
         masses = [m.composition.weight for m in mols]
-        exponents = np.abs(np.array([self.reaction.get_coeff(mol.composition) for mol in mols]))
 
         # Convert from Angstrom to m
         radius_factor = pi * sum([(np.max(mol.distance_matrix) * (10 ** -10) / 2) for mol in mols]) ** 2

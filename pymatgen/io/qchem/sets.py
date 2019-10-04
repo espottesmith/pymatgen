@@ -119,6 +119,11 @@ class QChemDictSet(QCInput):
             myrem["fsm_ngrad"] = 4
             myrem["fsm_opt_mode"] = 2
 
+        if self.job_type.lower() == "rpath":
+            # Not sure if necessary, but RPath by default needs exact Hessian
+            myrem["hess_and_grad"] = True
+            myrem["rpath_max_cycles"] = 50
+
         if self.pcm_dielectric is not None and self.smd_solvent is not None:
             raise ValueError("Only one of pcm or smd may be used for solvation.")
 
@@ -408,6 +413,40 @@ class PESScanSet(QChemDictSet):
             smd_solvent=smd_solvent,
             custom_smd=custom_smd,
             scan_variables=scan_variables,
+            basis_set=self.basis_set,
+            scf_algorithm=self.scf_algorithm,
+            max_scf_cycles=self.max_scf_cycles,
+            overwrite_inputs=overwrite_inputs)
+
+
+class RPathSet(QChemDictSet):
+    """
+    QChemDictSet for an intrinsic reaction coordinate (IRC) reaction pathway
+    search, used to verify a transition state structure or to determine the
+    location of the transition state along the reaction pathway.
+    """
+
+    def __init__(self,
+                 molecule,
+                 dft_rung=3,
+                 basis_set="def2-tzvppd",
+                 pcm_dielectric=None,
+                 smd_solvent=None,
+                 custom_smd=None,
+                 scf_algorithm="diis_gdm",
+                 max_scf_cycles=200,
+                 overwrite_inputs=None):
+        self.basis_set = basis_set
+        self.scf_algorithm = scf_algorithm
+        self.max_scf_cycles = max_scf_cycles
+
+        super(PESScanSet, self).__init__(
+            molecule=molecule,
+            job_type="rpath",
+            dft_rung=dft_rung,
+            pcm_dielectric=pcm_dielectric,
+            smd_solvent=smd_solvent,
+            custom_smd=custom_smd,
             basis_set=self.basis_set,
             scf_algorithm=self.scf_algorithm,
             max_scf_cycles=self.max_scf_cycles,

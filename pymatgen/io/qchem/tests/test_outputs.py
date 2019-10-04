@@ -108,7 +108,11 @@ property_list = {"errors",
                  "string_initial_reactant_molecules",
                  "string_initial_product_molecules",
                  "string_initial_reactant_geometry",
-                 "string_initial_product_geometry"}
+                 "string_initial_product_geometry",
+                 "optimized_geometries",
+                 "molecules_from_optimized_geometries",
+                 "scan_energies",
+                 "scan_constraint_sets"}
 
 if have_babel:
     property_list.add("structure_change")

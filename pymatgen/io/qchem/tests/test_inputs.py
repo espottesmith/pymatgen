@@ -803,6 +803,5 @@ $end
         os.remove(os.path.join(os.path.dirname(__file__), "test.qin"))
 
 
-
 if __name__ == "__main__":
     unittest.main()

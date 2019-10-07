@@ -180,6 +180,9 @@ class QCInput(MSONable):
         if self.smx:
             combined_list.append(self.smx_template(self.smx))
             combined_list.append("")
+        if self.scan:
+            combined_list.append(self.scan_template(self.scan))
+            combined_list.append("")
         return '\n'.join(combined_list)
 
     @staticmethod
@@ -407,9 +410,10 @@ class QCInput(MSONable):
             raise ValueError("Q-Chem only supports PES_SCAN with two or less "
                              "variables.")
         for var_type, variables in scan.items():
-            for var in variables:
-                scan_list.append("   {var_type} {var}".format(
-                    var_type=var_type, var=var))
+            if variables not in [None, list()]:
+                for var in variables:
+                    scan_list.append("   {var_type} {var}".format(
+                        var_type=var_type, var=var))
         scan_list.append("$end")
         return '\n'.join(scan_list)
 

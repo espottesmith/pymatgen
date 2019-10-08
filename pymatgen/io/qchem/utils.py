@@ -11,7 +11,7 @@ import networkx as nx
 import networkx.algorithms.isomorphism as iso
 
 from pymatgen.core.structure import Molecule
-from pymatgen.analysis.graphs import MoleculeGraph
+from pymatgen.analysis.graphs import MoleculeGraph, disconnected_isomorphic
 
 
 def read_pattern(text_str, patterns, terminate_on_match=False,
@@ -277,7 +277,7 @@ def process_parsed_coords(coords):
     return geometry
 
 
-def map_atoms_reaction(reactants, product):
+def map_atoms_reaction(reactants, product, num_additions_allowed=0):
     """
     Create a mapping of atoms between a set of reactant Molecules and a product
     Molecule.
@@ -285,6 +285,12 @@ def map_atoms_reaction(reactants, product):
     :param reactants: list of MoleculeGraph objects representing the reaction
         reactants
     :param product: MoleculeGraph object representing the reaction product
+    :param num_additions_allowed: It is possible for a reaction to occur in
+        which bonds are broken such that the reactant is a single connected
+        molecule that is not technically a subgraph of the product. In this
+        case, we can allow for a weaker form of isomorphism checking, in which
+        we can add some number of bonds (generally 1 or 2) and establish a
+        mapping with the newly isomorphic reactant.
 
     NOTE: This currently only works with one product
 
@@ -313,6 +319,27 @@ def map_atoms_reaction(reactants, product):
 
         meta_iso = {e: set() for e in range(len(product.molecule))}
         matcher = iso.GraphMatcher(pro_graph, rct_graph, node_match=nm)
+
+        if not (matcher.is_isomorphic() or matcher.subgraph_is_isomorphic()):
+            # Only valid for bond breaking/formation within a single connected molecule
+            if len(rct_graphs) == 1:
+                iso_disconnect, bonds_to_add = disconnected_isomorphic(pro_graph,
+                                                                       rct_graph,
+                                                                       num_allowed=num_additions_allowed)
+                if not iso_disconnect:
+                    raise ValueError("The given graphs are not isomorphic or subgraph isomorphic, "
+                                     "and no isomorphism could be constructed by adding fictitious bonds. "
+                                     "Therefore, no mapping could be constructed.")
+
+                diff_edges = pro_graph.size() - rct_graph.size()
+                if diff_edges > 0:
+                    for bond in bonds_to_add:
+                        rct_graph.add_edge(bond[0], bond[1])
+                else:
+                    for bond in bonds_to_add:
+                        pro_graph.add_edge(bond[0], bond[1])
+
+                matcher = iso.GraphMatcher(pro_graph, rct_graph, node_match=nm)
 
         # Compile all isomorphisms
         isomorphisms = [i for i in matcher.subgraph_isomorphisms_iter()]

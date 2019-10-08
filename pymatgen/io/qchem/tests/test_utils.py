@@ -11,7 +11,7 @@ import numpy as np
 
 from pymatgen.core.structure import Molecule
 from pymatgen.analysis.graphs import MoleculeGraph
-from pymatgen.analysis.local_env import CovalentBondNN
+from pymatgen.analysis.local_env import CovalentBondNN, OpenBabelNN
 from pymatgen.io.qchem.utils import (map_atoms_reaction,
                                      orient_molecule,
                                      generate_string_start)
@@ -53,9 +53,29 @@ class QCUtilsTest(unittest.TestCase):
 
         mapping = map_atoms_reaction([rct_1, rct_2], pro)
 
-        self.assertDictEqual(mapping, {6: 0, 2: 1, 4: 2, 7: 3, 10: 4, 14: 5, 15: 6, 16: 7, 18: 8,
-                                       3: 9, 8: 10, 0: 11, 9: 12, 5: 13, 1: 14, 11: 15, 17: 16,
+        self.assertDictEqual(mapping, {6: 0, 2: 1, 4: 2, 7: 3, 10: 4, 14: 5,
+                                       15: 6, 16: 7, 18: 8, 3: 9, 8: 10, 0: 11,
+                                       9: 12, 5: 13, 1: 14, 11: 15, 17: 16,
                                        12: 17, 13: 18})
+
+        liec0 = Molecule.from_file(join(test_dir, "liec0.mol"))
+        ro_liec0 = Molecule.from_file(join(test_dir, "ro_liec0.mol"))
+
+        rct_mg = MoleculeGraph.with_local_env_strategy(liec0, OpenBabelNN(),
+                                                       reorder=False,
+                                                       extend_structure=False)
+
+        pro_mg = MoleculeGraph.with_local_env_strategy(ro_liec0, OpenBabelNN(),
+                                                       reorder=False,
+                                                       extend_structure=False)
+
+        with self.assertRaises(ValueError):
+            map_atoms_reaction([rct_mg], pro_mg, num_additions_allowed=0)
+        self.assertDictEqual(map_atoms_reaction([rct_mg], pro_mg,
+                                                num_additions_allowed=1),
+                             {4: 0, 1: 1, 5: 2, 3: 3, 0: 4, 2: 5, 6: 6, 10: 7,
+                              9: 8, 8: 9, 7: 10})
+
 
     def test_orient_molecule(self):
         mol_1 = Molecule.from_file(os.path.join(test_dir, "orientation_1.mol"))

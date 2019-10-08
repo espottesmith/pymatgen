@@ -103,6 +103,64 @@ def _isomorphic(frag1, frag2):
         return nx.is_isomorphic(frag1.to_undirected(), frag2.to_undirected(), node_match=nm)
 
 
+def disconnected_isomorphic(frag1, frag2, num_allowed=1):
+    """
+    For two graphs that are not isomorphic, check if they are isomorphic with
+    the addition of some number of edges
+
+    :param frag1: networkx Graph object (usually MultiDiGraph)
+    :param frag2: StructureGraph or MoleculeGraph to be compared
+    :param num_allowed: Number of edges that can be added
+
+    :return:
+        is_disconnected_isomorphic (bool)
+        additional_edges (list of tuples)
+    """
+
+    if _isomorphic(frag1, frag2):
+        return True, None
+    else:
+        if num_allowed < 1:
+            return False, None
+
+    species_1 = nx.get_node_attributes(frag1, "specie")
+    species_2 = nx.get_node_attributes(frag2, "specie")
+
+    if species_1 != species_2:
+        return False, None
+
+    diff_edges = frag2.size() - frag1.size()
+    if abs(diff_edges) > num_allowed:
+        return False, None
+    else:
+        if diff_edges > 0:
+            base = frag2
+            to_change = frag1
+        else:
+            base = frag1
+            to_change = frag2
+
+        current_edges = list(to_change.edges())
+        new_edges = list()
+        for i in to_change:
+            for j in to_change:
+                if j > i:
+                    if (i, j) not in current_edges and (j, i) not in current_edges:
+                        new_edges.append((i, j))
+
+        num_added = 1
+        while num_added <= num_allowed:
+            for c in combinations(new_edges, num_added):
+                to_change_copy = copy.deepcopy(to_change)
+                for bond in c:
+                    to_change_copy.add_edge(bond[0], bond[1])
+                if _isomorphic(base, to_change_copy):
+                    return True, list(c)
+            num_added += 1
+
+    return False, None
+
+
 class StructureGraph(MSONable):
     """
     This is a class for annotating a Structure with

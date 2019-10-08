@@ -37,6 +37,8 @@ __status__ = "Beta"
 __date__ = "August 2017"
 
 module_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+molecule_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..",
+                            "test_files", "molecules")
 
 
 class StructureGraphTest(unittest.TestCase):
@@ -1038,6 +1040,29 @@ class MoleculeGraphTest(unittest.TestCase):
         mg = MoleculeGraph.from_dict(d)
         d2 = mg.as_dict()
         self.assertEqual(str(d), str(d2))
+
+
+class GraphUtilsTest(unittest.TestCase):
+
+    @unittest.skipIf(not ob, "OpenBabel not present. Skipping...")
+    def test_disconnected_isomorphism(self):
+        liec0 = Molecule.from_file(os.path.join(molecule_dir, "liec0.mol"))
+        ro_liec0 = Molecule.from_file(os.path.join(molecule_dir, "ro_liec0.mol"))
+
+        rct_mg = MoleculeGraph.with_local_env_strategy(liec0, OpenBabelNN(),
+                                                       reorder=False,
+                                                       extend_structure=False)
+
+        pro_mg = MoleculeGraph.with_local_env_strategy(ro_liec0, OpenBabelNN(),
+                                                       reorder=False,
+                                                       extend_structure=False)
+
+        self.assertEqual(disconnected_isomorphic(rct_mg.graph, pro_mg.graph,
+                                                 num_allowed=0),
+                         (False, None))
+        self.assertEqual(disconnected_isomorphic(rct_mg.graph, pro_mg.graph,
+                                                 num_allowed=1),
+                         (True, [(4, 5)]))
 
 
 if __name__ == "__main__":

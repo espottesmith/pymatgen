@@ -1291,10 +1291,13 @@ class QCOutput(MSONable):
                                              header_pattern=header_pattern,
                                              row_pattern=row_pattern_double,
                                              footer_pattern=footer_pattern)
-            for line in double_data[0]:
-                params = tuple([float(line[0]), float(line[1])])
-                energy = float(line[2])
-                self.data["scan_energies"].append((params, energy))
+            if len(double_data) == 0:
+                self.data["scan_energies"] = None
+            else:
+                for line in double_data[0]:
+                    params = tuple([float(line[0]), float(line[1])])
+                    energy = float(line[2])
+                    self.data["scan_energies"].append((params, energy))
         else:
             for line in single_data[0]:
                 param = float(line[0])

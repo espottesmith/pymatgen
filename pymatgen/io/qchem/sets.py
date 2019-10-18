@@ -417,37 +417,3 @@ class PESScanSet(QChemDictSet):
             scf_algorithm=self.scf_algorithm,
             max_scf_cycles=self.max_scf_cycles,
             overwrite_inputs=overwrite_inputs)
-
-
-class RPathSet(QChemDictSet):
-    """
-    QChemDictSet for an intrinsic reaction coordinate (IRC) reaction pathway
-    search, used to verify a transition state structure or to determine the
-    location of the transition state along the reaction pathway.
-    """
-
-    def __init__(self,
-                 molecule,
-                 dft_rung=3,
-                 basis_set="def2-tzvppd",
-                 pcm_dielectric=None,
-                 smd_solvent=None,
-                 custom_smd=None,
-                 scf_algorithm="diis_gdm",
-                 max_scf_cycles=200,
-                 overwrite_inputs=None):
-        self.basis_set = basis_set
-        self.scf_algorithm = scf_algorithm
-        self.max_scf_cycles = max_scf_cycles
-
-        super(PESScanSet, self).__init__(
-            molecule=molecule,
-            job_type="rpath",
-            dft_rung=dft_rung,
-            pcm_dielectric=pcm_dielectric,
-            smd_solvent=smd_solvent,
-            custom_smd=custom_smd,
-            basis_set=self.basis_set,
-            scf_algorithm=self.scf_algorithm,
-            max_scf_cycles=self.max_scf_cycles,
-            overwrite_inputs=overwrite_inputs)

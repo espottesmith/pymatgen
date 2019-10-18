@@ -105,6 +105,17 @@ class BernyOptimizer:
         """
 
         self.state = self.berny.send((energy, gradients))
+        new_geom = self.state.geom
+        if isinstance(self.initial_chemistry, Structure):
+            self.chemistry = Structure(lattice=self.lattice,
+                                       species=new_geom.species,
+                                       coords=new_geom.coords,
+                                       charge=self.initial_chemistry.charge)
+        elif isinstance(self.initial_chemistry, Molecule):
+            self.chemistry = Molecule(species=new_geom.species,
+                                      coords=new_geom.coords,
+                                      charge=self.initial_chemistry.charge,
+                                      spin_multiplicity=self.initial_chemistry.spin_multiplicity)
 
     def get_next_geometry(self):
         """

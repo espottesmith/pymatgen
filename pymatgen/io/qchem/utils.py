@@ -450,7 +450,7 @@ def orient_molecule(mol_1, mol_2, rotate=True):
 
 def generate_string_start(reactants, product, strategy, reorder=False,
                           extend_structure=False, map_atoms=True,
-                          separation_dist=0.5):
+                          separation_dist=1.5):
     """
     For a reaction of type A + B <-> C, manipulate C in such a way as to provide
     a reasonable starting guess for string calculations (FSM/GSM).

@@ -8,7 +8,7 @@ import unittest
 from pymatgen.io.qchem.sets import (QChemDictSet, OptSet, TransitionStateSet,
                                     SinglePointSet, FreqSet,
                                     FreezingStringSet, GrowingStringSet,
-                                    PESScanSet, RPathSet)
+                                    PESScanSet, ForceSet)
 from pymatgen.util.testing import PymatgenTest
 from pymatgen.io.qchem.inputs import QCInput
 
@@ -506,6 +506,81 @@ class SinglePointSetTest(PymatgenTest):
             })
         self.assertEqual(test_SPSet.smx, {'solvent': 'water'})
         self.assertEqual(test_SPSet.molecule, test_molecule)
+
+
+class ForceSetTest(PymatgenTest):
+    def test_init(self):
+        test_molecule = QCInput.from_file(
+            os.path.join(mol_dir, "new_qchem_files/pcm.qin")).molecule
+        test_forceset = ForceSet(molecule=test_molecule)
+        self.assertEqual(
+            test_forceset.rem, {
+                'job_type': 'force',
+                'gen_scfman': 'true',
+                'basis': 'def2-tzvppd',
+                'max_scf_cycles': 200,
+                'method': 'wb97xd',
+                'scf_algorithm': 'diis',
+                'xc_grid': '3',
+                'symmetry': 'false',
+                'sym_ignore': 'true',
+                'resp_charges': 'true'
+            })
+        self.assertEqual(test_forceset.pcm, {})
+        self.assertEqual(test_forceset.solvent, {})
+        self.assertEqual(test_forceset.molecule, test_molecule)
+
+    def test_pcm_init(self):
+        test_molecule = QCInput.from_file(
+            os.path.join(mol_dir, "new_qchem_files/pcm.qin")).molecule
+        test_forceset = ForceSet(
+            molecule=test_molecule, pcm_dielectric=10.0)
+        self.assertEqual(
+            test_forceset.rem, {
+                'job_type': 'force',
+                'gen_scfman': 'true',
+                'basis': 'def2-tzvppd',
+                'max_scf_cycles': 200,
+                'method': 'wb97xd',
+                'scf_algorithm': 'diis',
+                'xc_grid': '3',
+                'solvent_method': 'pcm',
+                'symmetry': 'false',
+                'sym_ignore': 'true',
+                'resp_charges': 'true'
+            })
+        self.assertEqual(
+            test_forceset.pcm, {
+                'heavypoints': '194',
+                'hpoints': '194',
+                'radii': 'uff',
+                'theory': 'cpcm',
+                'vdwscale': '1.1'
+            })
+        self.assertEqual(test_forceset.solvent, {'dielectric': 10.0})
+        self.assertEqual(test_forceset.molecule, test_molecule)
+
+    def test_smd_init(self):
+        test_molecule = QCInput.from_file(
+            os.path.join(mol_dir, "new_qchem_files/pcm.qin")).molecule
+        test_forceset = ForceSet(molecule=test_molecule, smd_solvent='water')
+        self.assertEqual(
+            test_forceset.rem, {
+                'job_type': 'force',
+                'gen_scfman': 'true',
+                'basis': 'def2-tzvppd',
+                'max_scf_cycles': 200,
+                'method': 'wb97xd',
+                'scf_algorithm': 'diis',
+                'xc_grid': '3',
+                'solvent_method': 'smd',
+                'ideriv': '1',
+                'symmetry': 'false',
+                'sym_ignore': 'true',
+                'resp_charges': 'true'
+            })
+        self.assertEqual(test_forceset.smx, {'solvent': 'water'})
+        self.assertEqual(test_forceset.molecule, test_molecule)
 
 
 class FreqSetTest(PymatgenTest):

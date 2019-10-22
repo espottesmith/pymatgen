@@ -279,6 +279,37 @@ class SinglePointSet(QChemDictSet):
             overwrite_inputs=overwrite_inputs)
 
 
+class ForceSet(QChemDictSet):
+    """
+    QChemDictSet for a force (gradient) calculation
+    """
+
+    def __init__(self,
+                 molecule,
+                 dft_rung=3,
+                 basis_set="def2-tzvppd",
+                 pcm_dielectric=None,
+                 smd_solvent=None,
+                 custom_smd=None,
+                 scf_algorithm="diis",
+                 max_scf_cycles=200,
+                 overwrite_inputs=None):
+        self.basis_set = basis_set
+        self.scf_algorithm = scf_algorithm
+        self.max_scf_cycles = max_scf_cycles
+        super().__init__(
+            molecule=molecule,
+            job_type="force",
+            dft_rung=dft_rung,
+            pcm_dielectric=pcm_dielectric,
+            smd_solvent=smd_solvent,
+            custom_smd=custom_smd,
+            basis_set=self.basis_set,
+            scf_algorithm=self.scf_algorithm,
+            max_scf_cycles=self.max_scf_cycles,
+            overwrite_inputs=overwrite_inputs)
+
+
 class FreqSet(QChemDictSet):
     """
     QChemDictSet for a single point calculation

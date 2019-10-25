@@ -90,6 +90,7 @@ class BernyOptimizer:
                            params=self.params)
 
         self.state = self.berny.state
+        self.max_steps = max_steps
 
     def update(self, energy, gradients):
         """

@@ -65,7 +65,7 @@ class BernyOptimizer:
             raise ValueError("chemistry must be either a Structure or Molecule "
                              "object!")
 
-        geom = geomlib.Geometry([str(e.species) for e in self.chemistry],
+        geom = geomlib.Geometry([str(e.specie) for e in self.chemistry.sites],
                                 [e.coords for e in self.chemistry],
                                 lattice=self.lattice)
 

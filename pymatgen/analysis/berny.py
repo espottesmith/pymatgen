@@ -1,7 +1,7 @@
 import copy
 from pymatgen.core.structure import Molecule, Structure
 
-from berny import Berny, geomlib
+from berny import Berny, State, geomlib
 
 
 class BernyOptimizer:
@@ -89,7 +89,7 @@ class BernyOptimizer:
                            transition_state=self.transition_state,
                            params=self.params)
 
-        self.state = dict(self.berny.state)
+        self.state = self.berny.state
 
     def update(self, energy, gradients):
         """
@@ -104,7 +104,15 @@ class BernyOptimizer:
             None
         """
 
-        self.state = self.berny.send((energy, gradients))
+        state_dict = self.berny.send((energy, gradients))
+        self.state = State(geom=state_dict["geom"], coords=state_dict["coords"],
+                           trust=state_dict["trust"],
+                           hessian=state_dict["H"],
+                           weights=state_dict["weights"],
+                           future=state_dict["future"],
+                           params=state_dict["params"],
+                           first=state_dict["first"])
+
         new_geom = self.state.geom
         if isinstance(self.initial_chemistry, Structure):
             self.chemistry = Structure(lattice=self.lattice,

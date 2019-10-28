@@ -4,7 +4,7 @@ from scipy.optimize import leastsq
 from collections import defaultdict
 import itertools
 from difflib import SequenceMatcher
-from statistics import mean
+from statistics import mean, StatisticsError
 import copy
 
 import networkx as nx
@@ -373,11 +373,14 @@ def map_atoms_reaction(reactants, product, num_additions_allowed=0):
                     matcher = SequenceMatcher(None, rct_dist, pro_dist)
                     ratios.append(matcher.ratio())
 
-            average_ratios.append(mean(ratios))
+            try:
+                average_ratios.append(mean(ratios))
+            except StatisticsError:
+                average_ratios.append(1)
 
         # Rank isomorphisms by the average SequenceMatch ratio
         ranking_by_reactant.append([isom for _, isom in sorted(zip(average_ratios, isomorphisms),
-                                                         key=lambda pair: pair[0])])
+                                                         key=lambda pair: pair[0], reverse=True)])
 
     combinations = list(itertools.product(*ranking_by_reactant))
 

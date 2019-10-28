@@ -73,9 +73,8 @@ class QCUtilsTest(unittest.TestCase):
             map_atoms_reaction([rct_mg], pro_mg, num_additions_allowed=0)
         self.assertDictEqual(map_atoms_reaction([rct_mg], pro_mg,
                                                 num_additions_allowed=1),
-                             {4: 0, 1: 1, 5: 2, 3: 3, 0: 4, 2: 5, 6: 6, 10: 7,
-                              9: 8, 8: 9, 7: 10})
-
+                             {0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7,
+                              8: 8, 9: 9, 10: 10})
 
     def test_orient_molecule(self):
         mol_1 = Molecule.from_file(os.path.join(test_dir, "orientation_1.mol"))
@@ -106,7 +105,7 @@ class QCUtilsTest(unittest.TestCase):
         distance = np.linalg.norm(molecules["reactants"][0].center_of_mass -
                                   molecules["reactants"][1].center_of_mass)
 
-        self.assertAlmostEqual(distance, 3.516695391504106)
+        self.assertAlmostEqual(distance, 4.5165736522096065)
 
         molecules_large_gap = generate_string_start([self.rct_1, self.rct_2], self.pro, strat,
                               reorder=False, extend_structure=False,

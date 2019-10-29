@@ -1723,10 +1723,10 @@ class ScratchFileParser:
             self.data["energies"] = [energy]
 
         header_pattern = r"\$gradient"
-        row_pattern = r"\s+([\d\-\.Ee]+)\s*([\d\-\.Ee]+)\s*([\d\-\.Ee]+)\s*"
+        row_pattern = r"\s+([\d\-\.Ee]+)\s*([\d\-\.Ee]+)\s*([\d\-\.Ee]+)"
         footer_pattern = r"\$end"
 
-        temp_data = read_table_pattern(self.text,
+        temp_data = read_table_pattern(text,
                                        header_pattern=header_pattern,
                                        row_pattern=row_pattern,
                                        footer_pattern=footer_pattern)
@@ -1751,7 +1751,7 @@ class ScratchFileParser:
             text, {
                 "hessian": r"\$hessian\s+([A-Za-z]+)",
                 "dimension": r"Dimension\s+([0-9]+)",
-                "element": r"([0-9\-\.Ee]+)"
+                "element": r"(\-?[0-9]\.[0-9]+(?:[Ee][\+\-])?[0-9]+)"
             }
         )
 
@@ -1769,14 +1769,15 @@ class ScratchFileParser:
             raise ValueError("Cannot parse Hessian without knowledge of "
                              "dimension!")
         else:
-            hess_dimension = temp_dict.get('dimension')[0][0]
+            hess_dimension = int(temp_dict.get('dimension')[0][0])
 
-        hess_matrix = np.zeros(hess_dimension,
-                               hess_dimension)
+        hess_matrix = np.zeros((hess_dimension,
+                               hess_dimension))
+
         hess_values = [float(e[0]) for e in temp_dict.get('element')]
         for i in range(hess_dimension):
             for j in range(i + 1):
-                val = hess_values.pop(0)[0]
+                val = hess_values.pop(0)
                 hess_matrix[i, j] = val
                 hess_matrix[j, i] = val
 

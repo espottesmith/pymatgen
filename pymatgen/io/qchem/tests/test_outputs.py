@@ -7,11 +7,14 @@ import os
 import math
 import unittest
 
+import numpy as np
+
 from monty.serialization import loadfn, dumpfn
 from pymatgen.io.qchem.outputs import (QCOutput,
                                        QCStringfileParser,
                                        QCPerpGradFileParser,
-                                       QCVFileParser)
+                                       QCVFileParser,
+                                       ScratchFileParser)
 from pymatgen.util.testing import PymatgenTest
 try:
     import openbabel
@@ -418,6 +421,42 @@ class QCPerpGradFileParserTest(PymatgenTest):
         basis = loadfn(os.path.join(test_dir, "new_qchem_files", "gsm", "perp_grad_file.json"))
 
         self.assertDictEqual(parsed.as_dict(), basis)
+
+
+class ScratchFileParserTest(PymatgenTest):
+
+    def setUp(self) -> None:
+        self.parsed = ScratchFileParser(os.path.join(test_dir, "new_qchem_files",
+                                                "scratch_tests"))
+
+    def test_gradients(self):
+        self.assertAlmostEqual(self.parsed.data["energies"][0],
+                               -349.953735982612)
+        gradient = np.array([[-3.47706622e-03,  3.92272175e-03,  1.28036631e-03],
+                             [ 6.25527945e-03, -5.89499213e-03, -2.08950118e-03],
+                             [ 8.29477733e-04,  2.56663626e-04,  4.37374742e-04],
+                             [-5.56179441e-03,  4.08232422e-03,  9.05620014e-04],
+                             [-5.23128532e-03,  3.20066673e-04,  5.46605401e-04],
+                             [ 2.75957384e-03,  1.11801470e-03, -5.17754422e-04],
+                             [ 5.09640707e-03, -3.74183667e-03, -5.52306916e-04],
+                             [-1.06586524e-04,  1.46054207e-04, -1.39264217e-05],
+                             [-1.48884368e-04, -9.07757600e-05, -6.67726750e-05],
+                             [-2.98131082e-04, -3.71638404e-05,  6.41313967e-05],
+                             [-1.16990082e-04, -8.10768196e-05,  6.16377808e-06]])
+        for ii, row in enumerate(gradient):
+            for jj, item in enumerate(row):
+                self.assertAlmostEqual(item, self.parsed.data["gradients"][0][ii, jj])
+
+    def test_hessians(self):
+        mat = self.parsed.data["hess_matrices"][0]
+        for i in range(33):
+            for j in range(33):
+                if i == j:
+                    self.assertAlmostEqual(mat[i, j], 1)
+                else:
+                    self.assertAlmostEqual(mat[i, j], 0)
+
+        self.assertEqual("approximate", self.parsed.data["hess_approx_exact"][0])
 
 
 if __name__ == "__main__":

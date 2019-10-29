@@ -1689,6 +1689,103 @@ class QCPerpGradFileParser:
         return jsanitize(d, strict=True)
 
 
+class ScratchFileParser:
+
+    def __init__(self, scratch_dir):
+        self.scratch_dir = scratch_dir
+        self.scratch_files = os.listdir(self.scratch_dir)
+        self.data = dict()
+
+        for file in self.scratch_files:
+            if "GRAD" in file:
+                self._parse_grad(os.path.join(self.scratch_dir, file))
+            elif "HESS" in file:
+                self._parse_hess(os.path.join(self.scratch_dir, file))
+
+    def _parse_grad(self, path):
+        with zopen(path, 'rt') as f:
+            text = f.read()
+
+        temp_dict = read_pattern(
+            text, {
+                "energy": r"\$energy\s+([\-\.0-9]+)",
+            }
+        )
+
+        if temp_dict.get('energy') is None:
+            energy = None
+        else:
+            energy = float(temp_dict.get('energy')[0][0])
+
+        if "energy" in self.data:
+            self.data["energies"].append(energy)
+        else:
+            self.data["energies"] = [energy]
+
+        header_pattern = r"\$gradient"
+        row_pattern = r"\s+([\d\-\.Ee]+)\s*([\d\-\.Ee]+)\s*([\d\-\.Ee]+)\s*"
+        footer_pattern = r"\$end"
+
+        temp_data = read_table_pattern(self.text,
+                                       header_pattern=header_pattern,
+                                       row_pattern=row_pattern,
+                                       footer_pattern=footer_pattern)
+
+        # There should only be one of these, right?
+        gradients = list()
+        for ii, gradient in enumerate(temp_data):
+            if gradient == [] or None:
+                gradients.append(None)
+            else:
+                gradients.append(process_parsed_coords(gradient))
+        if "gradients" in self.data:
+            self.data["gradients"].extend(gradients)
+        else:
+            self.data["gradients"] = gradients
+
+    def _parse_hess(self, path):
+        with zopen(path, 'rt') as f:
+            text = f.read()
+
+        temp_dict = read_pattern(
+            text, {
+                "hessian": r"\$hessian\s+([A-Za-z]+)",
+                "dimension": r"Dimension\s+([0-9]+)",
+                "element": r"([0-9\-\.Ee]+)"
+            }
+        )
+
+        if temp_dict.get('hessian') is None:
+            hess_approx_exact = None
+        else:
+            hess_approx_exact = temp_dict.get('hessian')[0][0]
+
+        if "hess_approx_exact" in self.data:
+            self.data["hess_approx_exact"].append(hess_approx_exact)
+        else:
+            self.data["hess_approx_exact"] = [hess_approx_exact]
+
+        if temp_dict.get('dimension') is None:
+            raise ValueError("Cannot parse Hessian without knowledge of "
+                             "dimension!")
+        else:
+            hess_dimension = temp_dict.get('dimension')[0][0]
+
+        hess_matrix = np.zeros(hess_dimension,
+                               hess_dimension)
+        hess_values = [float(e[0]) for e in temp_dict.get('element')]
+        for i in range(hess_dimension):
+            for j in range(i + 1):
+                val = hess_values.pop(0)[0]
+                hess_matrix[i, j] = val
+                hess_matrix[j, i] = val
+
+        if "hess_matrices" in self.data:
+            self.data["hess_matrices"].append(hess_matrix)
+        else:
+            self.data["hess_matrices"] = [hess_matrix]
+
+
 def check_for_structure_changes(mol1, mol2):
     special_elements = ["Li", "Na", "Mg", "Ca", "Zn"]
     mol_list = [copy.deepcopy(mol1), copy.deepcopy(mol2)]

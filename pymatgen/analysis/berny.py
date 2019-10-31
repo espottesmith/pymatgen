@@ -107,7 +107,8 @@ class BernyOptimizer:
         """
 
         state_dict = self.berny.send((energy, gradients))
-        self.state = State(geom=state_dict["geom"], coords=state_dict["coords"],
+        self.state = State(geom=state_dict["geom"],
+                           coords=state_dict["coords"],
                            trust=state_dict["trust"],
                            hessian=state_dict["H"],
                            weights=state_dict["weights"],

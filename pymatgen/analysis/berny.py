@@ -161,3 +161,18 @@ class BernyOptimizer:
                              charge=self.initial_chemistry.charge,
                              spin_multiplicity=self.initial_chemistry.spin_multiplicity),
                     self.berny.converged)
+
+    def set_hessian_exact(self, gradients, hessian):
+        """
+        Update the state of the optimizer with an exact Hessian.
+
+        Args:
+            gradients (np.ndarray): Gradient vector in Cartesian coordinates.
+            hessian (np.ndarray): Hessian matrix in Cartesian coordinates.
+
+        Returns:
+            None
+        """
+
+        self.berny.update_hessian_exact(gradients, hessian)
+        self.state = self.berny.state

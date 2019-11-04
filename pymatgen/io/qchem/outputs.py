@@ -15,7 +15,7 @@ from monty.json import MSONable
 from pymatgen.core import Molecule
 
 from pymatgen.analysis.graphs import MoleculeGraph
-from pymatgen.analysis.local_env import OpenBabelNN, CovalentBondNN
+from pymatgen.analysis.local_env import OpenBabelNN
 import networkx as nx
 
 try:
@@ -1717,7 +1717,7 @@ class ScratchFileParser:
         else:
             energy = float(temp_dict.get('energy')[0][0])
 
-        if "energy" in self.data:
+        if "energies" in self.data:
             self.data["energies"].append(energy)
         else:
             self.data["energies"] = [energy]

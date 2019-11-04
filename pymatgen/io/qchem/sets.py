@@ -32,6 +32,7 @@ class QChemDictSet(QCInput):
                  smd_solvent=None,
                  custom_smd=None,
                  scan_variables=None,
+                 opt_variables=None,
                  max_scf_cycles=200,
                  geom_opt_max_cycles=200,
                  overwrite_inputs=None):
@@ -46,6 +47,7 @@ class QChemDictSet(QCInput):
             smd_solvent (str)
             custom_smd (str)
             scan_variables (dict)
+            opt_variables (dict)
             max_scf_cycles (int)
             geom_opt_max_cycles (int)
             overwrite_inputs (dict): This is dictionary of QChem input sections to add or overwrite variables,
@@ -65,6 +67,7 @@ class QChemDictSet(QCInput):
         self.smd_solvent = smd_solvent
         self.custom_smd = custom_smd
         self.scan_variables = scan_variables
+        self.opt_variables = opt_variables
         self.max_scf_cycles = max_scf_cycles
         self.geom_opt_max_cycles = geom_opt_max_cycles
         self.overwrite_inputs = overwrite_inputs
@@ -80,6 +83,10 @@ class QChemDictSet(QCInput):
         mypcm = dict()
         mysolvent = dict()
         mysmx = dict()
+        if self.opt_variables is None:
+            myopt = dict()
+        else:
+            myopt = self.opt_variables
         if self.scan_variables is None:
             myscan = dict()
         else:
@@ -153,6 +160,10 @@ class QChemDictSet(QCInput):
                     temp_rem = lower_and_check_unique(sec_dict)
                     for k, v in temp_rem.items():
                         myrem[k] = v
+                if sec == "opt":
+                    temp_opt = lower_and_check_unique(sec_dict)
+                    for k, v in temp_opt.items():
+                        myopt[k] = v
                 if sec == "pcm":
                     temp_pcm = lower_and_check_unique(sec_dict)
                     for k, v in temp_pcm.items():
@@ -170,8 +181,8 @@ class QChemDictSet(QCInput):
                     for k, v in temp_scan.items():
                         myscan[k] = v
 
-        super().__init__(self.molecule, rem=myrem, pcm=mypcm, solvent=mysolvent,
-                         smx=mysmx, scan=myscan)
+        super().__init__(self.molecule, rem=myrem, opt=myopt, pcm=mypcm,
+                         solvent=mysolvent, smx=mysmx, scan=myscan)
 
     def write(self, input_file):
         self.write_file(input_file)

@@ -1,4 +1,3 @@
-import copy
 from pymatgen.core.structure import Molecule, Structure
 
 from berny import Berny, State, geomlib
@@ -51,7 +50,7 @@ class BernyOptimizer:
     def __init__(self, chemistry, prev_calc_data=None, logger=None,
                  verbosity=None, transition_state=False, max_steps=250,
                  max_gradient=4.5e-4, rms_gradient=3.0e-4, max_step_size=1.8e-3,
-                 rms_step_size=1.2e-3, trust=0.3, dihedral=True,
+                 rms_step_size=1.2e-3, trust=0.3, min_trust=1e-6, dihedral=True,
                  weak_dihedral=False):
 
         self.initial_chemistry = chemistry
@@ -78,6 +77,7 @@ class BernyOptimizer:
                        "stepmax": max_step_size,
                        "steprms": rms_step_size,
                        "trust": trust,
+                       "min_trust": min_trust,
                        "dihedral": dihedral,
                        "superweakdih": weak_dihedral}
 

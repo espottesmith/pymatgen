@@ -109,7 +109,7 @@ def disconnected_isomorphic(frag1, frag2, num_allowed=1):
     the addition of some number of edges
 
     :param frag1: networkx Graph object (usually MultiDiGraph)
-    :param frag2: StructureGraph or MoleculeGraph to be compared
+    :param frag2: networkx Graph object (usually MultiDiGraph)
     :param num_allowed: Number of edges that can be added
 
     :return:

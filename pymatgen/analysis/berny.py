@@ -3,6 +3,50 @@ from pymatgen.core.structure import Molecule, Structure
 from berny import Berny, State, geomlib
 
 
+class BernyLogger:
+
+    """
+    This class serves as a substitute for the pyberny Logger class. It
+    prints all output from optimization to an output stream (by default, a
+    file).
+
+    Args:
+        verbosity (int): Verbosity level (the higher the level, the more
+            output the user will receive). Default is None, meaning the user
+            will receive all output.
+        logfile (str): File or output stream where all Berny output will
+            go. By default, this is "berny.log", but it could be some other
+            file or a stream like sys.stdout or sys.stderr
+    """
+
+    def __init__(self, verbosity=None, logfile="berny.log"):
+        self.verbosity = verbosity
+        self.logfile = logfile
+
+    def __call__(self, msg, level=0):
+        """
+        Log a message
+
+        Args:
+            msg:
+            level:
+
+        Returns: None
+        """
+
+        msgstr = str(msg)
+        if not msgstr.endswith("\n"):
+            msgstr += "\n"
+
+        if self.verbosity is None:
+            with open(self.logfile, "a+") as log:
+                log.write(msgstr)
+        elif level < self.verbosity:
+            with open(self.logfile, "a+") as log:
+                log.write(msgstr)
+
+
+
 class BernyOptimizer:
 
     """
@@ -11,8 +55,10 @@ class BernyOptimizer:
     Chemistry Accounts, 135(4), p.84.
 
     The Berny optimizer uses energy and gradient calculations from any program
-    (MOPAC, Q-Chem, Gaussian, VASP) to generate guess structures for relaxed
-    structures (minima) and transition states (saddle points).
+    (MOPAC, Q-Chem, Gaussian) to generate guess structures for relaxed
+    structures (minima) and transition states (saddle points). It is presently
+    designed only for use with molecules, though in principle it could be used
+    with periodic structures as well.
 
     Note: Most (but not all) default values are based on the default values
     given in berny.
@@ -21,9 +67,8 @@ class BernyOptimizer:
         chemistry (Molecule or Structure): The chemical to be optimized
         prev_calc_data (dict): Start an optimization from a previous state,
             output from berny
-        logger (object): The logger can be any object class with a "log" method.
-            By default, this is None, meaning that the default pyberny logger
-            will be used
+        logfile (str): File path specifying where Berny logging information
+            should be sent. By default, this is "berny.log".
         verbosity (int): If the default berny logger is to be used, this
             variable can set the level of output. If verbosity is not given,
             the value will be set to 0 (maximum verbosity)
@@ -47,7 +92,7 @@ class BernyOptimizer:
 
     """
 
-    def __init__(self, chemistry, prev_calc_data=None, logger=None,
+    def __init__(self, chemistry, prev_calc_data=None, logfile="berny.log",
                  verbosity=None, transition_state=False, max_steps=250,
                  max_gradient=4.5e-4, rms_gradient=3.0e-4, max_step_size=1.8e-3,
                  rms_step_size=1.2e-3, trust=0.3, min_trust=1e-6, dihedral=True,
@@ -69,7 +114,7 @@ class BernyOptimizer:
                                 [e.coords for e in self.chemistry],
                                 lattice=self.lattice)
 
-        self.logger = logger
+        self.logger = BernyLogger(verbosity=verbosity, logfile=logfile)
         self.transition_state = transition_state
 
         self.params = {"gradientmax": max_gradient,
@@ -81,12 +126,8 @@ class BernyOptimizer:
                        "dihedral": dihedral,
                        "superweakdih": weak_dihedral}
 
-        if logger is None and verbosity is not None:
-            verbosity = None
-
         self.berny = Berny(geom, self.logger, debug=True,
                            restart=prev_calc_data, maxsteps=max_steps,
-                           verbosity=verbosity,
                            transition_state=self.transition_state,
                            params=self.params)
 

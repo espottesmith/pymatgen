@@ -569,9 +569,9 @@ class ReactionNetwork(MSONable):
                 node_name_4 = D_PR_C_name+","+AB_name
                 AB_CD_energy = entryC.energy + entryD.energy - entryA.energy - entryB.energy
                 CD_AB_energy = entryA.energy + entryB.energy - entryC.energy - entryD.energy
-                if entryA.free_energy != None and entryB.free_energy != None and entryC.free_energy != None and entryD.free_energy != None:
-                    AB_CD_free_energy = entryC.free_energy + entryD.free_energy - entryA.free_energy - entryB.free_energy
-                    CD_AB_free_energy = entryA.free_energy + entryB.free_energy - entryC.free_energy - entryD.free_energy
+                if entryA.free_energy() != None and entryB.free_energy() != None and entryC.free_energy() != None and entryD.free_energy() != None:
+                    AB_CD_free_energy = entryC.free_energy() + entryD.free_energy() - entryA.free_energy() - entryB.free_energy()
+                    CD_AB_free_energy = entryA.free_energy() + entryB.free_energy() - entryC.free_energy() - entryD.free_energy()
 
                 self.graph.add_node(node_name_1,rxn_type=rxn_type,bipartite=1,energy=AB_CD_energy,free_energy=AB_CD_free_energy)
                 self.graph.add_edge(entryA.parameters["ind"],

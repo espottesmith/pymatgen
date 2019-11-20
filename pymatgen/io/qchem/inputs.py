@@ -56,15 +56,14 @@ class QCInput(MSONable):
             Ex. scan = {"stre": ["3 6 1.5 1.9 0.1"], "tors": ["1 2 3 4 -180 180 15"]}
     """
 
-    def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None,
-                 smx=None, scan=None):
+    def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None, smx=None, scan=None, plots=None):
         self.molecule = molecule
         self.rem = lower_and_check_unique(rem)
         self.opt = opt
         self.pcm = lower_and_check_unique(pcm)
         self.solvent = lower_and_check_unique(solvent)
         self.smx = lower_and_check_unique(smx)
-        self.scan = lower_and_check_unique(scan)
+        self.plots = lower_and_check_unique(plots)
 
         # Make sure molecule is valid
 
@@ -182,6 +181,10 @@ class QCInput(MSONable):
         if self.scan:
             combined_list.append(self.scan_template(self.scan))
             combined_list.append("")
+        # plots section
+        if self.plots:
+            combined_list.append(self.plots_template(self.plots))
+            combined_list.append("")
         return '\n'.join(combined_list)
 
     @staticmethod
@@ -205,6 +208,7 @@ class QCInput(MSONable):
         solvent = None
         smx = None
         scan = None
+        plots = None
         if "opt" in sections:
             opt = cls.read_opt(string)
         if "pcm" in sections:
@@ -213,10 +217,11 @@ class QCInput(MSONable):
             solvent = cls.read_solvent(string)
         if "smx" in sections:
             smx = cls.read_smx(string)
+        if "plots" in sections:
+            plots = cls.read_plots(string)
         if "scan" in sections:
             scan = cls.read_scan(string)
-        return cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx,
-                   scan=scan)
+        retur cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx, scan=scan, plots=plots)
 
     def write_file(self, filename):
         with zopen(filename, 'wt') as f:
@@ -415,6 +420,16 @@ class QCInput(MSONable):
                         var_type=var_type, var=var))
         scan_list.append("$end")
         return '\n'.join(scan_list)
+
+    @staticmethod
+    def plots_template(plots):
+        plots_list = []
+        plots_list.append("$plots")
+        for key, value in plots.items():
+            plots_list.append("   {key} {value}".format(
+                key=key, value=value))
+        plots_list.append("$end")
+        return '\n'.join(plots_list)
 
     @staticmethod
     def find_sections(string):
@@ -693,3 +708,22 @@ class QCInput(MSONable):
                 raise ValueError("No more than two variables are allows in the scan section!")
 
             return {"stre": stre, "bend": bend, "tors": tors}
+
+    @staticmethod
+    def read_plots(string):
+        header = r"^\s*\$plots"
+        row = r"\s*([a-zA-Z\_]+)\s+(\S+)"
+        footer = r"^\s*\$end"
+        plots_table = read_table_pattern(
+            string,
+            header_pattern=header,
+            row_pattern=row,
+            footer_pattern=footer)
+        if plots_table == []:
+            print(
+                "No valid plots inputs found. Note that there should be no '=' chracters in plots input lines."
+            )
+            return {}
+        else:
+            plots = {key: val for key, val in plots_table[0]}
+            return plots

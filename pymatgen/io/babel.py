@@ -69,7 +69,7 @@ class BabelMolAdaptor:
                 del obatom
             obmol.ConnectTheDots()
             obmol.PerceiveBondOrders()
-            obmol.SetTotalSpinMultiplicity(int(mol.spin_multiplicity))
+            obmol.SetTotalSpinMultiplicity(mol.spin_multiplicity)
             obmol.SetTotalCharge(int(mol.charge))
             obmol.Center()
             obmol.Kekulize()

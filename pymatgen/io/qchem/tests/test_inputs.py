@@ -788,7 +788,7 @@ $rem
 $end
 """
         qcinp = QCInput.from_string(str_molecule)
-        self.assertEqual(str_molecule,str(qcinp))
+        self.assertEqual(str_molecule, str(qcinp))
 
     def test_write_file_from_OptSet(self):
         from pymatgen.io.qchem.sets import OptSet

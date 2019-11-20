@@ -16,8 +16,10 @@ from pymatgen.io.qchem.outputs import (QCOutput,
                                        QCVFileParser,
                                        ScratchFileParser)
 from pymatgen.util.testing import PymatgenTest
+
 try:
     import openbabel
+
     have_babel = True
 except ImportError:
     have_babel = False

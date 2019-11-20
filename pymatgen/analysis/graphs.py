@@ -2041,12 +2041,8 @@ class MoleculeGraph(MSONable):
         if nx.is_weakly_connected(self.graph):
             return [copy.deepcopy(self)]
         else:
+            original = copy.deepcopy(self)
             sub_mols = list()
-
-            components = nx.weakly_connected_components(self.graph)
-            subgraphs = [self.graph.subgraph(c) for c in components]
-
-            sub_mols = []
 
             # Had to use nx.weakly_connected_components because of deprecation
             # of nx.weakly_connected_component_subgraphs

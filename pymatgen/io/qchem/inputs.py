@@ -221,7 +221,7 @@ class QCInput(MSONable):
             plots = cls.read_plots(string)
         if "scan" in sections:
             scan = cls.read_scan(string)
-        retur cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx, scan=scan, plots=plots)
+        return cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx, scan=scan, plots=plots)
 
     def write_file(self, filename):
         with zopen(filename, 'wt') as f:

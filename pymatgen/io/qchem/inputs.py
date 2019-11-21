@@ -63,6 +63,7 @@ class QCInput(MSONable):
         self.pcm = lower_and_check_unique(pcm)
         self.solvent = lower_and_check_unique(solvent)
         self.smx = lower_and_check_unique(smx)
+        self.scan = lower_and_check_unique(scan)
         self.plots = lower_and_check_unique(plots)
 
         # Make sure molecule is valid
@@ -217,10 +218,10 @@ class QCInput(MSONable):
             solvent = cls.read_solvent(string)
         if "smx" in sections:
             smx = cls.read_smx(string)
-        if "plots" in sections:
-            plots = cls.read_plots(string)
         if "scan" in sections:
             scan = cls.read_scan(string)
+        if "plots" in sections:
+            plots = cls.read_plots(string)
         return cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx, scan=scan, plots=plots)
 
     def write_file(self, filename):
@@ -423,7 +424,7 @@ class QCInput(MSONable):
 
     @staticmethod
     def plots_template(plots):
-        plots_list = []
+        plots_list = list()
         plots_list.append("$plots")
         for key, value in plots.items():
             plots_list.append("   {key} {value}".format(
@@ -629,7 +630,7 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        if pcm_table == []:
+        if len(pcm_table) == 0:
             print(
                 "No valid PCM inputs found. Note that there should be no '=' chracters in PCM input lines."
             )
@@ -648,7 +649,7 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        if solvent_table == []:
+        if len(solvent_table) == 0:
             print(
                 "No valid solvent inputs found. Note that there should be no '=' chracters in solvent input lines."
             )
@@ -667,7 +668,7 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        if smx_table == list():
+        if len(smx_table) == 0:
             print(
                 "No valid smx inputs found. Note that there should be no '=' chracters in smx input lines."
             )
@@ -719,11 +720,11 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        if plots_table == []:
+        if len(plots_table) == 0:
             print(
                 "No valid plots inputs found. Note that there should be no '=' chracters in plots input lines."
             )
-            return {}
+            return dict()
         else:
             plots = {key: val for key, val in plots_table[0]}
             return plots

@@ -91,16 +91,19 @@ class QChemDictSet(QCInput):
         mypcm = dict()
         mysolvent = dict()
         mysmx = dict()
+
         if self.opt_variables is None:
             myopt = dict()
         else:
             myopt = self.opt_variables
+
         if self.scan_variables is None:
             myscan = dict()
         else:
             myscan = self.scan_variables
 
-        myplots=dict()
+        myplots = dict()
+        
         myrem = dict()
         myrem["job_type"] = job_type
         myrem["basis"] = self.basis_set
@@ -196,7 +199,7 @@ class QChemDictSet(QCInput):
                         myscan[k] = v
                 if sec == "plots":
                     tmp_plots = lower_and_check_unique(sec_dict)
-                    for k, v in temp_plots.items():
+                    for k, v in tmp_plots.items():
                         myplots[k] = v
 
         super().__init__(self.molecule, rem=myrem, opt=myopt, pcm=mypcm,
@@ -260,6 +263,7 @@ class TransitionStateSet(QChemDictSet):
                  scf_algorithm="diis_gdm",
                  max_scf_cycles=200,
                  geom_opt_max_cycles=200,
+                 plot_cubes=False,
                  overwrite_inputs=None):
         self.basis_set = basis_set
         self.scf_algorithm = scf_algorithm
@@ -276,6 +280,7 @@ class TransitionStateSet(QChemDictSet):
             scf_algorithm=self.scf_algorithm,
             max_scf_cycles=self.max_scf_cycles,
             geom_opt_max_cycles=self.geom_opt_max_cycles,
+            plot_cubes=plot_cubes,
             overwrite_inputs=overwrite_inputs)
 
 

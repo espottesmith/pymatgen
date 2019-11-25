@@ -1706,16 +1706,21 @@ class QCPerpGradFileParser:
 
 class ScratchFileParser:
 
-    def __init__(self, scratch_dir):
+    def __init__(self, scratch_dir=os.getcwd()):
         self.scratch_dir = scratch_dir
         self.scratch_files = os.listdir(self.scratch_dir)
         self.data = dict()
 
-        for file in self.scratch_files:
-            if "GRAD" in file:
-                self._parse_grad(os.path.join(self.scratch_dir, file))
-            elif "HESS" in file:
-                self._parse_hess(os.path.join(self.scratch_dir, file))
+        self.grad_files = sorted([f for f in self.scratch_files if "GRAD" in f])
+        self.hess_files = sorted([f for f in self.scratch_files if "HESS" in f])
+
+        # Currently we don't parse this
+        self.cube_files = sorted([f for f in self.scratch_files if "dens.0.cube" in f])
+
+        for file in self.grad_files:
+            self._parse_grad(os.path.join(self.scratch_dir, file))
+        for file in self.hess_files:
+            self._parse_hess(os.path.join(self.scratch_dir, file))
 
     def _parse_grad(self, path):
         with zopen(path, 'rt') as f:
@@ -1801,6 +1806,14 @@ class ScratchFileParser:
         else:
             self.data["hess_matrices"] = [hess_matrix]
 
+
+class BernyLogParser:
+
+    def __init__(self, filename="berny.log"):
+        self.filename = filename
+
+    def parse_berny_log(self):
+        pass
 
 def check_for_structure_changes(mol1, mol2):
     # special_elements = ["Li", "Na", "Mg", "Ca", "Zn"]

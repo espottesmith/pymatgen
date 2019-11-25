@@ -103,7 +103,7 @@ class QChemDictSet(QCInput):
             myscan = self.scan_variables
 
         myplots = dict()
-        
+
         myrem = dict()
         myrem["job_type"] = job_type
         myrem["basis"] = self.basis_set

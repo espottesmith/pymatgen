@@ -20,7 +20,7 @@ import scipy.constants as cst
 
 from pymatgen.electronic_structure.core import Spin
 
-__author__ = 'Shyue Ping Ong, Germain  Salvato-Vallverdu, Xin Chen'
+__author__ = 'Shyue Ping Ong, Germain Salvato-Vallverdu, Xin Chen'
 __copyright__ = 'Copyright 2013, The Materials Virtual Lab'
 __version__ = '0.1'
 __maintainer__ = 'Shyue Ping Ong'

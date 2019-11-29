@@ -1811,9 +1811,254 @@ class BernyLogParser:
 
     def __init__(self, filename="berny.log"):
         self.filename = filename
+        self.data = dict()
+        self.text = str()
+
+        with zopen(filename, 'rt') as f:
+            self.text = f.read()
+
+        self.parse_berny_log()
 
     def parse_berny_log(self):
-        pass
+        self._parse_internal_coords()
+        self._parse_energy()
+        self._parse_rfo()
+        self._parse_cart_trans()
+        self._parse_convergence()
+        self._parse_update()
+        self._parse_interpolation()
+
+    def _parse_internal_coords(self):
+        internal = read_pattern(
+            self.text, {
+                "frags": r"\*\s+Number of fragments:\s+([0-9]+)",
+                "internal": r"\*\s+Number of internal coordinates:\s([0-9]+)",
+                "bonds": r"\*\s+Number of strong bonds:\s([0-9]+)",
+                "wbonds": r"\*\s+Number of weak bonds:\s([0-9]+)",
+                "swbonds": r"\*\s+Number of superweak bonds:\s([0-9]+)",
+                "angles": r"\*\s+Number of strong angles:\s([0-9]+)",
+                "wangles": r"\*\s+Number of weak angles:\s([0-9]+)",
+                "swangles": r"\*\s+Number of superweak angles:\s([0-9]+)",
+                "dihedrals": r"\*\s+Number of strong dihedrals:\s([0-9]+)",
+                "wdihedrals": r"\*\s+Number of weak dihedrals:\s([0-9]+)",
+                "swdihedrals": r"\*\s+Number of superweak dihedrals:\s([0-9]+)"
+            },
+            terminate_on_match=True)
+        for k, v in internal.items():
+            if v is None:
+                internal[k] = None
+            else:
+                internal[k] = int(v[0][0])
+
+        self.data["frags"] = internal["frags"]
+        self.data["internal"] = internal["internal"]
+        self.data["bonds_strong"] = internal["bonds"] or 0
+        self.data["bonds_weak"] = internal["wbonds"] or 0
+        self.data["bonds_superweak"] = internal["swbonds"] or 0
+        self.data["angles_strong"] = internal["angles"] or 0
+        self.data["angles_weak"] = internal["wangles"] or 0
+        self.data["angles_superweak"] = internal["swangles"] or 0
+        self.data["dihedrals_strong"] = internal["dihedrals"] or 0
+        self.data["dihedrals_weak"] = internal["wdihedrals"] or 0
+        self.data["dihedrals_superweak"] = internal["swdihedrals"] or 0
+
+    def _parse_energy(self):
+        energy = read_pattern(
+            self.text, {
+                "key": r"Energy: ([0-9\-\.]+)"
+            }
+        ).get("key")
+
+        self.data["energy_trajectory"] = [float(e[0]) for e in energy]
+        if len(self.data["energy_trajectory"]) > 0:
+            self.data["final_energy"] = self.data["energy_trajectory"][-1]
+        else:
+            self.data["final_energy"] = None
+
+    def _parse_rfo(self):
+        rfo = read_pattern(
+            self.text, {
+                "method": r"(Pure RFO step|Minimization on sphere) was performed:",
+                "trust": r"\*\s+Trust radius: ([0-9\.]+)",
+                "neg_eig": r"\*\s+Number of negative eigenvalues: ([0-9]+)",
+                "low_eig": r"\*\s+Lowest eigenvalue: ([0-9\.\-]+)",
+                "lambda": r"\*\s+lambda: ([0-9\.\-]+)",
+                "quad_step": r"Quadratic Step: RMS: ([0-9\.]+), max: ([0-9\.]+)",
+                "e_change": r"\*\s+Predicted energy change: ([0-9\-\.]+)",
+                "total_step": r"Total step: RMS: ([0-9\.]+), max: ([0-9\.]+)"
+            }
+        )
+
+        if rfo["method"] is None:
+            self.data["pure_rfo"] = None
+        else:
+            self.data["pure_rfo"] = list()
+            for e in rfo["method"]:
+                if e[0] == "Pure RFO step":
+                    self.data["pure_rfo"].append(True)
+                else:
+                    self.data["pure_rfo"].append(False)
+
+        if rfo["trust"] is None:
+            self.data["trust"] = None
+        else:
+            self.data["trust"] = [float(e[0]) for e in rfo["trust"]]
+
+        if rfo["neg_eig"] is None:
+            self.data["num_neg_eigenvals"] = None
+        else:
+            self.data["num_neg_eigenvals"] = [int(e[0]) for e in rfo["neg_eig"]]
+
+        if rfo["low_eig"] is None:
+            self.data["lowest_eigenval"] = None
+        else:
+            self.data["lowest_eigenval"] = [float(e[0]) for e in rfo["low_eig"]]
+
+        if rfo["lambda"] is None:
+            self.data["lambdas"] = None
+        else:
+            self.data["lambdas"] = [float(e[0]) for e in rfo["lambda"]]
+
+        if rfo["quad_step"] is None:
+            self.data["quad_step_rms"] = None
+            self.data["quad_step_max"] = None
+        else:
+            self.data["quad_step_rms"] = [float(e[0]) for e in rfo["quad_step"]]
+            self.data["quad_step_max"] = [float(e[1]) for e in rfo["quad_step"]]
+
+        if rfo["e_change"] is None:
+            self.data["predicted_energy_change"] = None
+        else:
+            self.data["predicted_energy_change"] = [float(e[0]) for e in rfo["e_change"]]
+
+        if rfo["total_step"] is None:
+            self.data["total_step_rms"] = None
+            self.data["total_step_max"] = None
+        else:
+            self.data["total_step_rms"] = [float(e[0]) for e in rfo["total_step"]]
+            self.data["total_step_max"] = [float(e[1]) for e in rfo["total_step"]]
+
+    def _parse_cart_trans(self):
+        cart = read_pattern(
+            self.text, {
+                "convergence": r"(Perfect transformation to cartesians|Transformation did not converge) in ([0-9]+) iterations",
+                "differences": r"\*\s+RMS\(dcart\): ([0-9eE\.\-]+), RMS\(dq\): ([0-9eE\.\-]+)"
+            }
+        )
+
+        if cart["convergence"] is None:
+            self.data["cart_trans_converged"] = None
+            self.data["cart_trans_iterations"] = None
+        else:
+            self.data["cart_trans_converged"] = list()
+            self.data["cart_trans_iterations"] = list()
+            for e in cart["convergence"]:
+                if e[0].startswith("Perfect"):
+                    self.data["cart_trans_converged"].append(True)
+                else:
+                    self.data["cart_trans_converged"].append(False)
+                self.data["cart_trans_iterations"].append(int(e[1]))
+
+        if cart["differences"] is None:
+            self.data["cart_trans_rms_dcart"] = None
+            self.data["cart_trans_rms_dq"] = None
+        else:
+            self.data["cart_trans_rms_dcart"] = [float(e[0]) for e in cart["differences"]]
+            self.data["cart_trans_rms_dq"] = [float(e[1]) for e in cart["differences"]]
+
+    def _parse_convergence(self):
+        converge = read_pattern(
+            self.text, {
+                "gradient_rms": r"\*\s+Gradient RMS: (?:[0-9\.\-e]+) [<>] (?:[0-9\.\-e]+) => (no|OK)",
+                "gradient_max": r"\*\s+Gradient maximum: (?:[0-9\.\-e]+) [<>] (?:[0-9\.\-e]+) => (no|OK)",
+                "step_rms": r"\*\s+Step RMS: (?:[0-9\.\-e]+) [<>] (?:[0-9\.\-e]+) => (no|OK)",
+                "step_max": r"\*\s+Step maximum: (?:[0-9\.\-e]+) [<>] (?:[0-9\.\-e]+) => (no|OK)",
+                "all_matched": r"\*\s+All criteria matched"
+            }
+        )
+
+        if converge["gradient_rms"] is None:
+            self.data["converge_gradient_rms"] = None
+        else:
+            self.data["converge_gradient_rms"] = [True if e[0] == "OK" else False for e in converge["gradient_rms"]]
+
+        if converge["gradient_max"] is None:
+            self.data["converge_gradient_max"] = None
+        else:
+            self.data["converge_gradient_max"] = [True if e[0] == "OK" else False for e in converge["gradient_max"]]
+
+        if converge["step_rms"] is None:
+            self.data["converge_step_rms"] = None
+        else:
+            self.data["converge_step_rms"] = [True if e[0] == "OK" else False for e in converge["step_rms"]]
+
+        if converge["step_max"] is None:
+            self.data["converge_step_max"] = None
+        else:
+            self.data["converge_step_max"] = [True if e[0] == "OK" else False for e in converge["step_max"]]
+
+        if converge["all_matched"] is not None:
+            self.data["converged"] = True
+        else:
+            self.data["converged"] = False
+
+    def _parse_update(self):
+        update = read_pattern(
+            self.text, {
+                "hessian": r"Hessian update information:\n\*\s+Change: RMS: ([0-9\.\-e]+), max: ([0-9\.\-e]+)",
+                "trust": r"Trust update: Fletcher's parameter: ([0-9\-\.]+)"
+            }
+        )
+
+        if update["hessian"] is None:
+            self.data["hessian_update_rms"] = None
+            self.data["hessian_update_max"] = None
+        else:
+            self.data["hessian_update_rms"] = [float(e[0]) for e in update["hessian"]]
+            self.data["hessian_update_max"] = [float(e[1]) for e in update["hessian"]]
+
+        if update["trust"] is None:
+            self.data["trust_update_fletcher"] = None
+        else:
+            self.data["trust_update_rms"] = [float(e[0]) for e in update["trust"]]
+
+    def _parse_interpolation(self):
+        interpolation = read_pattern(
+            self.text, {
+                "energies": r"\*\s+Energies: ([0-9\-\.]+), ([0-9\-\.]+)",
+                "derivatives": r"\*\s+Derivatives: ([0-9\-\.eE]+), ([0-9\-\.eE]+)",
+                "t_step": r"\*\s+(:?Cubic|Quartic) interpolation was performed: t = ([0-9\-\.]+)",
+                "int_energy": r"\*\s+Interpolated energy: ([0-9\.\-]+)"
+            }
+        )
+
+        if interpolation["energies"] is None:
+            self.data["interpolated_energies"] = None
+        else:
+            self.data["interpolated_energies"] = [(float(e[0]), float(e[1])) for e in interpolation["energies"]]
+
+        if interpolation["derivatives"] is None:
+            self.data["interpolated_derivatives"] = None
+        else:
+            self.data["interpolated_derivatives"] = [(float(e[0]), float(e[1])) for e in interpolation["derivatives"]]
+
+        if interpolation["t_step"] is None:
+            self.data["interpolated_t"] = None
+        else:
+            self.data["interpolated_t"] = [float(e[1]) for e in interpolation["t_step"]]
+
+        if interpolation["int_energy"] is None:
+            self.data["energy_interpolation"] = None
+        else:
+            self.data["energy_interpolation"] = [float(e[0]) for e in interpolation["int_energy"]]
+
+    def as_dict(self):
+        d = dict()
+        d["data"] = self.data
+        d["text"] = self.text
+        d["filename"] = os.path.split(self.filename)[-1]
+        return jsanitize(d, strict=True)
+
 
 def check_for_structure_changes(mol1, mol2):
     # special_elements = ["Li", "Na", "Mg", "Ca", "Zn"]

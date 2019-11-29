@@ -46,7 +46,6 @@ class BernyLogger:
                 log.write(msgstr)
 
 
-
 class BernyOptimizer:
 
     """

@@ -1826,7 +1826,6 @@ class BernyLogParser:
         self._parse_cart_trans()
         self._parse_convergence()
         self._parse_update()
-        self._parse_interpolation()
 
     def _parse_internal_coords(self):
         internal = read_pattern(
@@ -1991,11 +1990,13 @@ class BernyLogParser:
             self.data["converge_step_rms"] = None
         else:
             self.data["converge_step_rms"] = [True if e[0] == "OK" else False for e in converge["step_rms"]]
+            self.data["converge_step_rms"].insert(0, None)
 
         if converge["step_max"] is None:
             self.data["converge_step_max"] = None
         else:
             self.data["converge_step_max"] = [True if e[0] == "OK" else False for e in converge["step_max"]]
+            self.data["converge_step_max"].insert(0, None)
 
         if converge["all_matched"] is not None:
             self.data["converged"] = True
@@ -2021,36 +2022,6 @@ class BernyLogParser:
             self.data["trust_update_fletcher"] = None
         else:
             self.data["trust_update_rms"] = [float(e[0]) for e in update["trust"]]
-
-    def _parse_interpolation(self):
-        interpolation = read_pattern(
-            self.text, {
-                "energies": r"\*\s+Energies: ([0-9\-\.]+), ([0-9\-\.]+)",
-                "derivatives": r"\*\s+Derivatives: ([0-9\-\.eE]+), ([0-9\-\.eE]+)",
-                "t_step": r"\*\s+(:?Cubic|Quartic) interpolation was performed: t = ([0-9\-\.]+)",
-                "int_energy": r"\*\s+Interpolated energy: ([0-9\.\-]+)"
-            }
-        )
-
-        if interpolation["energies"] is None:
-            self.data["interpolated_energies"] = None
-        else:
-            self.data["interpolated_energies"] = [(float(e[0]), float(e[1])) for e in interpolation["energies"]]
-
-        if interpolation["derivatives"] is None:
-            self.data["interpolated_derivatives"] = None
-        else:
-            self.data["interpolated_derivatives"] = [(float(e[0]), float(e[1])) for e in interpolation["derivatives"]]
-
-        if interpolation["t_step"] is None:
-            self.data["interpolated_t"] = None
-        else:
-            self.data["interpolated_t"] = [float(e[1]) for e in interpolation["t_step"]]
-
-        if interpolation["int_energy"] is None:
-            self.data["energy_interpolation"] = None
-        else:
-            self.data["energy_interpolation"] = [float(e[0]) for e in interpolation["int_energy"]]
 
     def as_dict(self):
         d = dict()

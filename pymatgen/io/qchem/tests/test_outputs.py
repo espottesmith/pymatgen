@@ -14,7 +14,8 @@ from pymatgen.io.qchem.outputs import (QCOutput,
                                        QCStringfileParser,
                                        QCPerpGradFileParser,
                                        QCVFileParser,
-                                       ScratchFileParser)
+                                       ScratchFileParser,
+                                       BernyLogParser)
 from pymatgen.util.testing import PymatgenTest
 
 try:
@@ -24,7 +25,7 @@ try:
 except ImportError:
     have_babel = False
 
-__author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath"
+__author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath, Evan Spotte-Smith"
 __copyright__ = "Copyright 2018, The Materials Project"
 __version__ = "0.1"
 
@@ -34,6 +35,8 @@ multi_job_dict = loadfn(os.path.join(
     os.path.dirname(__file__), "multi_job.json"))
 test_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
                         'test_files', "molecules")
+berny_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
+                        'test_files', "berny")
 
 property_list = {"errors",
                  "multiple_outputs",
@@ -459,6 +462,30 @@ class ScratchFileParserTest(PymatgenTest):
                     self.assertAlmostEqual(mat[i, j], 0)
 
         self.assertEqual("approximate", self.parsed.data["hess_approx_exact"][0])
+
+
+class BernyLogParserTest(PymatgenTest):
+
+    def setUp(self) -> None:
+        self.parsed = BernyLogParser(os.path.join(berny_dir, "berny.log"))
+        self.generate_berny_log_dict()
+
+    @staticmethod
+    def generate_berny_log_dict():
+        """
+        Used for testing pyberny log data.
+        """
+
+        dumpfn(BernyLogParser(filename=os.path.join(berny_dir, "berny.log")).as_dict(),
+               os.path.join(berny_dir, "berny.json"))
+
+    def test_berny(self):
+        filename = os.path.join(berny_dir, "berny.log")
+        parsed = BernyLogParser(filename=filename)
+
+        basis = loadfn(os.path.join(berny_dir, "berny.json"))
+
+        self.assertDictEqual(parsed.as_dict(), basis)
 
 
 if __name__ == "__main__":

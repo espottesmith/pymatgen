@@ -1732,7 +1732,7 @@ class ScratchFileParser(MSONable):
         self.data["energy"] = energy
 
         header_pattern = r"\$gradient"
-        row_pattern = r"\s+([\d\-\.Ee]+)\s*([\d\-\.Ee]+)\s*([\d\-\.Ee]+)"
+        row_pattern = r"\s+([\d\-\+\.Ee]+)\s*([\d\-\+\.Ee]+)\s*([\d\-\+\.Ee]+)"
         footer_pattern = r"\$end"
 
         temp_data = read_table_pattern(self.text,
@@ -1741,10 +1741,9 @@ class ScratchFileParser(MSONable):
                                        footer_pattern=footer_pattern)
 
         # There should only be one of these, right?
+        gradient = None
         for ii, gg in enumerate(temp_data):
-            if gg == [] or None:
-                gradient = None
-            else:
+            if gg not in [[], None]:
                 gradient = process_parsed_coords(gg)
 
         self.data["gradient"] = gradient

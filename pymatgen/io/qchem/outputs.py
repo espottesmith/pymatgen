@@ -1994,7 +1994,7 @@ class BernyLogParser(MSONable):
         update = read_pattern(
             self.text, {
                 "hessian": r"Hessian update information:\n\*\s+Change: RMS: ([0-9\.\-e]+), max: ([0-9\.\-e]+)",
-                "trust": r"Trust update: Fletcher's parameter: ([0-9\-\.]+)"
+                "trust": r"Trust update: Fletcher's parameter: ([0-9\-\.inf]+)"
             }
         )
 
@@ -2008,7 +2008,13 @@ class BernyLogParser(MSONable):
         if update["trust"] is None:
             self.data["trust_update_fletcher"] = None
         else:
-            self.data["trust_update_rms"] = [float(e[0]) for e in update["trust"]]
+            trusts = list()
+            for entry in update["trust"]:
+                if "inf" in entry[0]:
+                    trusts.append(-np.inf)
+                else:
+                    trusts.append(float(entry[0]))
+            self.data["trust_update_rms"] = trusts
 
     def _parse_walltime(self):
         update = read_pattern(

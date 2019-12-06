@@ -1811,6 +1811,7 @@ class BernyLogParser(MSONable):
         self._parse_cart_trans()
         self._parse_convergence()
         self._parse_update()
+        self._parse_walltime()
 
     def _parse_internal_coords(self):
         internal = read_pattern(
@@ -1834,17 +1835,18 @@ class BernyLogParser(MSONable):
             else:
                 internal[k] = int(v[0][0])
 
-        self.data["frags"] = internal["frags"]
-        self.data["internal"] = internal["internal"]
-        self.data["bonds_strong"] = internal["bonds"] or 0
-        self.data["bonds_weak"] = internal["wbonds"] or 0
-        self.data["bonds_superweak"] = internal["swbonds"] or 0
-        self.data["angles_strong"] = internal["angles"] or 0
-        self.data["angles_weak"] = internal["wangles"] or 0
-        self.data["angles_superweak"] = internal["swangles"] or 0
-        self.data["dihedrals_strong"] = internal["dihedrals"] or 0
-        self.data["dihedrals_weak"] = internal["wdihedrals"] or 0
-        self.data["dihedrals_superweak"] = internal["swdihedrals"] or 0
+        self.data["internals"] = dict()
+        self.data["internals"]["frags"] = internal["frags"]
+        self.data["internals"]["num_coords"] = internal["internal"]
+        self.data["internals"]["bonds_strong"] = internal["bonds"] or 0
+        self.data["internals"]["bonds_weak"] = internal["wbonds"] or 0
+        self.data["internals"]["bonds_superweak"] = internal["swbonds"] or 0
+        self.data["internals"]["angles_strong"] = internal["angles"] or 0
+        self.data["internals"]["angles_weak"] = internal["wangles"] or 0
+        self.data["internals"]["angles_superweak"] = internal["swangles"] or 0
+        self.data["internals"]["dihedrals_strong"] = internal["dihedrals"] or 0
+        self.data["internals"]["dihedrals_weak"] = internal["wdihedrals"] or 0
+        self.data["internals"]["dihedrals_superweak"] = internal["swdihedrals"] or 0
 
     def _parse_energy(self):
         energy = read_pattern(
@@ -2007,6 +2009,19 @@ class BernyLogParser(MSONable):
             self.data["trust_update_fletcher"] = None
         else:
             self.data["trust_update_rms"] = [float(e[0]) for e in update["trust"]]
+
+    def _parse_walltime(self):
+        update = read_pattern(
+            self.text, {
+                "key": r"Time of last step:\s+([0-9\.]+)s",
+            }
+        )
+
+        step_times = list()
+        for time in update.get("key", list()):
+            step_times.append(float(time[0]))
+        self.data["opt_step_times"] = step_times
+        self.data["opt_walltime"] = sum(step_times)
 
     def as_dict(self):
         d = dict()

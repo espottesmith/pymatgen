@@ -56,7 +56,8 @@ class QCInput(MSONable):
             Ex. scan = {"stre": ["3 6 1.5 1.9 0.1"], "tors": ["1 2 3 4 -180 180 15"]}
     """
 
-    def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None, smx=None, scan=None, plots=None):
+    def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None,
+                 smx=None, scan=None, plots=None):
         self.molecule = molecule
         self.rem = lower_and_check_unique(rem)
         self.opt = opt
@@ -278,13 +279,15 @@ class QCInput(MSONable):
         if len(molecule["reactants"]) == 1:
             start = generate_string_start(molecule["products"],
                                           molecule["reactants"][0],
-                                          OpenBabelNN())
+                                          OpenBabelNN(),
+                                          separation_dist=1.6)
             reactants = start["products"]
             products = start["reactants"]
         elif len(molecule["products"]) == 1:
             start = generate_string_start(molecule["reactants"],
                                           molecule["products"][0],
-                                          OpenBabelNN())
+                                          OpenBabelNN(),
+                                          separation_dist=1.6)
             reactants = start["reactants"]
             products = start["products"]
         else:

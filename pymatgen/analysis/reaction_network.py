@@ -113,9 +113,11 @@ class ReactionNetwork(MSONable):
         self.intramol_single_bond_change()
         self.intermol_single_bond_change()
         self.coordination_bond_change()
+        #TODO: Add this back
+
         self.concerted_break1_form1()
-        self.concerted_break2_form2()
-        self.concerted_redox_single_bond_change()
+        # self.concerted_break2_form2()
+        # self.concerted_redox_single_bond_change()
 
         self.PR_record = self.build_PR_record()
         self.min_cost = {}
@@ -216,7 +218,7 @@ class ReactionNetwork(MSONable):
         #     M = Li or Mg
         #     comp(AM) = comp(A) + comp(M)
         #     charge(AM) = charge(A) + charge(M)
-        #     removing two M-containing edges in AM yields two disconnected subgraphs that are isomorphic to B and C
+        #     removing two M-containing edges in AM yields two disconnected subgraphs that are isomorphic to M and A
         M_entries = {}
         for formula in self.entries:
             if formula == "Li1" or formula == "Mg1":

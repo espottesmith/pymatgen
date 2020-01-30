@@ -20,7 +20,7 @@ from pymatgen.analysis.fragmenter import metal_edge_extender
 import networkx as nx
 
 try:
-    import openbabel as ob
+    from openbabel import openbabel as ob
 
     have_babel = True
 except ImportError:
@@ -2063,17 +2063,11 @@ def check_for_structure_changes(mol1, mol2):
 
     # Can add logic to check the distances in the future if desired
 
-    initial_mol_graph = MoleculeGraph.with_local_env_strategy(mol1,
-                                                              OpenBabelNN(),
-                                                              reorder=False,
-                                                              extend_structure=False)
-    initial_mol_graph = metal_edge_extender(initial_mol_graph)
+    initial_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[0],
+                                                              OpenBabelNN())
     initial_graph = initial_mol_graph.graph
-    last_mol_graph = MoleculeGraph.with_local_env_strategy(mol2,
-                                                           OpenBabelNN(),
-                                                           reorder=False,
-                                                           extend_structure=False)
-    last_mol_graph = metal_edge_extender(last_mol_graph)
+    last_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[1],
+                                                           OpenBabelNN())
     last_graph = last_mol_graph.graph
     if initial_mol_graph.isomorphic_to(last_mol_graph):
         return "no_change"

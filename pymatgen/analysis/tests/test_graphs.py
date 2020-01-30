@@ -17,10 +17,11 @@ from pymatgen.analysis.local_env import (
     MinimumOKeeffeNN,
     OpenBabelNN,
     CutOffDictNN,
+    VoronoiNN
 )
 from pymatgen.util.testing import PymatgenTest
 try:
-    import openbabel as ob
+    from openbabel import openbabel as ob
 except ImportError:
     ob = None
 try:
@@ -132,6 +133,11 @@ class StructureGraphTest(PymatgenTest):
 
     def tearDown(self):
         warnings.simplefilter("default")
+
+    def test_inappropriate_construction(self):
+        # Check inappropriate strategy
+        with self.assertRaises(ValueError):
+            StructureGraph.with_local_env_strategy(self.NiO, OpenBabelNN())
 
     def test_properties(self):
 
@@ -723,10 +729,13 @@ class MoleculeGraphTest(unittest.TestCase):
                 )
 
         mol_graph_edges = MoleculeGraph.with_edges(self.pc, edges=edges_pc)
-        mol_graph_strat = MoleculeGraph.with_local_env_strategy(
-            self.pc, OpenBabelNN(), reorder=False, extend_structure=False
-        )
+        mol_graph_strat = MoleculeGraph.with_local_env_strategy(self.pc, OpenBabelNN())
+
         self.assertTrue(mol_graph_edges.isomorphic_to(mol_graph_strat))
+
+        # Check inappropriate strategy
+        with self.assertRaises(ValueError):
+            MoleculeGraph.with_local_env_strategy(self.pc, VoronoiNN())
 
     def test_properties(self):
         self.assertEqual(self.cyclohexene.name, "bonds")

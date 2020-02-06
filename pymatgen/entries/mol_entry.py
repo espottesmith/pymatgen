@@ -7,6 +7,8 @@ import json
 
 from monty.json import MontyEncoder, MontyDecoder
 
+from networkx.readwrite import json_graph
+
 from pymatgen.core.composition import Composition
 from monty.json import MSONable
 from pymatgen.analysis.graphs import MoleculeGraph, MolGraphSplitError
@@ -16,7 +18,8 @@ from pymatgen import Molecule
 from pymatgen.analysis.fragmenter import metal_edge_extender
 
 """
-
+A representation of a Molecule, its connectivity (with
+pymatgen.analysis.graphs.MoleculeGraph), and its thermodynamic properties.
 """
 
 __author__ = "Sam Blau"
@@ -65,9 +68,7 @@ class MoleculeEntry(MSONable):
         self.attribute = attribute
 
         mol_graph = MoleculeGraph.with_local_env_strategy(self.molecule,
-                                                          OpenBabelNN(),
-                                                          reorder=False,
-                                                          extend_structure=False)
+                                                          OpenBabelNN())
         self.mol_graph = metal_edge_extender(mol_graph)
 
     @property
@@ -110,6 +111,35 @@ class MoleculeEntry(MSONable):
     @property
     def Nbonds(self):
         return len(self.edges)
+
+    def as_dict(self):
+        """
+        Convert to a dictionary (for dumping to JSON).
+        """
+
+        d = {"@module": self.__class__.__module__,
+             "@class": self.__class__.__name__,
+             "molecule": self.molecule.as_dict(),
+             "energy": self.uncorrected_energy,
+             "enthalpy": self.enthalpy,
+             "entropy": self.entropy,
+             "correction": self.correction,
+             "composition": self.composition,
+             "parameters": self.parameters,
+             "entry_id": self.entry_id,
+             "attribute": self.attribute}
+
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+
+        molecule = Molecule.from_dict(d["molecule"])
+
+        return cls(molecule, d["energy"], correction=d["correction"],
+                   enthalpy=d["enthalpy"], entropy=d["entropy"],
+                   parameters=d["parameters"], entry_id=d["entry_id"],
+                   attribute=d["attribute"])
 
     def __repr__(self):
         output = ["MoleculeEntry {} - {} - E{} - C{}".format(self.entry_id,

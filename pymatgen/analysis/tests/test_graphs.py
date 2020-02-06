@@ -1058,13 +1058,9 @@ class GraphUtilsTest(unittest.TestCase):
         liec0 = Molecule.from_file(os.path.join(molecule_dir, "liec0.mol"))
         ro_liec0 = Molecule.from_file(os.path.join(molecule_dir, "ro_liec0.mol"))
 
-        rct_mg = MoleculeGraph.with_local_env_strategy(liec0, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
+        rct_mg = MoleculeGraph.with_local_env_strategy(liec0, OpenBabelNN())
 
-        pro_mg = MoleculeGraph.with_local_env_strategy(ro_liec0, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
+        pro_mg = MoleculeGraph.with_local_env_strategy(ro_liec0, OpenBabelNN())
 
         self.assertEqual(disconnected_isomorphic(rct_mg.graph, pro_mg.graph,
                                                  num_allowed=0),

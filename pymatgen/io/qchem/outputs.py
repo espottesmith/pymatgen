@@ -1142,8 +1142,7 @@ class QCOutput(MSONable):
             coords=self.data.get("geometries")[0],
             charge=self.data.get("charge"),
             spin_multiplicity=self.data.get("multiplicity"))
-        reactant_mg = MoleculeGraph.with_local_env_strategy(reactant_mol, OpenBabelNN(),
-                                                            extend_structure=False, reorder=False)
+        reactant_mg = MoleculeGraph.with_local_env_strategy(reactant_mol, OpenBabelNN())
         self.data["string_initial_reactant_molecules"] = [f.molecule for f in reactant_mg.get_disconnected_fragments()]
 
         product_mol = Molecule(
@@ -1151,8 +1150,7 @@ class QCOutput(MSONable):
             coords=self.data.get("geometries")[2],
             charge=self.data.get("charge"),
             spin_multiplicity=self.data.get("multiplicity"))
-        product_mg = MoleculeGraph.with_local_env_strategy(product_mol, OpenBabelNN(),
-                                                           extend_structure=False, reorder=False)
+        product_mg = MoleculeGraph.with_local_env_strategy(product_mol, OpenBabelNN())
         self.data["string_initial_product_molecules"] = [f.molecule for f in product_mg.get_disconnected_fragments()]
 
     def _read_freezing_string_data(self):

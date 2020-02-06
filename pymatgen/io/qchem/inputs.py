@@ -529,9 +529,7 @@ class QCInput(MSONable):
             species=species_rct,
             coords=coords_rct,
             charge=charge_rct)
-        rct_mg = MoleculeGraph.with_local_env_strategy(rct_mol, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
+        rct_mg = MoleculeGraph.with_local_env_strategy(rct_mol, OpenBabelNN())
 
         mol["reactants"] = [r.molecule for r
                             in rct_mg.get_disconnected_fragments()]
@@ -550,9 +548,7 @@ class QCInput(MSONable):
             species=species_pro,
             coords=coords_pro,
             charge=charge_pro)
-        pro_mg = MoleculeGraph.with_local_env_strategy(pro_mol, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
+        pro_mg = MoleculeGraph.with_local_env_strategy(pro_mol, OpenBabelNN())
         mol["products"] = [p.molecule for p in pro_mg.get_disconnected_fragments()]
 
         return mol

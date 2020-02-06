@@ -44,12 +44,9 @@ class QCUtilsTest(unittest.TestCase):
         del self.pro
 
     def test_map_atoms_reaction(self):
-        rct_1 = MoleculeGraph.with_local_env_strategy(self.rct_1, CovalentBondNN(),
-                                                      reorder=False, extend_structure=False)
-        rct_2 = MoleculeGraph.with_local_env_strategy(self.rct_2, CovalentBondNN(),
-                                                      reorder=False, extend_structure=False)
-        pro = MoleculeGraph.with_local_env_strategy(self.pro, CovalentBondNN(),
-                                                    reorder=False, extend_structure=False)
+        rct_1 = MoleculeGraph.with_local_env_strategy(self.rct_1, CovalentBondNN())
+        rct_2 = MoleculeGraph.with_local_env_strategy(self.rct_2, CovalentBondNN())
+        pro = MoleculeGraph.with_local_env_strategy(self.pro, CovalentBondNN())
 
         mapping = map_atoms_reaction([rct_1, rct_2], pro)
 
@@ -61,13 +58,9 @@ class QCUtilsTest(unittest.TestCase):
         liec0 = Molecule.from_file(join(test_dir, "liec0.mol"))
         ro_liec0 = Molecule.from_file(join(test_dir, "ro_liec0.mol"))
 
-        rct_mg = MoleculeGraph.with_local_env_strategy(liec0, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
+        rct_mg = MoleculeGraph.with_local_env_strategy(liec0, OpenBabelNN())
 
-        pro_mg = MoleculeGraph.with_local_env_strategy(ro_liec0, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
+        pro_mg = MoleculeGraph.with_local_env_strategy(ro_liec0, OpenBabelNN())
 
         with self.assertRaises(ValueError):
             map_atoms_reaction([rct_mg], pro_mg, num_additions_allowed=0)
@@ -80,12 +73,8 @@ class QCUtilsTest(unittest.TestCase):
         mol_1 = Molecule.from_file(os.path.join(test_dir, "orientation_1.mol"))
         mol_2 = Molecule.from_file(os.path.join(test_dir, "orientation_2.mol"))
 
-        mg_1 = MoleculeGraph.with_local_env_strategy(mol_1, CovalentBondNN(),
-                                                     reorder=False,
-                                                     extend_structure=False)
-        mg_2 = MoleculeGraph.with_local_env_strategy(mol_2, CovalentBondNN(),
-                                                     reorder=False,
-                                                     extend_structure=False)
+        mg_1 = MoleculeGraph.with_local_env_strategy(mol_1, CovalentBondNN())
+        mg_2 = MoleculeGraph.with_local_env_strategy(mol_2, CovalentBondNN())
 
         vec = orient_molecule(mg_1, mg_2)
         right_vec = [-0.99041777, -0.26688475, 0.05017607,
@@ -96,7 +85,6 @@ class QCUtilsTest(unittest.TestCase):
     def test_generate_string_start(self):
         strat = CovalentBondNN()
         molecules = generate_string_start([self.rct_1, self.rct_2], self.pro, strat,
-                              reorder=False, extend_structure=False,
                               map_atoms=True)
 
         self.assertEqual(len(molecules["reactants"]), 2)
@@ -108,7 +96,6 @@ class QCUtilsTest(unittest.TestCase):
         self.assertAlmostEqual(distance, 4.5165736522096065)
 
         molecules_large_gap = generate_string_start([self.rct_1, self.rct_2], self.pro, strat,
-                              reorder=False, extend_structure=False,
                               map_atoms=True, separation_dist=2.5)
 
         distance_large = np.linalg.norm(molecules_large_gap["reactants"][0].center_of_mass -

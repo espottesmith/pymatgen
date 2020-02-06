@@ -451,8 +451,7 @@ def orient_molecule(mol_1, mol_2, rotate=True):
     return leastsq(all_dists, np.zeros(num_vars))[0]
 
 
-def generate_string_start(reactants, product, strategy, reorder=False,
-                          extend_structure=False, map_atoms=True,
+def generate_string_start(reactants, product, strategy, map_atoms=True,
                           separation_dist=1.5):
     """
     For a reaction of type A + B <-> C, manipulate C in such a way as to provide
@@ -463,8 +462,6 @@ def generate_string_start(reactants, product, strategy, reorder=False,
     :param product: Molecule object representing the reaction product
     :param strategy: local_env NearNeighbors object used to generate
         MoleculeGraphs
-    :param reorder: parameter for local_env strategies
-    :param extend_structure: parameter for local_env strategies
     :param map_atoms: if True (default), use map_atoms_reaction to ensure that
         the nodes in the reactant and product graphs are the same. If False,
         the user must ensure that the product molecule has its atoms in the
@@ -491,21 +488,15 @@ def generate_string_start(reactants, product, strategy, reorder=False,
         for site in rct:
             species.append(site.specie)
             coords.append(site.coords)
-        rct_mgs.append(MoleculeGraph.with_local_env_strategy(rct, strategy,
-                                                             reorder=reorder,
-                                                             extend_structure=extend_structure))
+        rct_mgs.append(MoleculeGraph.with_local_env_strategy(rct, strategy))
         distance += 5
     # print(rct_mgs)
 
     # generate composite Molecule and MoleculeGraph including all reactants
     all_rct = Molecule(species, coords, charge=charge, spin_multiplicity=spin)
-    all_rct_mg = MoleculeGraph.with_local_env_strategy(all_rct, strategy,
-                                                       reorder=reorder,
-                                                       extend_structure=extend_structure)
+    all_rct_mg = MoleculeGraph.with_local_env_strategy(all_rct, strategy)
 
-    pro_mg = MoleculeGraph.with_local_env_strategy(product, strategy,
-                                                   reorder=reorder,
-                                                   extend_structure=extend_structure)
+    pro_mg = MoleculeGraph.with_local_env_strategy(product, strategy)
 
     # perform atom mapping, and reorder product accordingly
     if map_atoms:
@@ -522,9 +513,7 @@ def generate_string_start(reactants, product, strategy, reorder=False,
             coords[mapping[e]] = site.coords
         new_pro = Molecule(species, coords, charge=charge,
                            spin_multiplicity=spin)
-        pro_mg = MoleculeGraph.with_local_env_strategy(new_pro, strategy,
-                                                       reorder=reorder,
-                                                       extend_structure=extend_structure)
+        pro_mg = MoleculeGraph.with_local_env_strategy(new_pro, strategy)
 
     # break bonds to get reactants from product
     diff_graph = nx.difference(pro_mg.graph, all_rct_mg.graph)

@@ -7,21 +7,25 @@ import logging
 import copy
 import itertools
 import heapq
+
 import numpy as np
+import networkx as nx
+from networkx.readwrite import json_graph
+from networkx.algorithms import bipartite
+
 from monty.json import MSONable, MontyDecoder
+
 from pymatgen.analysis.graphs import MoleculeGraph, MolGraphSplitError
 from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.io.babel import BabelMolAdaptor
 from pymatgen import Molecule
 from pymatgen.analysis.fragmenter import metal_edge_extender
-import networkx as nx
-from networkx.algorithms import bipartite
 from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.core.composition import CompositionError
 from pymatgen.entries.rxn_entry import ReactionEntry
 
 
-__author__ = "Samuel Blau"
+__author__ = "Samuel Blau, Evan Spotte-Smith"
 __copyright__ = "Copyright 2019, The Materials Project"
 __version__ = "1.0"
 __maintainer__ = "Samuel Blau"
@@ -37,23 +41,45 @@ class ReactionNetwork(MSONable):
     """
     Class to create a reaction network from entries
 
-    Args:
-        input_entries ([MoleculeEntry]): A list of MoleculeEntry objects.
-        electron_free_energy (float): The Gibbs free energy of an electron.
-            Defaults to -2.15 eV, the value at which the LiEC SEI forms.
+    For instantiating from a list of MoleculeEntries, use
+    ReactionNetwork.from_input_entries. For instantiating from a previously
+    saved ReactionNetwork (as a dict), use ReactionNetwork.from_dict().
     """
 
-    def __init__(self, input_entries, electron_free_energy=-2.15):
+    def __init__(self, electron_free_energy, entries_dict, entries_list, graph, PR_record, min_cost,
+                 num_starts):
+        """
 
-        self.input_entries = input_entries
+        :param electron_free_energy: Electron free energy (in eV)
+        :param entries_dict: dict of dicts of dicts of lists (d[formula][bonds][charge])
+        :param entries_list: list of unique entries in entries_dict
+        :param graph: nx.DiGraph representing connections in the network
+        :param PR_record: dict containing reaction prerequisites
+        :param min_cost: dict containing costs of entries in the network
+        :param num_starts: <-- What DOES this represent?
+        """
+
         self.electron_free_energy = electron_free_energy
-        self.entries = {}
-        self.entries_list = []
 
-        print(len(self.input_entries),"input entries")
+        self.entries = entries_dict
+        self.entries_list = entries_list
+
+        self.graph = graph
+        self.PR_record = PR_record
+
+        self.min_cost = min_cost
+        self.num_starts = num_starts
+
+    @classmethod
+    def from_input_entries(cls, input_entries, electron_free_energy=-2.15):
+
+        entries = dict()
+        entries_list = list()
+
+        print(len(input_entries),"input entries")
 
         connected_entries = []
-        for entry in self.input_entries:
+        for entry in input_entries:
             # print(len(entry.molecule))
             if len(entry.molecule) > 1:
                 if nx.is_weakly_connected(entry.graph):
@@ -69,14 +95,14 @@ class ReactionNetwork(MSONable):
         sorted_entries_0 = sorted(connected_entries, key=get_formula)
         for k1, g1 in itertools.groupby(sorted_entries_0, get_formula):
             sorted_entries_1 = sorted(list(g1),key=get_Nbonds)
-            self.entries[k1] = {}
+            entries[k1] = dict()
             for k2, g2 in itertools.groupby(sorted_entries_1, get_Nbonds):
                 sorted_entries_2 = sorted(list(g2),key=get_charge)
-                self.entries[k1][k2] = {}
+                entries[k1][k2] = dict()
                 for k3, g3 in itertools.groupby(sorted_entries_2, get_charge):
                     sorted_entries_3 = list(g3)
                     if len(sorted_entries_3) > 1:
-                        unique = []
+                        unique = list()
                         for entry in sorted_entries_3:
                             isomorphic_found = False
                             for ii,Uentry in enumerate(unique):
@@ -88,40 +114,42 @@ class ReactionNetwork(MSONable):
                                             unique[ii] = entry
                                             # if entry.energy > Uentry.energy:
                                             #     print("WARNING: Free energy lower but electronic energy higher!")
-                                    elif entry.free_energy != None:
+                                    elif entry.free_energy() is not None:
                                         unique[ii] = entry
                                     elif entry.energy < Uentry.energy:
                                         unique[ii] = entry
                                     break
                             if not isomorphic_found:
                                 unique.append(entry)
-                        self.entries[k1][k2][k3] = unique
+                        entries[k1][k2][k3] = unique
                     else:
-                        self.entries[k1][k2][k3] = sorted_entries_3
-                    for entry in self.entries[k1][k2][k3]:
-                        self.entries_list.append(entry)
+                        entries[k1][k2][k3] = sorted_entries_3
+                    for entry in entries[k1][k2][k3]:
+                        entries_list.append(entry)
 
-        print(len(self.entries_list), "unique entries")
+        print(len(entries_list), "unique entries")
 
-        for ii, entry in enumerate(self.entries_list):
+        for ii, entry in enumerate(entries_list):
             entry.parameters["ind"] = ii
 
-        self.graph = nx.DiGraph()
-        self.graph.add_nodes_from(range(len(self.entries_list)),bipartite=0)
+        graph = nx.DiGraph()
+        graph.add_nodes_from(range(len(entries_list)),bipartite=0)
 
-        self.one_electron_redox()
-        self.intramol_single_bond_change()
-        self.intermol_single_bond_change()
-        self.coordination_bond_change()
-        #TODO: Add this back
+        network = cls(electron_free_energy, entries, entries_list, graph,
+                      None, dict(), None)
 
-        self.concerted_break1_form1()
+        network.one_electron_redox()
+        network.intramol_single_bond_change()
+        network.intermol_single_bond_change()
+        network.coordination_bond_change()
+
+        # self.concerted_break1_form1()
         # self.concerted_break2_form2()
         # self.concerted_redox_single_bond_change()
 
-        self.PR_record = self.build_PR_record()
-        self.min_cost = {}
-        self.num_starts = None
+        network.PR_record = network.build_PR_record()
+
+        return network
 
     def one_electron_redox(self):
         # One electron oxidation / reduction without change to bonding
@@ -668,7 +696,7 @@ class ReactionNetwork(MSONable):
         return np.exp(free_energy)
 
     def build_PR_record(self):
-        PR_record = {}
+        PR_record = dict()
         for node in self.graph.nodes():
             if self.graph.node[node]["bipartite"] == 0:
                 PR_record[node] = []
@@ -935,6 +963,53 @@ class ReactionNetwork(MSONable):
                     if not neg_found:
                         sinks.append(node)
         return sinks
+
+    def as_dict(self):
+
+        entries = dict()
+        for formula in self.entries.keys():
+            entries[formula] = dict()
+            for bonds in self.entries[formula].keys():
+                entries[formula][bonds] = dict()
+                for charge in self.entries[formula][bonds].keys():
+                    entries[formula][bonds][charge] = list()
+                    for entry in self.entries[formula][bonds][charge]:
+                        entries[formula][bonds][charge].append(entry.as_dict())
+
+        entries_list = [e.as_dict() for e in self.entries_list]
+
+        d = {"@module": self.__class__.__module__,
+             "@class": self.__class__.__name__,
+             "entries_dict": entries,
+             "entries_list": entries_list,
+             "electron_free_energy": self.electron_free_energy,
+             "graph": json_graph.adjacency_data(self.graph),
+             "PR_record": self.PR_record,
+             "min_cost": self.min_cost,
+             "num_starts": self.num_starts}
+
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+
+        entries = dict()
+        d_entries = d["entries_dict"]
+        for formula in d_entries.keys():
+            entries[formula] = dict()
+            for bonds in d_entries[formula].keys():
+                entries[formula][bonds] = dict()
+                for charge in d_entries[formula][bonds].keys():
+                    entries[formula][bonds][charge] = list()
+                    for entry in d_entries[formula][bonds][charge]:
+                        entries[formula][bonds][charge].append(MoleculeEntry.from_dict(entry))
+
+        entries_list = [MoleculeEntry.from_dict(e) for e in d["entries_list"]]
+
+        graph = json_graph.adjacency_graph(d["graph"], directed=True)
+
+        return cls(d["electron_free_energy"], entries, entries_list, graph,
+                   d["PR_record"], d["min_cost"], d["num_starts"])
 
 
 def entries_from_reaction_label(network, label):

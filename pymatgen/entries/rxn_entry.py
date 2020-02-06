@@ -6,14 +6,16 @@
 import json
 
 from monty.json import MontyEncoder, MontyDecoder
-
 from monty.json import MSONable
+
+from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.analysis.reaction_rates import (ReactionRateCalculator,
                                               BEPRateCalculator,
                                               ExpandedBEPRateCalculator)
 
 """
-
+A representation of a chemical reaction, including its kinetics, based largely
+on pymatgen.entries.mol_entry.MoleculeEntry.
 """
 
 
@@ -205,6 +207,63 @@ class ReactionEntry(MSONable):
 
         return self.rate.calculate_rate(concentrations, temperature=temperature,
                                         kappa=self.kappa)
+
+    def as_dict(self):
+        """
+        Convert to a dictionary (for dumping to JSON).
+        """
+
+        if self.transition_state is None:
+            transition_state = None
+        else:
+            transition_state = self.transition_state.as_dict()
+
+        if self.reference_reaction is None:
+            reference_reaction = None
+        else:
+            reference_reaction = self.reference_reaction.as_dict()
+
+        d = {"@module": self.__class__.__module__,
+             "@class": self.__class__.__name__,
+             "reactants": [r.as_dict() for r in self.reactants],
+             "products": [p.as_dict() for p in self.products],
+             "transition_state": transition_state,
+             "reference_reaction": reference_reaction,
+             "parameters": self.parameters,
+             "entry_id": self.entry_id,
+             "attribute": self.attribute,
+             "alpha": self.alpha,
+             "kappa": self.kappa,
+             "approximate_method": self.approximate_method}
+
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        reactants = list()
+        for r in d["reactants"]:
+            reactants.append(MoleculeEntry.from_dict(r))
+
+        products = list()
+        for p in d["products"]:
+            products.append(MoleculeEntry.from_dict(p))
+
+        if d["transition_state"] is None:
+            transition_state = None
+        else:
+            transition_state = MoleculeEntry.from_dict(d["transition_state"])
+
+        if d["reference_reaction"] is None:
+            reference_reaction = None
+        else:
+            reference_reaction = cls.from_dict(d["reference_reaction"])
+
+        return cls(reactants, products, transition_state=transition_state,
+                   reference_reaction=reference_reaction,
+                   approximate_method=d["approximate_method"],
+                   alpha=d["alpha"], kappa=d["kappa"],
+                   parameters=d["parameters"], entry_id=d["entry_id"],
+                   attribute=d["attribute"])
 
     def __repr__(self):
         name = "ReactionEntry {}".format(self.entry_id)

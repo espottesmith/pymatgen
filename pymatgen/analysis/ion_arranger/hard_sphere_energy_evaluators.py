@@ -12,7 +12,7 @@ from six.moves import range
 from six.moves import zip
 
 try:
-    import openbabel as ob
+    from openbabel import openbabel as ob
 except ImportError:
     ob = None
 

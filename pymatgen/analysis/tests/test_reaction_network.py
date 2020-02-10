@@ -19,7 +19,7 @@ from pymatgen.analysis.reaction_network import (ReactionNetwork,
                                                 generate_reaction_entries)
 
 try:
-    import openbabel as ob
+    from openbabel import openbabel as ob
 except ImportError:
     ob = None
 

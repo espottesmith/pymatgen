@@ -18,7 +18,7 @@ from pymatgen.io.qchem.utils import (map_atoms_reaction,
 # from pymatgen.util.testing import PymatgenTest
 
 try:
-    import openbabel
+    from openbabel import openbabel
     have_babel = True
 except ImportError:
     have_babel = False

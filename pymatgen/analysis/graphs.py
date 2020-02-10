@@ -270,7 +270,7 @@ class StructureGraph(MSONable):
         Constructor for MoleculeGraph, using pre-existing or pre-defined edges
         with optional edge parameters.
 
-        :param molecule: Molecule object
+        :param structure: Molecule object
         :param edges: dict representing the bonds of the functional
             group (format: {(from_index, to_index, from_image, to_image): props},
             where props is a dictionary of properties, including weight.
@@ -2084,7 +2084,7 @@ class MoleculeGraph(MSONable):
                 # relabel nodes in graph to match mapping
                 new_graph = nx.relabel_nodes(subg, mapping)
 
-                species = nx.get_node_attributes(new_graph, "specie")
+                species = ƒnx.get_node_attributes(new_graph, "specie")
                 coords = nx.get_node_attributes(new_graph, "coords")
                 raw_props = nx.get_node_attributes(new_graph, "properties")
 

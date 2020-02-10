@@ -13,7 +13,7 @@ from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Molecule
 
 try:
-    import openbabel as ob
+    from openbabel import openbabel as ob
 except ImportError:
     ob = None
 

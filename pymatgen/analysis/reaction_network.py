@@ -9,9 +9,11 @@ import itertools
 import heapq
 
 import numpy as np
+
 import networkx as nx
 from networkx.readwrite import json_graph
 from networkx.algorithms import bipartite
+import networkx.algorithms.isomorphism as iso
 
 from monty.json import MSONable, MontyDecoder
 
@@ -46,17 +48,25 @@ class ReactionNetwork(MSONable):
     saved ReactionNetwork (as a dict), use ReactionNetwork.from_dict().
     """
 
-    def __init__(self, electron_free_energy, entries_dict, entries_list, graph, PR_record, min_cost,
-                 num_starts):
+    def __init__(self, electron_free_energy, entries_dict, entries_list, buckets,
+                 graph, PR_record, min_cost, num_starts, local_order=1, consider_charge_categories=True):
         """
 
         :param electron_free_energy: Electron free energy (in eV)
         :param entries_dict: dict of dicts of dicts of lists (d[formula][bonds][charge])
         :param entries_list: list of unique entries in entries_dict
+        :param buckets: dict containing "reactions" classified by reaction type
         :param graph: nx.DiGraph representing connections in the network
         :param PR_record: dict containing reaction prerequisites
         :param min_cost: dict containing costs of entries in the network
         :param num_starts: <-- What DOES this represent?
+        :param local_order: int indicating the extent to which the local
+            environment of a bond should be taken into account when categorizing
+            reactions. Default is 1, meaning that first-nearest-neighbors are
+            taken into account, but no other neighbors.
+        :param consider_charge_categories: bool. If True (default), reactions
+            involving different total charges should always be placed in
+            different categories.
         """
 
         self.electron_free_energy = electron_free_energy
@@ -70,8 +80,31 @@ class ReactionNetwork(MSONable):
         self.min_cost = min_cost
         self.num_starts = num_starts
 
+        self.buckets = buckets
+        self.local_order = local_order
+        self.consider_charge_categories = consider_charge_categories
+
     @classmethod
-    def from_input_entries(cls, input_entries, electron_free_energy=-2.15):
+    def from_input_entries(cls, input_entries, local_order=1,
+                           consider_charge_categories=True,
+                           electron_free_energy=-2.15):
+        """
+        Generate a ReactionNetwork from a set of MoleculeEntries
+
+        :param input_entries: list of MoleculeEntries which will make up the
+            network
+        :param local_order: int indicating the extent to which the local
+            environment of a bond should be taken into account when categorizing
+            reactions. Default is 1, meaning that first-nearest-neighbors are
+            taken into account, but no other neighbors.
+        :param consider_charge_categories: bool. If True (default), reactions
+            involving different total charges should always be placed in
+            different categories.
+        :param electron_free_energy: float representing the Gibbs free energy
+            required to add an electron
+        :return:
+        """
+
 
         entries = dict()
         entries_list = list()
@@ -86,7 +119,7 @@ class ReactionNetwork(MSONable):
                     connected_entries.append(entry)
             else:
                 connected_entries.append(entry)
-        print(len(connected_entries),"connected entries")
+        print(len(connected_entries), "connected entries")
 
         get_formula = lambda x: x.formula
         get_Nbonds = lambda x: x.Nbonds
@@ -135,8 +168,9 @@ class ReactionNetwork(MSONable):
         graph = nx.DiGraph()
         graph.add_nodes_from(range(len(entries_list)),bipartite=0)
 
-        network = cls(electron_free_energy, entries, entries_list, graph,
-                      None, dict(), None)
+        network = cls(electron_free_energy, entries, entries_list, dict(),
+                      graph, None, dict(), None, local_order=local_order,
+                      consider_charge_categories=consider_charge_categories)
 
         network.one_electron_redox()
         network.intramol_single_bond_change()
@@ -182,6 +216,10 @@ class ReactionNetwork(MSONable):
         #     number of edges differ by 1
         #     identical charge
         #     removing one of the edges in the graph with more edges yields a graph isomorphic to the other entry
+        bucket_templates = list()
+
+        if "intramol_single_bond_change" not in self.buckets:
+            self.buckets["intramol_single_bond_change"] = dict()
 
         for formula in self.entries:
             Nbonds_list = list(self.entries[formula].keys())
@@ -191,6 +229,8 @@ class ReactionNetwork(MSONable):
                     Nbonds1 = Nbonds_list[ii+1]
                     if Nbonds1-Nbonds0 == 1:
                         for charge in self.entries[formula][Nbonds0]:
+                            if charge not in self.buckets["intramol_single_bond_change"] and self.consider_charge_categories:
+                                self.buckets["intramol_single_bond_change"][charge] = dict()
                             if charge in self.entries[formula][Nbonds1]:
                                 for entry1 in self.entries[formula][Nbonds1][charge]:
                                     for edge in entry1.edges:
@@ -200,6 +240,16 @@ class ReactionNetwork(MSONable):
                                             for entry0 in self.entries[formula][Nbonds0][charge]:
                                                 if entry0.mol_graph.isomorphic_to(mg):
                                                     self.add_reaction([entry0],[entry1],"intramol_single_bond_change")
+
+                                                    # Bucket the reaction
+                                                    indices = entry1.mol_graph.extract_bond_environment([edge],
+                                                                                                    order=self.local_order)
+                                                    subg = entry1.graph.subgraph(list(indices)).copy().to_undirected()
+
+                                                    bucket_templates = self.add_to_bucket("intramol_single_bond_change",
+                                                                                          [entry0], [entry1],
+                                                                                          subg, bucket_templates, charge)
+
                                                     break
 
 
@@ -211,10 +261,17 @@ class ReactionNetwork(MSONable):
         #     charge(A) = charge(B) + charge(C)
         #     removing one of the edges in A yields two disconnected subgraphs that are isomorphic to B and C
 
+        bucket_templates = list()
+
+        if "intermol_single_bond_change" not in self.buckets:
+            self.buckets["intermol_single_bond_change"] = dict()
+
         for formula in self.entries:
             for Nbonds in self.entries[formula]:
                 if Nbonds > 0:
                     for charge in self.entries[formula][Nbonds]:
+                        if charge not in self.buckets["intermol_single_bond_change"] and self.consider_charge_categories:
+                            self.buckets["intermol_single_bond_change"][charge] = dict()
                         for entry in self.entries[formula][Nbonds][charge]:
                             for edge in entry.edges:
                                 bond = [(edge[0],edge[1])]
@@ -233,7 +290,16 @@ class ReactionNetwork(MSONable):
                                                         if charge1 in self.entries[formula1][Nbonds1]:
                                                             for entry1 in self.entries[formula1][Nbonds1][charge1]:
                                                                 if frags[1].isomorphic_to(entry1.mol_graph):
-                                                                    self.add_reaction([entry],[entry0,entry1],"intermol_single_bond_change")
+                                                                    self.add_reaction([entry],[entry0, entry1],"intermol_single_bond_change")
+
+                                                                    indices = entry.mol_graph.extract_bond_environment([edge],
+                                                                                                                       order=self.local_order)
+                                                                    subg = entry.graph.subgraph(list(indices)).copy().to_undirected()
+
+                                                                    bucket_templates = self.add_to_bucket("intermol_single_bond_change",
+                                                                                                          [entry], [entry0, entry1],
+                                                                                                          subg, bucket_templates, charge)
+
                                                                     break
                                                         break
                                 except MolGraphSplitError:
@@ -247,6 +313,12 @@ class ReactionNetwork(MSONable):
         #     comp(AM) = comp(A) + comp(M)
         #     charge(AM) = charge(A) + charge(M)
         #     removing two M-containing edges in AM yields two disconnected subgraphs that are isomorphic to M and A
+
+        bucket_templates = list()
+
+        if "coordination_bond_change" not in self.buckets:
+            self.buckets["coordination_bond_change"] = dict()
+
         M_entries = {}
         for formula in self.entries:
             if formula == "Li1" or formula == "Mg1":
@@ -261,13 +333,15 @@ class ReactionNetwork(MSONable):
                     for Nbonds in self.entries[formula]:
                         if Nbonds > 2:
                             for charge in self.entries[formula][Nbonds]:
+                                if charge not in self.buckets["coordination_bond_change"] and self.consider_charge_categories:
+                                    self.buckets["coordination_bond_change"][charge] = dict()
                                 for entry in self.entries[formula][Nbonds][charge]:
                                     nosplit_M_bonds = []
                                     for edge in entry.edges:
                                         if str(entry.molecule.sites[edge[0]].species) in M_entries or str(entry.molecule.sites[edge[1]].species) in M_entries:
                                             M_bond = (edge[0],edge[1])
                                             try:
-                                                frags = entry.mol_graph.split_molecule_subgraphs([M_bond], allow_reverse=True)
+                                                _ = entry.mol_graph.split_molecule_subgraphs([M_bond], allow_reverse=True)
                                             except MolGraphSplitError:
                                                 nosplit_M_bonds.append(M_bond)
                                     bond_pairs = itertools.combinations(nosplit_M_bonds, 2)
@@ -296,6 +370,15 @@ class ReactionNetwork(MSONable):
                                                                         for nonM_entry in self.entries[nonM_formula][nonM_Nbonds][nonM_charge]:
                                                                             if frag.isomorphic_to(nonM_entry.mol_graph):
                                                                                 self.add_reaction([entry],[nonM_entry,M_entries[M_formula][M_charge]],"coordination_bond_change")
+
+                                                                                indices = entry.mol_graph.extract_bond_environment(bond_pair,
+                                                                                                                         order=self.local_order)
+                                                                                subg = entry.graph.subgraph(list(indices)).copy().to_undirected()
+
+                                                                                bucket_templates = self.add_to_bucket("coordination_bond_change",
+                                                                                                                      [entry], [nonM_entry, M_entries[M_formula][M_charge]],
+                                                                                                                      subg, bucket_templates, charge)
+
                                                                                 break
                                         except MolGraphSplitError:
                                             pass
@@ -841,7 +924,7 @@ class ReactionNetwork(MSONable):
                         if start not in PRs[node]:
                             path_exists = True
                             try:
-                                length,dij_path = nx.algorithms.simple_paths._bidirectional_dijkstra(
+                                length, dij_path = nx.algorithms.simple_paths._bidirectional_dijkstra(
                                     self.graph,
                                     source=hash(start),
                                     target=hash(node),
@@ -964,6 +1047,59 @@ class ReactionNetwork(MSONable):
                         sinks.append(node)
         return sinks
 
+    def add_to_bucket(self, category, reactants, products, environment,
+                      templates, charge):
+        """
+        Given reactants, products, and a local bonding environment, place a
+            reaction into a "bucket".
+
+        NOTE: redox is currently ignored
+
+        :param category: str representing a type of reaction
+        :param reactants: list of MoleculeEntry objects
+        :param products: list of MoleculeEntry objects
+        :param environment: a nx.Graph object representing a submolecule that
+            defines the type of reaction
+        :param templates: list of nx.Graph objects that define other buckets
+        :param charge: int representing the charge of the reaction
+        :return:
+        """
+
+        nm = iso.categorical_node_match("specie", "ERROR")
+
+        match = False
+        bucket_templates = copy.deepcopy(templates)
+
+        unit = (reactants, products)
+
+        for e, template in enumerate(bucket_templates):
+            if nx.is_isomorphic(environment, template, node_match=nm):
+                match = True
+                bucket_label = e
+                if self.consider_charge_categories:
+                    if bucket_label in self.buckets[category][charge]:
+                        self.buckets[category][charge][bucket_label].append(unit)
+                    else:
+                        self.buckets[category][charge][bucket_label] = [unit]
+
+                else:
+                    if bucket_label in self.buckets[category]:
+                        self.buckets[category][bucket_label].append(unit)
+                    else:
+                        self.buckets[category][bucket_label] = [unit]
+                break
+        if not match:
+            bucket_label = len(bucket_templates)
+
+            if self.consider_charge_categories:
+                self.buckets[category][charge][bucket_label] = [unit]
+            else:
+                self.buckets[category][bucket_label] = [unit]
+
+            bucket_templates.append(environment)
+
+        return bucket_templates
+
     def as_dict(self):
 
         entries = dict()
@@ -978,15 +1114,39 @@ class ReactionNetwork(MSONable):
 
         entries_list = [e.as_dict() for e in self.entries_list]
 
+        buckets = dict()
+        for category in self.buckets.keys():
+            buckets[category] = dict()
+            if self.consider_charge_categories:
+                for charge in self.buckets[category].keys():
+                    buckets[category][charge] = dict()
+                    for label in self.buckets[category][charge].keys():
+                        buckets[category][charge][label] = list()
+                        for reaction in self.buckets[category][charge][label]:
+                            rcts = [e.as_dict() for e in reaction[0]]
+                            pros = [e.as_dict() for e in reaction[1]]
+                            buckets[category][charge][label].append((rcts, pros))
+            else:
+                for label in self.buckets[category].keys():
+                    buckets[category][label] = list()
+                    for reaction in self.buckets[category][label]:
+                        rcts = [e.as_dict() for e in reaction[0]]
+                        pros = [e.as_dict() for e in reaction[1]]
+                        buckets[category][label].append((rcts, pros))
+
+
         d = {"@module": self.__class__.__module__,
              "@class": self.__class__.__name__,
              "entries_dict": entries,
              "entries_list": entries_list,
+             "buckets": buckets,
              "electron_free_energy": self.electron_free_energy,
              "graph": json_graph.adjacency_data(self.graph),
              "PR_record": self.PR_record,
              "min_cost": self.min_cost,
-             "num_starts": self.num_starts}
+             "num_starts": self.num_starts,
+             "local_order": self.local_order,
+             "consider_charge_categories": self.consider_charge_categories}
 
         return d
 
@@ -1005,6 +1165,26 @@ class ReactionNetwork(MSONable):
                         entries[formula][bonds][charge].append(MoleculeEntry.from_dict(entry))
 
         entries_list = [MoleculeEntry.from_dict(e) for e in d["entries_list"]]
+
+        buckets = dict()
+        for category in d["buckets"].keys():
+            buckets[category] = dict()
+            if d["consider_charge_categories"]:
+                for charge in d["buckets"][category].keys():
+                    buckets[category][charge] = dict()
+                    for label in d["buckets"][category][charge].keys():
+                        buckets[category][charge][label] = list()
+                        for reaction in d["buckets"][category][charge][label]:
+                            rcts = [MoleculeEntry.as_dict() for e in reaction[0]]
+                            pros = [MoleculeEntry.from_dict() for e in reaction[1]]
+                            buckets[category][charge][label].append((rcts, pros))
+            else:
+                for label in d["buckets"][category].keys():
+                    buckets[category][label] = list()
+                    for reaction in d["buckets"][category][label]:
+                        rcts = [e.as_dict() for e in reaction[0]]
+                        pros = [e.as_dict() for e in reaction[1]]
+                        buckets[category][label].append((rcts, pros))
 
         graph = json_graph.adjacency_graph(d["graph"], directed=True)
 

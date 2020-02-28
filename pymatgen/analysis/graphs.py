@@ -135,7 +135,7 @@ def disconnected_isomorphic(frag1, frag2, num_allowed=1):
     species_1 = nx.get_node_attributes(frag1, "specie")
     species_2 = nx.get_node_attributes(frag2, "specie")
 
-    if species_1 != species_2:
+    if set(species_1.values()) != set(species_2.values()):
         return False, None
 
     diff_edges = frag2.size() - frag1.size()
@@ -2084,7 +2084,7 @@ class MoleculeGraph(MSONable):
                 # relabel nodes in graph to match mapping
                 new_graph = nx.relabel_nodes(subg, mapping)
 
-                species = ƒnx.get_node_attributes(new_graph, "specie")
+                species = nx.get_node_attributes(new_graph, "specie")
                 coords = nx.get_node_attributes(new_graph, "coords")
                 raw_props = nx.get_node_attributes(new_graph, "properties")
 
@@ -2526,6 +2526,35 @@ class MoleculeGraph(MSONable):
             cycles_edges.append(edges)
 
         return cycles_edges
+
+    def extract_bond_environment(self, bonds, order=1):
+        """
+        Extract the local environment of a particular chemical bond in a MoleculeGraph
+
+        :param bonds:
+        :param order:
+
+        :return: set of integers representing the relevant atom indices
+        """
+
+        indices = set()
+        if order < 0:
+            return indices
+        elif order == 0:
+            for bond in bonds:
+                indices.add(bond[0])
+                indices.add(bond[1])
+            return indices
+        else:
+            graph = self.graph.to_undirected()
+            for bond in bonds:
+                sub_bonds = list()
+                for neighbor in graph[bond[0]]:
+                    sub_bonds.append((bond[0], neighbor))
+                for neighbor in graph[bond[1]]:
+                    sub_bonds.append((bond[1], neighbor))
+                indices = indices.union(self.extract_bond_environment(sub_bonds, order - 1))
+            return indices
 
     def get_connected_sites(self, n):
         """

@@ -1,9 +1,9 @@
 # coding: utf-8
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
+
 import logging
 import re
-import ast
 from typing import Dict
 from monty.json import MSONable
 from monty.io import zopen
@@ -35,24 +35,30 @@ def xcontrol_eval(string):
     return string
 
 
-class XControl(MSONable):
+class XTBInput(MSONable):
     """
     An object representing a XTB Input file.
     """
 
-    def __init__(self, blocks: Dict[str, Dict]):
+    def __init__(self, blocks):
         """
         Args:
-            blocks: Dictionary mapping block names to blocks of input data
+            blocks: dict mapping block names to blocks of input data
         """
         self.blocks = blocks
 
     def __repr__(self):
         data = []
         for block_name, block in self.blocks.items():
-            data.append(f"${block_name.lower()}")
-            for key, val in block.items():
-                data.append(f"   {key.lower()} = {str(val)}")
+            if isinstance(block, dict):
+                # For structured, multi-value blocks
+                data.append(f"${block_name.lower()}")
+                for key, val in block.items():
+                    data.append(f"   {key.lower()} = {str(val)}")
+            else:
+                # For single-value blocks
+                data.append(f"${block_name.lower()} {str(block)}")
+        data.append("$end")
 
         return "\n".join(data)
 
@@ -61,7 +67,7 @@ class XControl(MSONable):
         """
         Builds an XControl object from a file
         """
-        lines = []
+        lines = list()
         with zopen(filename) as f:
             lines = f.readlines()
 
@@ -87,4 +93,23 @@ class XControl(MSONable):
                 block_data[name][key] = xcontrol_eval(val.title())
 
         return cls(blocks=block_data)
+
+    @classmethod
+    def from_defaults(cls):
+        blocks = dict()
+
+        blocks["gfn"] = {"method": 2,
+                         "scc": True,
+                         "periodic": False}
+        blocks["scc"] = {"maxiterations": 250,
+                         "temp": 300.0,
+                         "broydamp": 0.40}
+        blocks["thermo"] = {"temp": 298.15}
+        blocks["chrg"] = 0
+
+    def to_file(self, filename):
+        contents = self.__repr__()
+
+        with open(filename, 'w') as file:
+            file.write(contents)
 

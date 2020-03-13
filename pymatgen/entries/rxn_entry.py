@@ -9,7 +9,7 @@ from monty.json import MontyEncoder, MontyDecoder
 from monty.json import MSONable
 
 from pymatgen.entries.mol_entry import MoleculeEntry
-from pymatgen.analysis.reaction_rates import (ReactionRateCalculator,
+from pymatgen.reactions.reaction_rates import (ReactionRateCalculator,
                                               BEPRateCalculator,
                                               ExpandedBEPRateCalculator)
 

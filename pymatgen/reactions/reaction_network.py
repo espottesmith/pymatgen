@@ -1175,15 +1175,15 @@ class ReactionNetwork(MSONable):
                     for label in d["buckets"][category][charge].keys():
                         buckets[category][charge][label] = list()
                         for reaction in d["buckets"][category][charge][label]:
-                            rcts = [MoleculeEntry.as_dict() for e in reaction[0]]
-                            pros = [MoleculeEntry.from_dict() for e in reaction[1]]
+                            rcts = [MoleculeEntry.from_dict(e) for e in reaction[0]]
+                            pros = [MoleculeEntry.from_dict(e) for e in reaction[1]]
                             buckets[category][charge][label].append((rcts, pros))
             else:
                 for label in d["buckets"][category].keys():
                     buckets[category][label] = list()
                     for reaction in d["buckets"][category][label]:
-                        rcts = [e.as_dict() for e in reaction[0]]
-                        pros = [e.as_dict() for e in reaction[1]]
+                        rcts = [MoleculeEntry.from_dict(e) for e in reaction[0]]
+                        pros = [MoleculeEntry.from_dict(e) for e in reaction[1]]
                         buckets[category][label].append((rcts, pros))
 
         graph = json_graph.adjacency_graph(d["graph"], directed=True)

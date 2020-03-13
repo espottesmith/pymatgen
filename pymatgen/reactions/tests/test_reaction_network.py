@@ -14,7 +14,8 @@ from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.entries.rxn_entry import ReactionEntry
 from pymatgen.analysis.fragmenter import metal_edge_extender
-from pymatgen.analysis.reaction_network import (ReactionNetwork,
+
+from pymatgen.reactions.reaction_network import (ReactionNetwork,
                                                 entries_from_reaction_label,
                                                 generate_reaction_entries)
 

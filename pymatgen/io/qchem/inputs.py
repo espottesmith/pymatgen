@@ -12,8 +12,7 @@ from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.analysis.local_env import OpenBabelNN
 from .utils import (read_table_pattern,
                     read_pattern,
-                    lower_and_check_unique,
-                    generate_string_start)
+                    lower_and_check_unique)
 
 # Classes for reading/manipulating/writing QChem input files.
 
@@ -272,85 +271,6 @@ class QCInput(MSONable):
         return '\n'.join(mol_list)
 
     @staticmethod
-    def multi_molecule_template(molecule):
-        mol_list = list()
-        mol_list.append("$molecule")
-
-        if len(molecule["reactants"]) == 1:
-            start = generate_string_start(molecule["products"],
-                                          molecule["reactants"][0],
-                                          OpenBabelNN(),
-                                          separation_dist=1.6)
-            reactants = start["products"]
-            products = start["reactants"]
-        elif len(molecule["products"]) == 1:
-            start = generate_string_start(molecule["reactants"],
-                                          molecule["products"][0],
-                                          OpenBabelNN(),
-                                          separation_dist=1.6)
-            reactants = start["reactants"]
-            products = start["products"]
-        else:
-            # Make sure molecules are sufficiently separated
-            reactants = list()
-            products = list()
-            for rct in molecule["reactants"]:
-                reactants.append(rct.get_centered_molecule())
-            for pro in molecule["products"]:
-                products.append(pro.get_centered_molecule())
-
-            rct_dist_sum = 0
-            pro_dist_sum = 0
-            for rct in reactants:
-                radius = np.max(rct.distance_matrix) / 2
-                if rct_dist_sum > 0:
-                    rct.translate_sites(vector=np.array([rct_dist_sum + radius + 0.1
-                                                         for _ in range(3)]))
-                rct_dist_sum += radius + 0.1
-
-            for pro in products:
-                radius = np.max(pro.distance_matrix) / 2
-                if pro_dist_sum > 0:
-                    pro.translate_sites(vector=np.array([pro_dist_sum + radius + 0.1
-                                                         for _ in range(3)]))
-
-                pro_dist_sum += radius + 0.1
-
-        total_charge = int(sum([mol.charge for mol in products]))
-        if len(products) == 1:
-            total_spin = products[0].spin_multiplicity
-        elif len(reactants) == 1:
-            total_spin = reactants[0].spin_multiplicity
-        else:
-            species = list()
-            coords = list()
-            charge = total_charge
-            for mol in products:
-                for site in mol:
-                    species.append(site.species)
-                    coords.append(site.coords)
-            total_mol = Molecule(species, coords, charge=charge)
-            total_spin = total_mol.spin_multiplicity
-        mol_list.append(" {charge} {spin_mult}".format(
-            charge=total_charge,
-            spin_mult=total_spin))
-        for rct in reactants:
-            for site in rct.sites:
-                mol_list.append(
-                    " {atom}     {x: .10f}     {y: .10f}     {z: .10f}".format(
-                        atom=site.species_string, x=site.x, y=site.y,
-                        z=site.z))
-        mol_list.append(" ****")
-        for pro in products:
-            for site in pro.sites:
-                mol_list.append(
-                    " {atom}     {x: .10f}     {y: .10f}     {z: .10f}".format(
-                        atom=site.species_string, x=site.x, y=site.y,
-                        z=site.z))
-        mol_list.append("$end")
-        return '\n'.join(mol_list)
-
-    @staticmethod
     def rem_template(rem):
         rem_list = list()
         rem_list.append("$rem")
@@ -489,72 +409,6 @@ class QCInput(MSONable):
             coords=coords,
             charge=charge,
             spin_multiplicity=spin_mult)
-        return mol
-
-    @staticmethod
-    def read_multi_molecule(string):
-        mol = dict()
-
-        # NOTE: We avoid the issue of spin multiplicity assignment
-        patterns = {
-            "charge": r"^\s*\$molecule\n\s*((?:\-)*\d+)\s+\d",
-        }
-
-        header_rct = r"^\s*\$molecule\n\s*(?:\-)*\d+\s*\d$"
-        header_pro = r"^\s*\$molecule\s*$"
-        row = r"\s*((?i)[a-z]+)\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
-        footer = r"^\$end\s*"
-
-        # Split string into reactants and products
-        string = string.replace(" ****", "$end\n****\n$molecule")
-        strings = string.split("\n****\n")
-        rct_string = strings[0]
-        pro_string = strings[1]
-
-        # Parse reactant molecule(s)
-        charge_rct = None
-        matches_rct = read_pattern(rct_string, patterns)
-        if "charge" in matches_rct.keys():
-            charge_rct = int(matches_rct["charge"][0][0])
-        rct_table = read_table_pattern(
-            rct_string,
-            header_pattern=header_rct,
-            row_pattern=row,
-            footer_pattern=footer)
-        species_rct = [val[0] for val in rct_table[0]]
-        coords_rct = [[float(val[1]), float(val[2]),
-                       float(val[3])] for val in rct_table[0]]
-
-        rct_mol = Molecule(
-            species=species_rct,
-            coords=coords_rct,
-            charge=charge_rct)
-        rct_mg = MoleculeGraph.with_local_env_strategy(rct_mol, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
-
-        mol["reactants"] = [r.molecule for r
-                            in rct_mg.get_disconnected_fragments()]
-
-        charge_pro = charge_rct
-        pro_table = read_table_pattern(
-            pro_string,
-            header_pattern=header_pro,
-            row_pattern=row,
-            footer_pattern=footer)
-        species_pro = [val[0] for val in pro_table[0]]
-        coords_pro = [[float(val[1]), float(val[2]),
-                       float(val[3])] for val in pro_table[0]]
-
-        pro_mol = Molecule(
-            species=species_pro,
-            coords=coords_pro,
-            charge=charge_pro)
-        pro_mg = MoleculeGraph.with_local_env_strategy(pro_mol, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
-        mol["products"] = [p.molecule for p in pro_mg.get_disconnected_fragments()]
-
         return mol
 
     @staticmethod

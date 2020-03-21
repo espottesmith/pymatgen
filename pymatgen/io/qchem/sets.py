@@ -132,17 +132,6 @@ class QChemDictSet(QCInput):
         if self.job_type.lower() in ["opt", "ts"]:
             myrem["geom_opt_max_cycles"] = self.geom_opt_max_cycles
 
-        if self.job_type.lower() in ["fsm", "gsm"]:
-            myrem["fsm_mode"] = 2
-            myrem["fsm_nnode"] = 15
-            myrem["fsm_ngrad"] = 4
-            myrem["fsm_opt_mode"] = 2
-
-        if self.job_type.lower() == "rpath":
-            # Not sure if necessary, but RPath by default needs exact Hessian
-            myrem["hess_and_grad"] = True
-            myrem["rpath_max_cycles"] = 50
-
         if self.pcm_dielectric is not None and self.smd_solvent is not None:
             raise ValueError("Only one of pcm or smd may be used for solvation.")
 
@@ -260,7 +249,7 @@ class TransitionStateSet(QChemDictSet):
                  pcm_dielectric=None,
                  smd_solvent=None,
                  custom_smd=None,
-                 scf_algorithm="diis_gdm",
+                 scf_algorithm="diis",
                  max_scf_cycles=200,
                  geom_opt_max_cycles=200,
                  plot_cubes=False,
@@ -378,70 +367,6 @@ class FreqSet(QChemDictSet):
             scf_algorithm=self.scf_algorithm,
             max_scf_cycles=self.max_scf_cycles,
             plot_cubes=plot_cubes,
-            overwrite_inputs=overwrite_inputs)
-
-
-class FreezingStringSet(QChemDictSet):
-    """
-    QChemDictSet for a freezing-string method (FSM) calculation to guess the
-    transition state of a reaction.
-    """
-
-    def __init__(self,
-                 molecule,
-                 dft_rung=3,
-                 basis_set="def2-tzvppd",
-                 pcm_dielectric=None,
-                 smd_solvent=None,
-                 custom_smd=None,
-                 scf_algorithm="diis_gdm",
-                 max_scf_cycles=200,
-                 overwrite_inputs=None):
-        self.basis_set = basis_set
-        self.scf_algorithm = scf_algorithm
-        self.max_scf_cycles = max_scf_cycles
-        super(FreezingStringSet, self).__init__(
-            molecule=molecule,
-            job_type="fsm",
-            dft_rung=dft_rung,
-            pcm_dielectric=pcm_dielectric,
-            smd_solvent=smd_solvent,
-            custom_smd=custom_smd,
-            basis_set=self.basis_set,
-            scf_algorithm=self.scf_algorithm,
-            max_scf_cycles=self.max_scf_cycles,
-            overwrite_inputs=overwrite_inputs)
-
-
-class GrowingStringSet(QChemDictSet):
-    """
-    QChemDictSet for a growing-string method (GSM) calculation to guess the
-    transition state of a reaction.
-    """
-
-    def __init__(self,
-                 molecule,
-                 dft_rung=3,
-                 basis_set="def2-tzvppd",
-                 pcm_dielectric=None,
-                 smd_solvent=None,
-                 custom_smd=None,
-                 scf_algorithm="diis_gdm",
-                 max_scf_cycles=200,
-                 overwrite_inputs=None):
-        self.basis_set = basis_set
-        self.scf_algorithm = scf_algorithm
-        self.max_scf_cycles = max_scf_cycles
-        super(GrowingStringSet, self).__init__(
-            molecule=molecule,
-            job_type="gsm",
-            dft_rung=dft_rung,
-            pcm_dielectric=pcm_dielectric,
-            smd_solvent=smd_solvent,
-            custom_smd=custom_smd,
-            basis_set=self.basis_set,
-            scf_algorithm=self.scf_algorithm,
-            max_scf_cycles=self.max_scf_cycles,
             overwrite_inputs=overwrite_inputs)
 
 

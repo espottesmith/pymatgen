@@ -3,7 +3,7 @@
 # Distributed under the terms of the MIT License.
 
 """
-Module for graph representations of crystals.
+Module for graph representations of crystals and molecules.
 """
 
 import warnings
@@ -67,30 +67,40 @@ def _compare(g1, g2, i1, i2):
 
 def _igraph_from_nxgraph(graph):
     """
-    Helper function that converts a networkx graph object into an igraph graph object.
+    Helper function that converts a networkx graph object into an igraph graph
+        object.
     """
     nodes = graph.nodes(data=True)
     new_igraph = igraph.Graph()
     for node in nodes:
-        new_igraph.add_vertex(name=str(node[0]), species=node[1]["specie"], coords=node[1]["coords"])
+        new_igraph.add_vertex(name=str(node[0]), species=node[1]["specie"],
+                              coords=node[1]["coords"])
     new_igraph.add_edges([(str(edge[0]), str(edge[1])) for edge in graph.edges()])
     return new_igraph
 
 
 def _isomorphic(frag1, frag2):
     """
-    Internal function to check if two graph objects are isomorphic, using igraph if
-    if is available and networkx if it is not.
+    Internal function to check if two graph objects are isomorphic, using
+        igraph if if is available and networkx if it is not.
     """
     f1_nodes = frag1.nodes(data=True)
     f2_nodes = frag2.nodes(data=True)
+    f1_edges = frag1.edges()
+    f2_edges = frag2.edges()
+
+    # Basic checks; do not even consider isomorphism if graphs do not have same
+    # number of nodes and edges
     if len(f1_nodes) != len(f2_nodes):
         return False
-    f2_edges = frag2.edges()
-    if len(f2_edges) != len(f2_edges):
+
+    if len(f1_edges) != len(f2_edges):
         return False
-    f1_comp_dict = {}
-    f2_comp_dict = {}
+
+    # Compare compositions; if composition is not the same, graphs cannot be
+    # Isomorphic
+    f1_comp_dict = dict()
+    f2_comp_dict = dict()
     for node in f1_nodes:
         if node[1]["specie"] not in f1_comp_dict:
             f1_comp_dict[node[1]["specie"]] = 1
@@ -103,43 +113,41 @@ def _isomorphic(frag1, frag2):
             f2_comp_dict[node[1]["specie"]] += 1
     if f1_comp_dict != f2_comp_dict:
         return False
+
     if IGRAPH_AVAILABLE:
         ifrag1 = _igraph_from_nxgraph(frag1)
         ifrag2 = _igraph_from_nxgraph(frag2)
         return ifrag1.isomorphic_vf2(ifrag2, node_compat_fn=_compare)
     else:
         nm = iso.categorical_node_match("specie", "ERROR")
-        return nx.is_isomorphic(frag1.to_undirected(), frag2.to_undirected(), node_match=nm)
+        return nx.is_isomorphic(frag1.to_undirected(), frag2.to_undirected(),
+                                node_match=nm)
 
 
-def disconnected_isomorphic(frag1, frag2, num_allowed=1):
+def disconnected_isomorphic(frag1, frag2, num_changes=1):
     """
     For two graphs that are not isomorphic, check if they are isomorphic with
-    the addition of some number of edges
+    the addition of some number of edges to one of the graphs.
 
     :param frag1: networkx Graph object (usually MultiDiGraph)
     :param frag2: networkx Graph object (usually MultiDiGraph)
-    :param num_allowed: Number of edges that can be added
+    :param num_changes: Number of edges that can be added
 
     :return:
         is_disconnected_isomorphic (bool)
         additional_edges (list of tuples)
     """
 
+    # First, check if any additions are needed,
+    # and if any allowed changes (based on num_changes) would be sufficient
     if _isomorphic(frag1, frag2):
         return True, None
     else:
-        if num_allowed < 1:
+        if num_changes < 1:
             return False, None
 
-    species_1 = nx.get_node_attributes(frag1, "specie")
-    species_2 = nx.get_node_attributes(frag2, "specie")
-
-    if species_1 != species_2:
-        return False, None
-
     diff_edges = frag2.size() - frag1.size()
-    if abs(diff_edges) > num_allowed:
+    if abs(diff_edges) > num_changes:
         return False, None
     else:
         if diff_edges > 0:
@@ -149,6 +157,7 @@ def disconnected_isomorphic(frag1, frag2, num_allowed=1):
             base = frag1
             to_change = frag2
 
+        # Identify possible edges that could be added
         current_edges = list(to_change.edges())
         new_edges = list()
         for i in to_change:
@@ -157,15 +166,15 @@ def disconnected_isomorphic(frag1, frag2, num_allowed=1):
                     if (i, j) not in current_edges and (j, i) not in current_edges:
                         new_edges.append((i, j))
 
-        num_added = 1
-        while num_added <= num_allowed:
+        # Add all possible allowed combinations of edges
+        # If any of them result in isomorphism, end search
+        for num_added in range(1, num_changes + 1):
             for c in combinations(new_edges, num_added):
                 to_change_copy = copy.deepcopy(to_change)
                 for bond in c:
                     to_change_copy.add_edge(bond[0], bond[1])
                 if _isomorphic(base, to_change_copy):
                     return True, list(c)
-            num_added += 1
 
     return False, None
 

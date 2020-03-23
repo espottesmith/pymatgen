@@ -18,7 +18,7 @@ from pymatgen.io.qchem.utils import (read_table_pattern,
                                      read_pattern,
                                      lower_and_check_unique)
 
-# Classes for reading/manipulating/writing QChem input files.
+# Classes for reading/manipulating/writing Q-Chem input files.
 
 __author__ = "Brandon Wood, Samuel Blau, Shyam Dwaraknath, Julian Self, " \
              "Evan Spotte-Smith"
@@ -32,35 +32,35 @@ logger = logging.getLogger(__name__)
 
 class QCInput(MSONable):
     """
-    An object representing a QChem input file. QCInput attributes represent
-    different sections of a QChem input file.
+    An object representing a Q-Chem input file. QCInput attributes represent
+    different sections of a Q-Chem input file.
 
     To add a new section one needs to modify __init__, __str__, from_sting and
     add staticmethods to read and write the new section i.e. section_template
     and read_section. By design, there is very little (or no) checking that
-    input parameters conform to the appropriate QChem format, this
+    input parameters conform to the appropriate Q-Chem format, this
     responsibility lands on the user or a separate error handling software.
 
     Args:
         molecule (pymatgen Molecule object or "read"):
             Input molecule. molecule can be set as either a pymatgen Molecule
-            object or as the str "read". "read" can be used in multi_job QChem
+            object or as the str "read". "read" can be used in multi_job Q-Chem
             input files where the molecule is read in from the previous
             calculation.
         rem (dict):
             A dictionary of all the input parameters for the rem section of
-            the QChem input file.
+            the Q-Chem input file.
             Ex. rem = {'method': 'rimp2', 'basis': '6-31*G++' ... }
         opt (dict of lists):
             A dictionary of opt sections, where each opt section is a key and
             the corresponding values are a list of strings. Stings must be
-            formatted as instructed by the QChem manual. The different opt
+            formatted as instructed by the Q-Chem manual. The different opt
             sections are: CONSTRAINT, FIXED, DUMMY, and CONNECT
             Ex. opt = {"CONSTRAINT": ["tors 2 3 4 5 25.0", "tors 2 5 7 9 80.0"],
                        "FIXED": ["2 XY"]}
         pcm (dict):
             A dictionary of all the input parameters for the pcm input section
-            of the QChem input file. Note that other implicit solvent methods
+            of the Q-Chem input file. Note that other implicit solvent methods
             (ex: SMD) do not require the use of the pcm section. Further note
             that this section will not be read unless a "solvent_method" key is
             included in the rem section, with the value "pcm"
@@ -72,7 +72,7 @@ class QCInput(MSONable):
             Ex. solvent = {"dielectric": 78.4, "opticaldielectric": 1.78}
         smx (dict):
             A dictionary specifying the input parameters for any SMx (SM8, SM12,
-            SMD) implicit solvent method in the QChem input file. Note that
+            SMD) implicit solvent method in the Q-Chem input file. Note that
             other implicit solvent methods (ex: PCM) do not require the use of
             the smx section. Further note that this section will not be read
             unless a "solvent_method" key is included in the rem section with
@@ -131,7 +131,7 @@ class QCInput(MSONable):
             raise ValueError(
                 "The rem dictionary must contain a valid 'job_type' entry")
 
-        # Still to do:
+        #TODO:
         #   - Check that the method or functional is valid
         #   - Check that basis is valid
         #   - Check that basis is defined for all species in the molecule
@@ -141,10 +141,7 @@ class QCInput(MSONable):
     def __str__(self):
         combined_list = list()
         # molecule section
-        if isinstance(self.molecule, dict):
-            combined_list.append(self.multi_molecule_template(self.molecule))
-        else:
-            combined_list.append(self.molecule_template(self.molecule))
+        combined_list.append(self.molecule_template(self.molecule))
         combined_list.append("")
         # rem section
         combined_list.append(self.rem_template(self.rem))
@@ -175,6 +172,17 @@ class QCInput(MSONable):
 
     @staticmethod
     def multi_job_string(job_list):
+        """
+        Convert a list of Q-Chem jobs into a string so that the jobs can be run
+        sequentially.
+
+        Args:
+            job_list (list of QCInput objects): List of jobs to be converted to
+                input file text.
+        Returns:
+            multi_job_string (str): Text of a Q-Chem input file to run the job
+                list.
+        """
         multi_job_string = str()
         for i, job_i in enumerate(job_list):
             if i < len(job_list) - 1:
@@ -185,16 +193,27 @@ class QCInput(MSONable):
 
     @classmethod
     def from_string(cls, string):
+        """
+        Convert a string into a QCInput object.
+
+        Args:
+            string (str): Text of a Q-Chem input file.
+        Returns:
+            QCInput
+        """
         sections = cls.find_sections(string)
         molecule = cls.read_molecule(string)
         rem = cls.read_rem(string)
-        # only molecule and rem are necessary everything else is checked
+
+        # only molecule and rem are necessary
+        # All other sections are checked as needed
         opt = None
         pcm = None
         solvent = None
         smx = None
         scan = None
         plots = None
+
         if "opt" in sections:
             opt = cls.read_opt(string)
         if "pcm" in sections:
@@ -207,35 +226,83 @@ class QCInput(MSONable):
             scan = cls.read_scan(string)
         if "plots" in sections:
             plots = cls.read_plots(string)
+
         return cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx, scan=scan, plots=plots)
 
     def write_file(self, filename):
+        """
+        Write the QCInput object as a Q-Chem input file.
+
+        Recommended file suffix for Q-Chem input files: *.inp or *.qin
+
+        Args:
+            filename (str): File name or path to the Q-Chem input file.
+        Returns:
+            None
+        """
         with zopen(filename, 'wt') as f:
             f.write(self.__str__())
 
     @staticmethod
     def write_multi_job_file(job_list, filename):
+        """
+        Write a list of QCInput objects as a single Q-Chem input file.
+
+        Args:
+            job_list (list of QCInput objects): List of jobs to be converted to
+                input file text.
+            filename (str): File name or path to the Q-Chem input file.
+        Returns:
+            None
+        """
         with zopen(filename, 'wt') as f:
             f.write(QCInput.multi_job_string(job_list))
 
     @staticmethod
     def from_file(filename):
+        """
+        Read a Q-Chem input file and convert it to a QCInput object.
+
+        Args:
+            filename (str): File name or path to the Q-Chem input file.
+        Returns:
+            QCInput
+        """
         with zopen(filename, 'rt') as f:
             return QCInput.from_string(f.read())
 
     @classmethod
     def from_multi_jobs_file(cls, filename):
+        """
+        Read a Q-Chem input file containing multiple jobs and convert it to a
+            list of QCInput objects.
+
+        Args:
+            filename (str): File name or path to the Q-Chem input file.
+        Returns:
+            input_list (list of QCInput objects): Input objects, one per job
+                in the Q-Chem input file.
+        """
         # returns a list of QCInput objects
         with zopen(filename, 'rt') as f:
-            # the delimiter between QChem jobs is @@@
+            # the delimiter between Q-Chem jobs is @@@
             multi_job_strings = f.read().split("@@@")
-            # list of individual QChem jobs
+            # list of individual Q-Chem jobs
             input_list = [cls.from_string(i) for i in multi_job_strings]
             return input_list
 
     @staticmethod
     def molecule_template(molecule):
-        # todo: add ghost atoms
+        """
+        Provides the text for the molecule section of a Q-Chem input file.
+
+        Args:
+            molecule (Molecule or str): Molecule to be written.
+        Return:
+            str
+        """
+
+        #TODO: add ghost atoms
         mol_list = list()
         mol_list.append("$molecule")
         if isinstance(molecule, str):
@@ -257,6 +324,14 @@ class QCInput(MSONable):
 
     @staticmethod
     def rem_template(rem):
+        """
+        Provides the text for the rem section of a Q-Chem input file.
+
+        Args:
+            rem (dict): Rem section data to be written.
+        Return:
+            str
+        """
         rem_list = list()
         rem_list.append("$rem")
         for key, value in rem.items():
@@ -266,6 +341,14 @@ class QCInput(MSONable):
 
     @staticmethod
     def opt_template(opt):
+        """
+        Provides the text for the opt section of a Q-Chem input file.
+
+        Args:
+            opt (dict of dicts): Opt section data to be written.
+        Return:
+            str
+        """
         opt_list = list()
         opt_list.append("$opt")
         # loops over all opt sections
@@ -283,6 +366,14 @@ class QCInput(MSONable):
 
     @staticmethod
     def pcm_template(pcm):
+        """
+        Provides the text for the pcm section of a Q-Chem input file.
+
+        Args:
+            molecule (dict): PCM section data to be written.
+        Return:
+            str
+        """
         pcm_list = list()
         pcm_list.append("$pcm")
         for key, value in pcm.items():
@@ -292,6 +383,14 @@ class QCInput(MSONable):
 
     @staticmethod
     def solvent_template(solvent):
+        """
+        Provides the text for the solvent section of a Q-Chem input file.
+
+        Args:
+            solvent (dict): Solvent section data to be written.
+        Return:
+            str
+        """
         solvent_list = list()
         solvent_list.append("$solvent")
         for key, value in solvent.items():
@@ -302,6 +401,14 @@ class QCInput(MSONable):
 
     @staticmethod
     def smx_template(smx):
+        """
+        Provides the text for the smx section of a Q-Chem input file.
+
+        Args:
+            smx (dict): SMX section data to be written.
+        Return:
+            str
+        """
         smx_list = list()
         smx_list.append("$smx")
         for key, value in smx.items():
@@ -316,6 +423,14 @@ class QCInput(MSONable):
 
     @staticmethod
     def scan_template(scan):
+        """
+        Provides the text for the scan section of a Q-Chem input file.
+
+        Args:
+            scan (dict of dicts): Scan section data to be written.
+        Return:
+            str
+        """
         scan_list = list()
         scan_list.append("$scan")
         total_vars = sum([len(v) for v in scan.values()])
@@ -332,6 +447,14 @@ class QCInput(MSONable):
 
     @staticmethod
     def plots_template(plots):
+        """
+        Provides the text for the plots section of a Q-Chem input file.
+
+        Args:
+            plots (dict): Plots section data to be written.
+        Return:
+            str
+        """
         plots_list = list()
         plots_list.append("$plots")
         for key, value in plots.items():
@@ -342,62 +465,91 @@ class QCInput(MSONable):
 
     @staticmethod
     def find_sections(string):
+        """
+        Determine what input sections (rem, opt, molecule, smx, etc.) are
+            present in a string.
+
+        Args:
+            string (str): String representing a Q-Chem input file.
+        Returns:
+            sections (list of str): The list of input file sections present in
+                the given text.
+        """
         patterns = {"sections": r"^\s*?\$([a-z]+)", "multiple_jobs": r"(@@@)"}
         matches = read_pattern(string, patterns)
         # list of the sections present
-        sections = [val[0] for val in matches["sections"]]
-        # remove end from sections
-        sections = [sec for sec in sections if sec != 'end']
-        # this error should be replaced by a multi job read function when it is added
+        sections = [val[0] for val in matches["sections"] if val[0] != "end"]
+
+        # TODO: this error should be replaced by a multi job read function when it is added
         if "multiple_jobs" in matches.keys():
             raise ValueError(
-                "Output file contains multiple qchem jobs please parse separately"
+                "Input file contains multiple Q-Chem jobs please parse separately"
             )
+
         if "molecule" not in sections:
-            raise ValueError("Output file does not contain a molecule section")
+            raise ValueError("Input file does not contain a molecule section")
         if "rem" not in sections:
-            raise ValueError("Output file does not contain a rem section")
+            raise ValueError("Input file does not contain a rem section")
         return sections
 
     @classmethod
     def read_molecule(cls, string):
+        """
+        Parse a Q-Chem input file's molecule section and extract the molecule.
+
+        Args:
+            string: Text of a Q-Chem input file.
+        Returns:
+            Molecule or str
+        """
+
+        # TODO: What happens if there is no molecule section?
+        # This extends to any section - need to add checks.
+
         charge = None
         spin_mult = None
         patterns = {
             "read": r"^\s*\$molecule\n\s*(read)",
-            "break": r"\s*\*{4}",
             "charge": r"^\s*\$molecule\n\s*((?:\-)*\d+)\s+\d",
             "spin_mult": r"^\s*\$molecule\n\s(?:\-)*\d+\s*(\d)"
         }
         matches = read_pattern(string, patterns)
+
         if "read" in matches.keys():
             return "read"
-        if "break" in matches.keys():
-            return cls.read_multi_molecule(string)
         if "charge" in matches.keys():
             charge = float(matches["charge"][0][0])
         if "spin_mult" in matches.keys():
             spin_mult = int(matches["spin_mult"][0][0])
+
         header = r"^\s*\$molecule\n\s*(?:\-)*\d+\s*\d"
         row = r"\s*((?i)[a-z]+)\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
         footer = r"^\$end"
+
         mol_table = read_table_pattern(
             string,
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
+
         species = [val[0] for val in mol_table[0]]
         coords = [[float(val[1]), float(val[2]),
                    float(val[3])] for val in mol_table[0]]
-        mol = Molecule(
-            species=species,
-            coords=coords,
-            charge=charge,
-            spin_multiplicity=spin_mult)
-        return mol
+
+        return Molecule(species=species, coords=coords, charge=charge,
+                        spin_multiplicity=spin_mult)
 
     @staticmethod
     def read_rem(string):
+        """
+        Parse a Q-Chem input file's rem section and extract the relevant data.
+
+        Args:
+            string: Text of a Q-Chem input file.
+        Returns:
+            dict
+        """
+
         header = r"^\s*\$rem"
         row = r"\s*([a-zA-Z\_]+)\s*=?\s*(\S+)"
         footer = r"^\s*\$end"
@@ -406,11 +558,20 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        rem = {key: val for key, val in rem_table[0]}
-        return rem
+
+        return {key: val for key, val in rem_table[0]}
 
     @staticmethod
     def read_opt(string):
+        """
+        Parse a Q-Chem input file's opt section and extract the relevant data.
+
+        Args:
+            string: Text of a Q-Chem input file.
+        Returns:
+            opt (dict of dicts): Opt section data.
+        """
+
         patterns = {
             "CONSTRAINT": r"^\s*CONSTRAINT",
             "FIXED": r"^\s*FIXED",
@@ -419,7 +580,8 @@ class QCInput(MSONable):
         }
         opt_matches = read_pattern(string, patterns)
         opt_sections = [key for key in opt_matches.keys()]
-        opt = {}
+
+        opt = dict()
         if "CONSTRAINT" in opt_sections:
             c_header = r"^\s*CONSTRAINT\n"
             c_row = r"(\w.*)\n"
@@ -460,59 +622,95 @@ class QCInput(MSONable):
                 row_pattern=cc_row,
                 footer_pattern=cc_footer)
             opt["CONNECT"] = [val[0] for val in cc_table[0]]
+
         return opt
 
     @staticmethod
     def read_pcm(string):
+        """
+        Parse a Q-Chem input file's pcm section and extract the relevant data.
+
+        Args:
+            string: Text of a Q-Chem input file.
+        Returns:
+            dict
+        """
+
         header = r"^\s*\$pcm"
         row = r"\s*([a-zA-Z\_]+)\s+(\S+)"
         footer = r"^\s*\$end"
+
         pcm_table = read_table_pattern(
             string,
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
+
         if len(pcm_table) == 0:
             print(
-                "No valid PCM inputs found. Note that there should be no '=' chracters in PCM input lines."
+                "No valid PCM inputs found. Note that there should be no '=' "
+                "characters in PCM input lines."
             )
-            return {}
+            return dict()
         else:
-            pcm = {key: val for key, val in pcm_table[0]}
-            return pcm
+            return {key: val for key, val in pcm_table[0]}
 
     @staticmethod
     def read_solvent(string):
+        """
+        Parse a Q-Chem input file's solvent section and extract the relevant
+            data.
+
+        Args:
+            string: Text of a Q-Chem input file.
+        Returns:
+            dict
+        """
+
         header = r"^\s*\$solvent"
         row = r"\s*([a-zA-Z\_]+)\s+(\S+)"
         footer = r"^\s*\$end"
+
         solvent_table = read_table_pattern(
             string,
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
+
         if len(solvent_table) == 0:
             print(
-                "No valid solvent inputs found. Note that there should be no '=' chracters in solvent input lines."
+                "No valid solvent inputs found. Note that there should be no "
+                "'=' characters in solvent input lines."
             )
-            return {}
+            return dict()
         else:
-            solvent = {key: val for key, val in solvent_table[0]}
-            return solvent
+            return {key: val for key, val in solvent_table[0]}
 
     @staticmethod
     def read_smx(string):
+        """
+        Parse a Q-Chem input file's smx section and extract the relevant data.
+
+        Args:
+            string: Text of a Q-Chem input file.
+        Returns:
+            smx (dict): SMx section data.
+        """
+
         header = r"^\s*\$smx"
         row = r"\s*([a-zA-Z\_]+)\s+(\S+)"
         footer = r"^\s*\$end"
+
         smx_table = read_table_pattern(
             string,
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
+
         if len(smx_table) == 0:
             print(
-                "No valid smx inputs found. Note that there should be no '=' chracters in smx input lines."
+                "No valid smx inputs found. Note that there should be no '=' "
+                "characters in smx input lines."
             )
             return dict()
         else:
@@ -523,16 +721,28 @@ class QCInput(MSONable):
 
     @staticmethod
     def read_scan(string):
+        """
+        Parse a Q-Chem input file's scan section and extract the relevant data.
+
+        Args:
+            string: Text of a Q-Chem input file.
+        Returns:
+            dict
+        """
+
         header = r"^\s*\$scan"
         row = r"\s*(stre|bend|tors|STRE|BEND|TORS)\s+((?:[\-\.0-9]+\s*)+)"
         footer = r"^\s*\$end"
+
         scan_table = read_table_pattern(string,
                                         header_pattern=header,
                                         row_pattern=row,
                                         footer_pattern=footer)
+
         if scan_table == list():
             print(
-                "No valid scan inputs found. Note that there should be no '=' chracters in scan input lines."
+                "No valid scan inputs found. Note that there should be no '=' "
+                "characters in scan input lines."
             )
             return dict()
         else:
@@ -548,25 +758,37 @@ class QCInput(MSONable):
                     tors.append(row[1].replace("\n", "").rstrip())
 
             if len(stre) + len(bend) + len(tors) > 2:
-                raise ValueError("No more than two variables are allows in the scan section!")
+                raise ValueError("No more than two variables are allows in the "
+                                 "scan section!")
 
             return {"stre": stre, "bend": bend, "tors": tors}
 
     @staticmethod
     def read_plots(string):
+        """
+        Parse a Q-Chem input file's plots section and extract the relevant data.
+
+        Args:
+            string: Text of a Q-Chem input file.
+        Returns:
+            dict
+        """
+
         header = r"^\s*\$plots"
         row = r"\s*([a-zA-Z\_]+)\s+(\S+)"
         footer = r"^\s*\$end"
+
         plots_table = read_table_pattern(
             string,
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
+
         if len(plots_table) == 0:
             print(
-                "No valid plots inputs found. Note that there should be no '=' chracters in plots input lines."
+                "No valid plots inputs found. Note that there should be no '=' characters in plots input lines."
             )
             return dict()
+
         else:
-            plots = {key: val for key, val in plots_table[0]}
-            return plots
+            return {key: val for key, val in plots_table[0]}

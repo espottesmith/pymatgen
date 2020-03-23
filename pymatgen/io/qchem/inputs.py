@@ -4,16 +4,11 @@
 
 
 import logging
-from typing import Dict, List, Tuple, Optional, Union, Iterator, Set, Sequence, Iterable
-
-import numpy as np
 
 from monty.json import MSONable
 from monty.io import zopen
 
 from pymatgen.core import Molecule
-from pymatgen.analysis.graphs import MoleculeGraph
-from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.io.qchem.utils import (read_table_pattern,
                                      read_pattern,
                                      lower_and_check_unique)

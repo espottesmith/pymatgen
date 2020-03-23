@@ -3,14 +3,15 @@
 # Distributed under the terms of the MIT License.
 
 import os
-
 import unittest
+
+from monty.serialization import loadfn
+
+from pymatgen.io.qchem.inputs import QCInput
 from pymatgen.io.qchem.sets import (QChemDictSet, OptSet, TransitionStateSet,
                                     SinglePointSet, FreqSet,
-                                    FreezingStringSet, GrowingStringSet,
                                     PESScanSet, ForceSet)
 from pymatgen.util.testing import PymatgenTest
-from pymatgen.io.qchem.inputs import QCInput
 
 __author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath, Evan Spotte-Smith"
 __copyright__ = "Copyright 2018, The Materials Project"
@@ -351,6 +352,17 @@ class OptSetTest(PymatgenTest):
             })
         self.assertEqual(test_OptSet.smx, {'solvent': 'water'})
         self.assertEqual(test_OptSet.molecule, test_molecule)
+
+    def test_write_file_from_OptSet(self):
+        odd_dict = loadfn(os.path.join(os.path.dirname(__file__), "odd.json"))
+        odd_mol = odd_dict["spec"]["_tasks"][0]["molecule"]
+        qcinp = OptSet(odd_mol)
+        qcinp.write_file(os.path.join(os.path.dirname(__file__), "test.qin"))
+        test_dict = QCInput.from_file(os.path.join(os.path.dirname(__file__), "test.qin")).as_dict()
+        test_ref_dict = QCInput.from_file(os.path.join(os.path.dirname(__file__), "test_ref.qin")).as_dict()
+        for key in test_dict:
+            self.assertEqual(test_dict[key], test_ref_dict[key])
+        os.remove(os.path.join(os.path.dirname(__file__), "test.qin"))
 
 
 class TransitionStateSetTest(PymatgenTest):

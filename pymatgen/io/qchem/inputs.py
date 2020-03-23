@@ -4,15 +4,19 @@
 
 
 import logging
+from typing import Dict, List, Tuple, Optional, Union, Iterator, Set, Sequence, Iterable
+
 import numpy as np
+
 from monty.json import MSONable
 from monty.io import zopen
+
 from pymatgen.core import Molecule
 from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.analysis.local_env import OpenBabelNN
-from .utils import (read_table_pattern,
-                    read_pattern,
-                    lower_and_check_unique)
+from pymatgen.io.qchem.utils import (read_table_pattern,
+                                     read_pattern,
+                                     lower_and_check_unique)
 
 # Classes for reading/manipulating/writing QChem input files.
 
@@ -28,31 +32,60 @@ logger = logging.getLogger(__name__)
 
 class QCInput(MSONable):
     """
-    An object representing a QChem input file. QCInput attributes represent different sections of a QChem input file.
-    To add a new section one needs to modify __init__, __str__, from_sting and add staticmethods
-    to read and write the new section i.e. section_template and read_section. By design, there is very little (or no)
-    checking that input parameters conform to the appropriate QChem format, this responsible lands on the user or a
-    separate error handling software.
+    An object representing a QChem input file. QCInput attributes represent
+    different sections of a QChem input file.
+
+    To add a new section one needs to modify __init__, __str__, from_sting and
+    add staticmethods to read and write the new section i.e. section_template
+    and read_section. By design, there is very little (or no) checking that
+    input parameters conform to the appropriate QChem format, this
+    responsibility lands on the user or a separate error handling software.
 
     Args:
         molecule (pymatgen Molecule object or "read"):
-            Input molecule. molecule can be set as either a pymatgen Molecule object or as the str "read".
-            "read" can be used in multi_job QChem input files where the molecule is read in from the
-            previous calculation.
+            Input molecule. molecule can be set as either a pymatgen Molecule
+            object or as the str "read". "read" can be used in multi_job QChem
+            input files where the molecule is read in from the previous
+            calculation.
         rem (dict):
-            A dictionary of all the input parameters for the rem section of QChem input file.
+            A dictionary of all the input parameters for the rem section of
+            the QChem input file.
             Ex. rem = {'method': 'rimp2', 'basis': '6-31*G++' ... }
         opt (dict of lists):
-            A dictionary of opt sections, where each opt section is a key and the corresponding
-            values are a list of strings. Stings must be formatted as instructed by the QChem manual.
-            The different opt sections are: CONSTRAINT, FIXED, DUMMY, and CONNECT
-            Ex. opt = {"CONSTRAINT": ["tors 2 3 4 5 25.0", "tors 2 5 7 9 80.0"], "FIXED": ["2 XY"]}
+            A dictionary of opt sections, where each opt section is a key and
+            the corresponding values are a list of strings. Stings must be
+            formatted as instructed by the QChem manual. The different opt
+            sections are: CONSTRAINT, FIXED, DUMMY, and CONNECT
+            Ex. opt = {"CONSTRAINT": ["tors 2 3 4 5 25.0", "tors 2 5 7 9 80.0"],
+                       "FIXED": ["2 XY"]}
+        pcm (dict):
+            A dictionary of all the input parameters for the pcm input section
+            of the QChem input file. Note that other implicit solvent methods
+            (ex: SMD) do not require the use of the pcm section. Further note
+            that this section will not be read unless a "solvent_method" key is
+            included in the rem section, with the value "pcm"
+            Ex. pcm = {"theory": "cosmo", "printlevel": 2}
+        solvent (dict):
+            A dictionary specifying the solvent used in the PCM implicit solvent
+            method. This section will not be read unless a "solvent_method" key
+            is included in the rem section.
+            Ex. solvent = {"dielectric": 78.4, "opticaldielectric": 1.78}
+        smx (dict):
+            A dictionary specifying the input parameters for any SMx (SM8, SM12,
+            SMD) implicit solvent method in the QChem input file. Note that
+            other implicit solvent methods (ex: PCM) do not require the use of
+            the smx section. Further note that this section will not be read
+            unless a "solvent_method" key is included in the rem section with
+            the value of "sm8", "sm12", or "smd".
+            Ex. smx = {"solvent": "water"}
         scan (dict of lists):
-            A dictionary of scan variables. Because two constraints of the same type are allowed (for instance, two
-            torsions or two bond stretches), each TYPE of variable (stre, bend, tors) should be its own key in the dict,
-            rather than each variable. Note that the total number of variable (sum of lengths of all lists) CANNOT be
-            more than two.
-            Ex. scan = {"stre": ["3 6 1.5 1.9 0.1"], "tors": ["1 2 3 4 -180 180 15"]}
+            A dictionary of scan variables. Because two constraints of the same
+            type are allowed (for instance, two torsions or two bond stretches),
+            each TYPE of variable (stre, bend, tors) should be its own key in
+            the dict, rather than each variable. Note that the total number of
+            variable (sum of lengths of all lists) CANNOT be more than two.
+            Ex. scan = {"stre": ["3 6 1.5 1.9 0.1"],
+                        "tors": ["1 2 3 4 -180 180 15"]}
     """
 
     def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None,
@@ -67,70 +100,22 @@ class QCInput(MSONable):
         self.plots = lower_and_check_unique(plots)
 
         # Make sure molecule is valid
-
         if isinstance(self.molecule, str):
             self.molecule = self.molecule.lower()
             if self.molecule != "read":
-                raise ValueError(
-                    'The only acceptable text value for molecule is "read"')
-
-        # Allows for multiple molecules, which is necessary for fsm jobs
-        elif isinstance(self.molecule, dict):
-            # Make sure that dict has proper keys
-            if not ("reactants" in self.molecule
-                    and "products" in self.molecule):
-                raise ValueError("Molecule dictionaries must include two keys, "
-                                 "'reactants' and 'products', the values of "
-                                 "which are lists of pymatgen Molecule objects.")
-
-            # Make sure that all entries are actually Molecule objects
-            try:
-                mols = self.molecule["reactants"] + self.molecule["products"]
-
-                for mol in mols:
-                    if not isinstance(mol, Molecule):
-                        raise ValueError("All entries in molecule "
-                                         "dictionaries must be lists of "
-                                         "pymatgen Molecule objects.")
-
-            except TypeError:
-                raise ValueError("Molecule dictionaries must include two "
-                                 "keys, 'reactants' and 'products', the "
-                                 "values of which are lists of pymatgen "
-                                 "Molecule objects.")
-
-            # Make sure that reactants and products are identical
-            rct_len = sum(len(m) for m in self.molecule["reactants"])
-            rct_spec = list()
-
-            for rct in self.molecule["reactants"]:
-                for site in rct.sites:
-                    rct_spec.append(str(site.specie))
-
-            pro_len = sum(len(m) for m in self.molecule["products"])
-            pro_spec = list()
-
-            for pro in self.molecule["products"]:
-                for site in pro.sites:
-                    pro_spec.append(str(site.specie))
-
-            if rct_len != pro_len or rct_spec != pro_spec:
-                raise ValueError("Reactants and products are not identical.")
+                raise ValueError('The only acceptable text value for molecule '
+                                 'is "read"')
 
         elif not isinstance(self.molecule, Molecule):
-            raise ValueError(
-                "The molecule must either be the string 'read', a pymatgen "
-                "Molecule object, or a dictionary of lists of Molecule objects "
-                "with two keys, 'reactants' and 'products'."
-            )
+            raise ValueError("The molecule must either be the string 'read' or"
+                             " a pymatgen Molecule object.")
 
         # Make sure rem is valid:
         #   - Has a basis
         #   - Has a method or DFT exchange functional
         #   - Has a valid job_type or jobtype
-
         valid_job_types = ["opt", "optimization", "sp", "freq", "frequency",
-                           "force", "fsm", "nmr", "ts", "gsm", "pes_scan"]
+                           "force", "nmr", "ts", "pes_scan"]
 
         if "basis" not in self.rem:
             raise ValueError("The rem dictionary must contain a 'basis' entry")

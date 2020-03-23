@@ -8,7 +8,7 @@ from monty.io import zopen
 from pymatgen.io.qchem.inputs import QCInput
 from pymatgen.io.qchem.utils import lower_and_check_unique
 
-# Classes for reading/manipulating/writing QChem output files.
+# Classes defining defaults for various kinds of Q-Chem jobs.
 
 __author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath, Evan Spotte-Smith"
 __copyright__ = "Copyright 2018, The Materials Project"
@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 class QChemDictSet(QCInput):
     """
-    Build a QCInput given all the various input parameters. Can be extended by standard implementations below.
+    Build a QCInput given all the various input parameters. Can be extended by
+        standard implementations in pymatgen.io.qchem.sets.
     """
 
     def __init__(self,
@@ -39,12 +40,27 @@ class QChemDictSet(QCInput):
                  overwrite_inputs=None):
         """
         Args:
-            molecule (Pymatgen molecule object)
-            job_type (str)
-            basis_set (str)
-            scf_algorithm (str)
-            dft_rung (int)
-            pcm_dielectric (str)
+            molecule (Molecule or str): Input molecule. Can be "read", meaning
+                that input will be read in from the output of a previous
+                calculation.
+            job_type (str): Type of calculation to be conducted. At present,
+                pymatgen supports values in ["opt", "optimization", "freq",
+                "frequency", "sp", "force", "pes_scan", "ts", "nmr"]
+            basis_set (str): Q-Chem basis set (e.g. "6-311++g(d,p)"). Note that
+                pymatgen does not check that the basis set provided is allowed
+                by Q-Chem.
+            scf_algorithm (str): Algorithm to be used to converge
+                self-consistent field (SCF) calculations. One of ["diis", "dm",
+                "diis_dm", "diis_gdm", "gdm", "rca", "rcs_diis", "roothan"].
+                Note that pymatgen does not check that the algorithm provided
+                is allowed by Q-Chem.
+            dft_rung (int): Integer between 1 and 5 defining the "rung" on a
+                custom "Jacob's Ladder" of functionals. Higher rungs use more
+                expensive - but also more accurate - functionals. For instance,
+                dft_rung = 1 => B3LYP; dft_rung = 5 => wb97mv
+            pcm_dielectric (float): Value of the dielectric constant for a solvent
+                to be used with the PCM implicit solvent model. Note that, if
+                pcm_dielectric is not None, then smd_solvent should be None.
             smd_solvent (str)
             custom_smd (str)
             scan_variables (dict)
@@ -57,8 +73,7 @@ class QChemDictSet(QCInput):
             and the value is a dictionary of key value pairs relevant to the section. An example would be adding a
             new variable to the rem section that sets symmetry to false.
             ex. overwrite_inputs = {"rem": {"symmetry": "false"}}
-            ***It should be noted that if something like basis is added to the rem dict it will overwrite
-            the default basis.***
+            ***NOTE: overwrite_inputs supercedes all defaults.***
         """
         self.molecule = molecule
         self.job_type = job_type
@@ -137,7 +152,7 @@ class QChemDictSet(QCInput):
 
         if self.pcm_dielectric is not None:
             mypcm = pcm_defaults
-            mysolvent["dielectric"] = self.pcm_dielectric
+            mysolvent["dielectric"] = str(self.pcm_dielectric)
             myrem["solvent_method"] = 'pcm'
 
         if self.smd_solvent is not None:

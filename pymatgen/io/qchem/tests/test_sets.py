@@ -377,7 +377,7 @@ class TransitionStateSetTest(PymatgenTest):
                 'basis': 'def2-tzvppd',
                 'max_scf_cycles': 200,
                 'method': 'wb97xd',
-                'scf_algorithm': 'diis_gdm',
+                'scf_algorithm': 'diis',
                 'xc_grid': '3',
                 'geom_opt_max_cycles': 200,
                 'resp_charges': 'true',
@@ -402,7 +402,7 @@ class TransitionStateSetTest(PymatgenTest):
                 'max_scf_cycles': 200,
                 'method': 'wb97xd',
                 'geom_opt_max_cycles': 200,
-                'scf_algorithm': 'diis_gdm',
+                'scf_algorithm': 'diis',
                 'xc_grid': '3',
                 'solvent_method': 'pcm',
                 'resp_charges': 'true',
@@ -433,7 +433,7 @@ class TransitionStateSetTest(PymatgenTest):
                 'max_scf_cycles': 200,
                 'method': 'wb97xd',
                 'geom_opt_max_cycles': 200,
-                'scf_algorithm': 'diis_gdm',
+                'scf_algorithm': 'diis',
                 'xc_grid': '3',
                 'solvent_method': 'smd',
                 'ideriv': '1',
@@ -521,7 +521,7 @@ class SinglePointSetTest(PymatgenTest):
 
     def test_plots_init(self):
         test_molecule = QCInput.from_file(
-            os.path.join(test_dir, "new_qchem_files/pcm.qin")).molecule
+            os.path.join(mol_dir, "new_qchem_files/pcm.qin")).molecule
         test_SPSet = SinglePointSet(molecule=test_molecule, smd_solvent='water', plot_cubes=True)
         self.assertEqual(
             test_SPSet.rem, {

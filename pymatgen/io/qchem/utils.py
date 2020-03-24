@@ -1,3 +1,7 @@
+"""
+Utilities for Qchem io.
+"""
+
 import re
 import numpy as np
 from collections import defaultdict
@@ -5,8 +9,8 @@ from collections import defaultdict
 
 def read_pattern(text_str, patterns, terminate_on_match=False,
                  postprocess=str):
-    """
-        General pattern reading on an input string
+    r"""
+    General pattern reading on an input string
 
         Renders accessible:
             Any attribute in patterns. For example,
@@ -27,6 +31,12 @@ def read_pattern(text_str, patterns, terminate_on_match=False,
             matches (dict of lists of lists): All captured groups from all
                 patterns
 
+        Renders accessible:
+            Any attribute in patterns. For example,
+            {"energy": r"energy\\(sigma->0\\)\\s+=\\s+([\\d\\-.]+)"} will set the
+            value of matches["energy"] = [[-1234], [-3453], ...], to the
+            results from regex and postprocess. Note that the returned values
+            are lists of lists, because you can grep multiple items on one line.
     """
 
     compiled = {
@@ -48,7 +58,7 @@ def read_table_pattern(text_str,
                        footer_pattern,
                        postprocess=str,
                        last_one_only=False):
-    """
+    r"""
     Parse table-like data. A table composes of three parts: header,
     main body, footer. All the data matches "row pattern" in the main body
     will be returned.

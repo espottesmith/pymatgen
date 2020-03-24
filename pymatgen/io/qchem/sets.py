@@ -2,6 +2,10 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
+"""
+Input sets for Qchem
+"""
+
 import logging
 import os
 from monty.io import zopen

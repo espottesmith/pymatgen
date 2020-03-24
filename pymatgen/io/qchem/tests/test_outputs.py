@@ -10,16 +10,13 @@ import unittest
 import numpy as np
 
 from monty.serialization import loadfn, dumpfn
+from monty.os.path import which
 from pymatgen.io.qchem.outputs import (QCOutput,
-                                       QCStringfileParser,
-                                       QCPerpGradFileParser,
-                                       QCVFileParser,
-                                       ScratchFileParser,
-                                       BernyLogParser)
+                                       ScratchFileParser)
 from pymatgen.util.testing import PymatgenTest
 
 try:
-    import openbabel
+    from openbabel import openbabel
 
     have_babel = True
 except ImportError:
@@ -253,6 +250,40 @@ class TestQCOutput(PymatgenTest):
         for key in property_list:
             print('Testing ', key)
             self._test_property(key, single_outs, multi_outs)
+
+    @unittest.skipIf((not (have_babel)) or (not which("babel")),
+                     "OpenBabel not installed.")
+    def test_structural_change(self):
+        
+        t1 = Molecule.from_file(os.path.join(test_dir, "structural_change",
+                                             "t1.xyz"))
+        t2 = Molecule.from_file(os.path.join(test_dir, "structural_change",
+                                             "t2.xyz"))
+        t3 = Molecule.from_file(os.path.join(test_dir, "structural_change",
+                                             "t3.xyz"))
+
+        thio_1 = Molecule.from_file(os.path.join(test_dir, "structural_change",
+                                                 "thiophene1.xyz"))
+        thio_2 = Molecule.from_file(os.path.join(test_dir, "structural_change",
+                                                 "thiophene2.xyz"))
+
+        frag_1 = Molecule.from_file(os.path.join(test_dir, "new_qchem_files",
+                                                 "test_structure_change",
+                                                 "frag_1.xyz"))
+        frag_2 = Molecule.from_file(os.path.join(test_dir, "new_qchem_files",
+                                                 "test_structure_change",
+                                                 "frag_2.xyz"))
+
+        self.assertEqual(check_for_structure_changes(t1, t1), "no_change")
+        self.assertEqual(check_for_structure_changes(t2, t3), "no_change")
+        self.assertEqual(check_for_structure_changes(t1, t2), "fewer_bonds")
+        self.assertEqual(check_for_structure_changes(t2, t1), "more_bonds")
+
+        self.assertEqual(check_for_structure_changes(thio_1, thio_2),
+                         "unconnected_fragments")
+
+        self.assertEqual(check_for_structure_changes(frag_1, frag_2),
+                         "bond_change")
 
 
 if __name__ == "__main__":

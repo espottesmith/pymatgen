@@ -58,23 +58,64 @@ class QChemDictSet(QCInput):
                 custom "Jacob's Ladder" of functionals. Higher rungs use more
                 expensive - but also more accurate - functionals. For instance,
                 dft_rung = 1 => B3LYP; dft_rung = 5 => wb97mv
-            pcm_dielectric (float): Value of the dielectric constant for a solvent
-                to be used with the PCM implicit solvent model. Note that, if
-                pcm_dielectric is not None, then smd_solvent should be None.
-            smd_solvent (str)
-            custom_smd (str)
-            scan_variables (dict)
-            opt_variables (dict)
-            max_scf_cycles (int)
-            geom_opt_max_cycles (int)
-            plot_cubes (bool)
-            overwrite_inputs (dict): This is dictionary of QChem input sections to add or overwrite variables,
-            the available sections are currently rem, pcm, and solvent. So the accepted keys are rem, pcm, or solvent
-            and the value is a dictionary of key value pairs relevant to the section. An example would be adding a
-            new variable to the rem section that sets symmetry to false.
+            pcm_dielectric (float): Value of the dielectric constant for a
+                solvent to be used with the PCM implicit solvent model. Note
+                that, if pcm_dielectric is not None, then smd_solvent should be
+                None.
+            smd_solvent (str): Solvent to be used with the SMD implicit solvent
+                method. If a custom solvent is to be used use
+                smd_solvent="custom" or smd_solvent="other".
+            custom_smd (str): If a non-standard solvent is to be used, the SMD
+                parameters should be put in a comma-separated string. The
+                parameters are, in order:
+                - dielectric constant
+                - refractive index
+                - bulk surface tension
+                - Abraham's acidity
+                - Abraham's basicity
+                - Carbon aromaticity
+                - Electronegative halogenicity
+                Ex: for ethylene carbonate,
+                custom_smd="18.5,1.415,0.00,0.735,20.2,0.00,0.00"
+            scan_variables (dict of lists): If job_type="pes_scan", then
+                coordinates to be scanned over should be included here. Because
+                two constraints of the same type are allowed (for instance, two
+                torsions or two bond stretches), each TYPE of variable (stre,
+                bend, tors) should be its own key in the dict, rather than each
+                variable. Note that the total number of variable (sum of
+                lengths of all lists) CANNOT be more than two.
+                Ex: scan_variables={"stre": ["3 6 1.5 1.9 0.1"],
+                                    "tors": ["1 2 3 4 -180 180 15"]}
+            opt_variables (dict): For constrained optimization-type jobs. Each
+                opt section is a key and the corresponding values are a list of
+                strings. Stings must be formatted as instructed by the Q-Chem
+                manual. The different opt sections are: CONSTRAINT, FIXED,
+                DUMMY, and CONNECT
+                Ex: opt_variables={"CONSTRAINT": ["tors 2 3 4 5 25.0",
+                                                  "tors 2 5 7 9 80.0"],
+                                   "FIXED": ["2 XY"]}
+            max_scf_cycles (int): For all self-consistent field (SCF)
+                calculations, allow this many iterations to converge before the
+                program should terminate. Values between 200-300 are generally
+                appropriate.
+            geom_opt_max_cycles (int): For all jobs involving optimization (opt,
+                ts, pes_scan, etc.), allow this many iterations in the geometry
+                optimization algorithm before the terminate should terminate.
+                Values between 100-200 are generally appropriate, though
+                large/difficult structures, or structures with poor initial
+                guesses, may require more iterations.
+            plot_cubes (bool): If True (default False), then Q-Chem will plot
+                the molecular orbitals of the molecule.
+            overwrite_inputs (dict): This is dictionary of QChem input sections
+            to add or overwrite variables, the available sections are currently
+            rem, pcm, and solvent. So the accepted keys are rem, pcm, or solvent
+            and the value is a dictionary of key value pairs relevant to the
+            section. An example would be adding a new variable to the rem
+            section that sets symmetry to false.
             ex. overwrite_inputs = {"rem": {"symmetry": "false"}}
             ***NOTE: overwrite_inputs supercedes all defaults.***
         """
+
         self.molecule = molecule
         self.job_type = job_type
         self.basis_set = basis_set
@@ -90,36 +131,22 @@ class QChemDictSet(QCInput):
         self.plot_cubes = plot_cubes
         self.overwrite_inputs = overwrite_inputs
 
-        pcm_defaults = {
-            "heavypoints": "194",
-            "hpoints": "194",
-            "radii": "uff",
-            "theory": "cpcm",
-            "vdwscale": "1.1"
-        }
-
-        plots_defaults = {
-            "grid_spacing": "0.05",
-            "total_density": "0"
-        }
-
+        myrem = dict()
         mypcm = dict()
         mysolvent = dict()
         mysmx = dict()
-
-        if self.opt_variables is None:
-            myopt = dict()
-        else:
-            myopt = self.opt_variables
-
-        if self.scan_variables is None:
-            myscan = dict()
-        else:
-            myscan = self.scan_variables
-
+        myopt = dict()
+        myscan = dict()
         myplots = dict()
 
-        myrem = dict()
+        # Fill opt and scan sections based on user input
+        if self.opt_variables is not None:
+            myopt = self.opt_variables
+
+        if self.scan_variables is not None:
+            myscan = self.scan_variables
+
+        # Populate rem section based on defaults
         myrem["job_type"] = job_type
         myrem["basis"] = self.basis_set
         myrem["max_scf_cycles"] = self.max_scf_cycles
@@ -130,6 +157,7 @@ class QChemDictSet(QCInput):
         myrem["symmetry"] = "false"
         myrem["sym_ignore"] = "true"
 
+        # Custom "Jacob's Ladder"
         if self.dft_rung == 1:
             myrem["method"] = "b3lyp"
         elif self.dft_rung == 2:
@@ -144,15 +172,24 @@ class QChemDictSet(QCInput):
         else:
             raise ValueError("dft_rung should be between 1 and 5!")
 
-        if self.job_type.lower() in ["opt", "ts"]:
+        # Only jobs that require optimization should limit the optimization
+        # cycles
+        if self.job_type.lower() in ["opt", "optimization", "ts", "pes_scan"]:
             myrem["geom_opt_max_cycles"] = self.geom_opt_max_cycles
 
+        # Control implicit solvation methods based on user-provided solvent
+        # information
         if self.pcm_dielectric is not None and self.smd_solvent is not None:
             raise ValueError("Only one of pcm or smd may be used for solvation.")
 
         if self.pcm_dielectric is not None:
-            mypcm = pcm_defaults
-            mysolvent["dielectric"] = str(self.pcm_dielectric)
+            mypcm = {"heavypoints": "194",
+                     "hpoints": "194",
+                     "radii": "uff",
+                     "theory": "cpcm",
+                     "vdwscale": "1.1"}
+
+            mysolvent["dielectric"] = self.pcm_dielectric
             myrem["solvent_method"] = 'pcm'
 
         if self.smd_solvent is not None:
@@ -164,17 +201,22 @@ class QChemDictSet(QCInput):
             myrem["ideriv"] = "1"
             if self.smd_solvent == "custom" or self.smd_solvent == "other":
                 if self.custom_smd is None:
-                    raise ValueError(
-                        'A user-defined SMD requires passing custom_smd, a string' +
-                        ' of seven comma separated values in the following order:' +
-                        ' dielectric, refractive index, acidity, basicity, surface' +
-                        ' tension, aromaticity, electronegative halogenicity')
+                    raise ValueError('A user-defined SMD requires passing '
+                                     'custom_smd, a string of seven'
+                                     'comma-separated values in the following'
+                                     'order: dielectric, refractive index, '
+                                     'acidity, basicity, surface tension,'
+                                     'aromaticity, electronegative '
+                                     'halogenicity')
 
+        # Control electron density plotting based on default values
         if self.plot_cubes:
-            myplots = plots_defaults
+            myplots = {"grid_spacing": "0.05",
+                       "total_density": "0"}
             myrem["plots"] = "true"
             myrem["make_cube_files"] = "true"
 
+        # Populate input sections based on overwritten values
         if self.overwrite_inputs:
             for sec, sec_dict in self.overwrite_inputs.items():
                 if sec == "rem":
@@ -207,10 +249,22 @@ class QChemDictSet(QCInput):
                         myplots[k] = v
 
         super().__init__(self.molecule, rem=myrem, opt=myopt, pcm=mypcm,
-                         solvent=mysolvent, smx=mysmx, scan=myscan, plots=myplots)
+                         solvent=mysolvent, smx=mysmx, scan=myscan,
+                         plots=myplots)
 
     def write(self, input_file):
+        """
+        Write input file, as well as any auxiliary files necessary for the job.
+
+        Args:
+            input_file (str): File name or path to the Q-Chem input file.
+        Returns:
+            None
+        """
+
         self.write_file(input_file)
+        # SMX methods in Q-Chem require a "solvent_data" file to be written
+        # if a custom solvent is to be used
         if self.smd_solvent == "custom" or self.smd_solvent == "other":
             with zopen(os.path.join(os.path.dirname(input_file), "solvent_data"), 'wt') as f:
                 f.write(self.custom_smd)
@@ -233,10 +287,12 @@ class OptSet(QChemDictSet):
                  geom_opt_max_cycles=200,
                  plot_cubes=False,
                  overwrite_inputs=None):
+
         self.basis_set = basis_set
         self.scf_algorithm = scf_algorithm
         self.max_scf_cycles = max_scf_cycles
         self.geom_opt_max_cycles = geom_opt_max_cycles
+
         super().__init__(
             molecule=molecule,
             job_type="opt",
@@ -254,7 +310,7 @@ class OptSet(QChemDictSet):
 
 class TransitionStateSet(QChemDictSet):
     """
-    QChemDictSet for a transition-state search
+    QChemDictSet for a transition-state geometry optimization
     """
 
     def __init__(self,
@@ -269,10 +325,12 @@ class TransitionStateSet(QChemDictSet):
                  geom_opt_max_cycles=200,
                  plot_cubes=False,
                  overwrite_inputs=None):
+
         self.basis_set = basis_set
         self.scf_algorithm = scf_algorithm
         self.max_scf_cycles = max_scf_cycles
         self.geom_opt_max_cycles = geom_opt_max_cycles
+
         super(TransitionStateSet, self).__init__(
             molecule=molecule,
             job_type="ts",
@@ -304,9 +362,11 @@ class SinglePointSet(QChemDictSet):
                  max_scf_cycles=200,
                  plot_cubes=False,
                  overwrite_inputs=None):
+
         self.basis_set = basis_set
         self.scf_algorithm = scf_algorithm
         self.max_scf_cycles = max_scf_cycles
+
         super().__init__(
             molecule=molecule,
             job_type="sp",
@@ -336,9 +396,11 @@ class ForceSet(QChemDictSet):
                  scf_algorithm="diis",
                  max_scf_cycles=200,
                  overwrite_inputs=None):
+
         self.basis_set = basis_set
         self.scf_algorithm = scf_algorithm
         self.max_scf_cycles = max_scf_cycles
+
         super().__init__(
             molecule=molecule,
             job_type="force",
@@ -368,9 +430,11 @@ class FreqSet(QChemDictSet):
                  max_scf_cycles=200,
                  plot_cubes=False,
                  overwrite_inputs=None):
+
         self.basis_set = basis_set
         self.scf_algorithm = scf_algorithm
         self.max_scf_cycles = max_scf_cycles
+
         super().__init__(
             molecule=molecule,
             job_type="freq",
@@ -405,9 +469,10 @@ class PESScanSet(QChemDictSet):
                  smd_solvent=None,
                  custom_smd=None,
                  scan_variables=None,
-                 scf_algorithm="diis_gdm",
+                 scf_algorithm="diis",
                  max_scf_cycles=200,
                  overwrite_inputs=None):
+
         self.basis_set = basis_set
         self.scf_algorithm = scf_algorithm
         self.max_scf_cycles = max_scf_cycles

@@ -2,46 +2,65 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-
 import os
-from os.path import join
 import unittest
 
 import numpy as np
 
-from pymatgen.core.structure import Molecule
-from pymatgen.analysis.graphs import MoleculeGraph
-from pymatgen.analysis.local_env import CovalentBondNN, OpenBabelNN
-from pymatgen.io.qchem.utils import (map_atoms_reaction,
-                                     orient_molecule,
-                                     generate_string_start)
-# from pymatgen.util.testing import PymatgenTest
-
-try:
-    import openbabel
-    have_babel = True
-except ImportError:
-    have_babel = False
+from pymatgen.io.qchem.utils import (lower_and_check_unique,
+                                     process_parsed_coords)
+from pymatgen.util.testing import PymatgenTest
 
 __author__ = "Evan Spotte-Smith"
-__copyright__ = "Copyright 2019, The Materials Project"
+__copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 
-test_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
-                        'test_files', "molecules")
+mol_dir = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "..", "test_files",
+    "molecules")
+
+qchem_dir = os.path.join(
+    os.path.dirname(__file__), "..", "..", "..", "..", "test_files",
+    "qchem")
 
 
-class QCUtilsTest(unittest.TestCase):
+class QChemUtilsTest(PymatgenTest):
+    def test_lower_and_check_unique(self):
+        no_change_dict = {'a': True,
+                          'b': "bee",
+                          'c': 1234}
 
-    def setUp(self) -> None:
-        self.rct_1 = Molecule.from_file(join(test_dir, "da_reactant_1.mol"))
-        self.rct_2 = Molecule.from_file(join(test_dir, "da_reactant_2.mol"))
-        self.pro = Molecule.from_file(join(test_dir, "da_product.mol"))
+        change_dict = {'A': True,
+                       'B': "Bee",
+                       'C': 1234}
 
-    def tearDown(self) -> None:
-        del self.rct_1
-        del self.rct_2
-        del self.pro
+        bad_dict = {'A': True,
+                    'a': False}
 
-if __name__ == "__main__":
+        self.assertDictEqual(no_change_dict,
+                             lower_and_check_unique(no_change_dict))
+
+        self.assertDictEqual(no_change_dict,
+                             lower_and_check_unique(change_dict))
+
+        with self.assertRaises(Exception):
+            lower_and_check_unique(bad_dict)
+
+    def test_process_parsed_coords(self):
+        good_string = [["1.1", "2.2", "3.3"],
+                       ["0.0", "0.0", "0.0"]]
+
+        bad_string = [["1.1", "2.2"]]
+
+        array = np.array([[1.1, 2.2, 3.3], [0.0, 0.0, 0.0]])
+        parsed = process_parsed_coords(good_string)
+        for i in range(len(good_string)):
+            for j in range(3):
+                self.assertEqual(parsed[i][j], array[i][j])
+
+        with self.assertRaises(ValueError):
+            process_parsed_coords(bad_string)
+
+
+if __name__ == '__main__':
     unittest.main()

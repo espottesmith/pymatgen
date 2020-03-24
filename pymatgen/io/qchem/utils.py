@@ -8,6 +8,13 @@ def read_pattern(text_str, patterns, terminate_on_match=False,
     """
         General pattern reading on an input string
 
+        Renders accessible:
+            Any attribute in patterns. For example,
+            {"energy": r"energy\\(sigma->0\\)\\s+=\\s+([\\d\\-.]+)"} will set the
+            value of matches["energy"] = [[-1234], [-3453], ...], to the
+            results from regex and postprocess. Note that the returned values
+            are lists of lists, because you can grep multiple items on one line.
+
         Args:
             text_str (str): the input string to search for patterns
             patterns (dict): A dict of patterns, e.g.,
@@ -16,13 +23,10 @@ def read_pattern(text_str, patterns, terminate_on_match=False,
                 least one match in each key in pattern.
             postprocess (callable): A post processing function to convert all
                 matches. Defaults to str, i.e., no change.
+        Returns:
+            matches (dict of lists of lists): All captured groups from all
+                patterns
 
-        Renders accessible:
-            Any attribute in patterns. For example,
-            {"energy": r"energy\\(sigma->0\\)\\s+=\\s+([\\d\\-.]+)"} will set the
-            value of matches["energy"] = [[-1234], [-3453], ...], to the
-            results from regex and postprocess. Note that the returned values
-            are lists of lists, because you can grep multiple items on one line.
     """
 
     compiled = {
@@ -43,7 +47,6 @@ def read_table_pattern(text_str,
                        row_pattern,
                        footer_pattern,
                        postprocess=str,
-                       attribute_name=None,
                        last_one_only=False):
     """
     Parse table-like data. A table composes of three parts: header,
@@ -66,16 +69,14 @@ def read_table_pattern(text_str,
             table. E.g. a long dash line.
         postprocess (callable): A post processing function to convert all
             matches. Defaults to str, i.e., no change.
-        attribute_name (str): Name of this table. If present the parsed data
-            will be attached to "data. e.g. self.data["efg"] = [...]
-        last_one_only (bool): All the tables will be parsed, if this option
-            is set to True, only the last table will be returned. The
+        last_one_only (bool): All the tables will be parsed. If this option
+            is set to True, then only the last table will be returned. The
             enclosing list will be removed. i.e. Only a single table will
-            be returned. Default to be True.
+            be returned. Default is False.
 
     Returns:
-        List of tables. 1) A table is a list of rows. 2) A row is either a list of
-        attribute values in case the the capturing group is defined without name in
+        retained_data: list of tables. A table is a list of rows. A row is either a list of
+        attribute values in case the capturing group is defined without name in
         row_pattern, or a dict in case that named capturing groups are defined by
         row_pattern.
     """
@@ -84,12 +85,17 @@ def read_table_pattern(text_str,
         r"\s*(?P<table_body>(?:" + row_pattern + r")+)\s*" + footer_pattern
     table_pattern = re.compile(table_pattern_text, re.MULTILINE | re.DOTALL)
     rp = re.compile(row_pattern)
+
     data = dict()
     tables = list()
+
     for mt in table_pattern.finditer(text_str):
         table_body_text = mt.group("table_body")
-        table_contents = []
+        table_contents = list()
         for ml in rp.finditer(table_body_text):
+            # If there are named groups, capture in a dict with the group names
+            # as keys
+            # Otherwise, capture in a list
             d = ml.groupdict()
             if len(d) > 0:
                 processed_line = {k: postprocess(v) for k, v in d.items()}
@@ -101,9 +107,7 @@ def read_table_pattern(text_str,
         retained_data = tables[-1]
     else:
         retained_data = tables
-    if attribute_name is not None:
-        data[attribute_name] = retained_data
-        return data
+
     return retained_data
 
 
@@ -112,7 +116,7 @@ def lower_and_check_unique(dict_to_check):
     Takes a dictionary and makes all the keys lower case. Also replaces
     "jobtype" with "job_type" just so that key specifically can be called
     elsewhere without ambiguity. Finally, ensures that multiple identical
-    keys, that differed only due to different capitalizations, are not
+    keys that differed only due to different capitalizations are not
     present. If there are multiple equivalent keys, an Exception is raised.
 
     Args:
@@ -122,16 +126,18 @@ def lower_and_check_unique(dict_to_check):
         to_return (dict): An identical dictionary but with all keys made
             lower case and no identical keys present.
     """
+
     if dict_to_check is None:
         return None
+
     else:
-        to_return = {}
+        to_return = dict()
         for key in dict_to_check:
             new_key = key.lower()
             if new_key == "jobtype":
                 new_key = "job_type"
             if new_key in to_return:
-                if to_return[key] != to_return[new_key]:
+                if dict_to_check.get(key).lower() != to_return[new_key]:
                     raise Exception(
                         "Multiple instances of key " + new_key + " found with different values! Exiting...")
             else:
@@ -146,9 +152,20 @@ def process_parsed_coords(coords):
     """
     Takes a set of parsed coordinates, which come as an array of strings,
     and returns a numpy array of floats.
+
+    Args:
+        coords (Sequence of Sequences of str): Parsed coordinates in string
+            format.
+
+    Returns:
+        geometry (np.ndarray): Molecular coordinates in float format.
     """
     geometry = np.zeros(shape=(len(coords), 3), dtype=float)
     for ii, entry in enumerate(coords):
+        if len(entry) != 3:
+            raise ValueError("All entries in coords must have three elements "
+                             "(representing x, y, and z coordinates)!")
+
         for jj in range(3):
             geometry[ii, jj] = float(entry[jj])
     return geometry

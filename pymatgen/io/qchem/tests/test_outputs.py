@@ -11,8 +11,10 @@ import numpy as np
 
 from monty.serialization import loadfn, dumpfn
 from monty.os.path import which
+from pymatgen.core.structure import Molecule
 from pymatgen.io.qchem.outputs import (QCOutput,
-                                       ScratchFileParser)
+                                       ScratchFileParser,
+                                       check_for_structure_changes)
 from pymatgen.util.testing import PymatgenTest
 
 try:
@@ -32,8 +34,6 @@ multi_job_dict = loadfn(os.path.join(
     os.path.dirname(__file__), "multi_job.json"))
 test_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
                         'test_files', "molecules")
-berny_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
-                        'test_files', "berny")
 
 property_list = {"errors",
                  "multiple_outputs",
@@ -95,28 +95,11 @@ property_list = {"errors",
                  "CDS_gradients",
                  "RESP",
                  "trans_dip",
-                 "string_num_images",
-                 "string_energies",
-                 "string_relative_energies",
-                 "string_relative_energies_iterations",
-                 "string_geometries",
-                 "string_molecules",
-                 "string_absolute_distances",
-                 "string_proportional_distances",
-                 "string_gradient_magnitudes",
-                 "string_gradient_magnitudes_iterations",
-                 "string_total_gradient_magnitude",
-                 "string_total_gradient_magnitude_iterations",
-                 "string_max_energy",
-                 "string_max_relative_energy",
-                 "string_ts_guess",
-                 "string_initial_reactant_molecules",
-                 "string_initial_product_molecules",
-                 "string_initial_reactant_geometry",
-                 "string_initial_product_geometry",
                  "optimized_geometries",
                  "molecules_from_optimized_geometries",
                  "scan_energies",
+                 "scan_geometries",
+                 "scan_molecules",
                  "scan_constraint_sets"}
 
 if have_babel:
@@ -174,10 +157,7 @@ single_job_out_names = {"unable_to_determine_lambda_in_geom_opt.qcout",
                         "new_qchem_files/1746.qout",
                         "new_qchem_files/1570.qout",
                         "new_qchem_files/1570_2.qout",
-                        "new_qchem_files/single_point.qout",
-                        "new_qchem_files/fsm/da/fsm.qout",
-                        "new_qchem_files/fsm/li_ion/mol.qout",
-                        "new_qchem_files/gsm/gsm.qout"}
+                        "new_qchem_files/single_point.qout"}
 
 multi_job_out_names = {"not_enough_total_memory.qcout",
                        "new_qchem_files/VC_solv_eps10.qcout",
@@ -203,25 +183,26 @@ class TestQCOutput(PymatgenTest):
         """
         Used to generate test dictionary for single jobs.
         """
-        single_job_dict = dict()
+
+        single_job = dict()
         for file in single_job_out_names:
-            single_job_dict[file] = QCOutput(os.path.join(test_dir, file)).data
-        dumpfn(single_job_dict, "single_job.json")
+            single_job[file] = QCOutput(os.path.join(test_dir, file)).data
+        dumpfn(single_job, "single_job.json")
 
     @staticmethod
     def generate_multi_job_dict():
         """
         Used to generate test dictionary for multiple jobs.
         """
-        multi_job_dict = dict()
+        multi_job = dict()
         for file in multi_job_out_names:
             outputs = QCOutput.multiple_outputs_from_file(
                 QCOutput, os.path.join(test_dir, file), keep_sub_files=False)
-            data = []
+            data = list()
             for sub_output in outputs:
                 data.append(sub_output.data)
-            multi_job_dict[file] = data
-        dumpfn(multi_job_dict, "multi_job.json")
+            multi_job[file] = data
+        dumpfn(multi_job, "multi_job.json")
 
     def _test_property(self, key, single_outs, multi_outs):
         for name, outdata in single_outs.items():
@@ -239,10 +220,12 @@ class TestQCOutput(PymatgenTest):
     def test_all(self):
         single_outs = dict()
         for file in single_job_out_names:
+            print(file)
             single_outs[file] = QCOutput(os.path.join(test_dir, file)).data
 
         multi_outs = dict()
         for file in multi_job_out_names:
+            print(file)
             multi_outs[file] = QCOutput.multiple_outputs_from_file(QCOutput,
                                                                    os.path.join(test_dir, file),
                                                                    keep_sub_files=False)

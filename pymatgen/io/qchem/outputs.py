@@ -3,7 +3,7 @@
 # Distributed under the terms of the MIT License.
 
 """
-Parsers for Qchem output files.
+Parsers for Q-Chem output files.
 """
 
 import re
@@ -15,16 +15,18 @@ import math
 import copy
 
 import numpy as np
+import networkx as nx
 
 from monty.io import zopen
 from monty.json import jsanitize
 from monty.json import MSONable
-from pymatgen.core import Molecule
 
+from pymatgen.core.structure import Molecule
 from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.analysis.fragmenter import metal_edge_extender
-import networkx as nx
+from pymatgen.io.qchem.utils import (read_table_pattern, read_pattern,
+                                     process_parsed_coords)
 
 try:
     from openbabel import openbabel as ob
@@ -34,7 +36,6 @@ except ImportError:
     ob = None
     have_babel = False
 
-from pymatgen.io.qchem.utils import read_table_pattern, read_pattern, process_parsed_coords
 
 __author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath, Evan Spotte-Smith"
 __copyright__ = "Copyright 2018, The Materials Project"
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 class QCOutput(MSONable):
     """
-    Class to parse QChem output files.
+    Class to parse Q-Chem output files.
     """
 
     def __init__(self, filename):
@@ -148,7 +149,7 @@ class QCOutput(MSONable):
 
         # Parse information specific to a solvent model
         if self.data["solvent_method"] == "PCM":
-            self.data["solvent_data"] = {}
+            self.data["solvent_data"] = dict()
             temp_dielectric = read_pattern(
                 self.text, {
                     "key": r"dielectric\s*([\d\-\.]+)"
@@ -166,7 +167,7 @@ class QCOutput(MSONable):
                     self.data["errors"] += ["unrecognized_solvent"]
                 else:
                     self.data["warnings"]["unrecognized_solvent"] = True
-            self.data["solvent_data"] = {}
+            self.data["solvent_data"] = dict()
             temp_solvent = read_pattern(
                 self.text, {
                     "key": r"\s[Ss]olvent:? ([a-zA-Z]+)"
@@ -176,7 +177,8 @@ class QCOutput(MSONable):
                     if val[0] != "for":
                         self.data["warnings"]["SMD_two_solvents"] = str(temp_solvent[0][0]) + " and " + str(val[0])
                     else:
-                        if "unrecognized_solvent" not in self.data["errors"] and "unrecognized_solvent" not in \
+                        if "unrecognized_solvent" not in self.data["errors"] \
+                                and "unrecognized_solvent" not in \
                                 self.data["warnings"]:
                             self.data["warnings"]["questionable_SMD_parsing"] = True
             self.data["solvent_data"]["SMD_solvent"] = temp_solvent[0][0]
@@ -215,7 +217,8 @@ class QCOutput(MSONable):
 
         # Parse the S2 values in the case of an unrestricted calculation
         if self.data.get('unrestricted', []):
-            correct_s2 = 0.5 * (self.data["multiplicity"] - 1) * (0.5 * (self.data["multiplicity"] - 1) + 1)
+            correct_s2 = 0.5 * (self.data["multiplicity"] - 1) * \
+                         (0.5 * (self.data["multiplicity"] - 1) + 1)
             temp_S2 = read_pattern(self.text, {
                 "key": r"<S\^2>\s=\s+([\d\-\.]+)"
             }).get('key')
@@ -239,7 +242,8 @@ class QCOutput(MSONable):
                         spin_contamination[ii] = abs(correct_s2 - entry)
                     self.data["warnings"]["spin_contamination"] = spin_contamination
 
-        # Check if the calculation is a geometry optimization. If so, parse the relevant output
+        # Check if the calculation is a geometry optimization.
+        # If so, parse the relevant output
         self.data["optimization"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*opt"
@@ -247,13 +251,14 @@ class QCOutput(MSONable):
         if self.data.get('optimization', list()):
             self._read_optimization_data()
 
-        # Check if the calculation is a transition state optimization. If so, parse the relevant output
+        # Check if the calculation is a transition state optimization.
+        # If so, parse the relevant output
         self.data["transition_state"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*ts"
             }).get('key')
         if self.data.get('transition_state', list()):
-            self._read_transition_state_data()
+            self._read_optimization_data()
 
         # Check if the calculation contains a constraint in an $opt section.
         self.data["opt_constraint"] = read_pattern(self.text, {
@@ -282,7 +287,8 @@ class QCOutput(MSONable):
                             "ERROR: Opt section value and constraint can only differ by a sign at 0.0 and 180.0!"
                         )
 
-        # Check if the calculation is a frequency analysis. If so, parse the relevant output
+        # Check if the calculation is a frequency analysis.
+        # If so, parse the relevant output
         self.data["frequency_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*freq"
@@ -291,6 +297,8 @@ class QCOutput(MSONable):
         if self.data.get('frequency_job', []):
             self._read_frequency_data()
 
+        # Check if the calculation is a single-point calculation.
+        # If so, parse the relevant output
         self.data["single_point_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*sp"
@@ -299,31 +307,8 @@ class QCOutput(MSONable):
         if self.data.get("single_point_job", []):
             self._read_single_point_data()
 
-        self.data["freezing_string_job"] = read_pattern(
-            self.text, {
-                "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*fsm"
-            },
-            terminate_on_match=True).get("key")
-        if self.data.get("freezing_string_job", []):
-            self._read_string_geometries()
-            self._read_freezing_string_data()
-
-        self.data["growing_string_job"] = read_pattern(
-            self.text, {
-                "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*gsm"
-            },
-            terminate_on_match=True).get("key")
-        if self.data.get("growing_string_job", []):
-            self._read_string_geometries()
-            self._read_growing_string_data()
-
-            self.data["completion"] = read_pattern(
-                self.text, {
-                    "key":
-                        r"A miracle has come to pass!\s+The string has converged!"
-                },
-                terminate_on_match=True).get('key')
-
+        # Check if the calculation is a force (gradient) calculation.
+        # If so, parse the relevant output
         self.data["force_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*force"
@@ -332,6 +317,8 @@ class QCOutput(MSONable):
         if self.data.get("force_job", []):
             self._read_force_data()
 
+        # Check if the calculation is a pes_scan calculation.
+        # If so, parse the relevant output
         self.data["scan_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*pes_scan"
@@ -341,7 +328,7 @@ class QCOutput(MSONable):
             self._read_scan_data()
 
         # If the calculation finished, parse the job time.
-        if self.data.get('completion', []):
+        if self.data.get('completion', False):
             temp_timings = read_pattern(
                 self.text, {
                     "key":
@@ -354,33 +341,46 @@ class QCOutput(MSONable):
                 self.data["walltime"] = None
                 self.data["cputime"] = None
 
-        # If the calculation did not finish and no errors have been identified yet, check for other errors
-        if not self.data.get('completion',
-                             []) and self.data.get("errors") == []:
+        # If the calculation did not finish and no errors have been identified
+        # yet, check for other errors
+        if not self.data.get('completion', False) \
+                and self.data.get("errors") == list():
             self._check_completion_errors()
 
-    @staticmethod
+    @classmethod
     def multiple_outputs_from_file(cls, filename, keep_sub_files=True):
         """
-        Parses a QChem output file with multiple calculations
+        Parses a Q-Chem output file with multiple calculations
         1.) Seperates the output into sub-files
             e.g. qcout -> qcout.0, qcout.1, qcout.2 ... qcout.N
-            a.) Find delimeter for multiple calcualtions
-            b.) Make seperate output sub-files
-        2.) Creates seperate QCCalcs for each one from the sub-files
+            a.) Find delimiter for multiple calculations
+            b.) Make separate output sub-files
+        2.) Creates separate QCOutputs for each one from the sub-files
+
+        Args:
+            filename (str): Filename to parse.
+            keep_sub_files (bool): If True (default), then leave created Q-Chem
+                output files for each job in the directory where filename is
+                located. Otherwise, these files will be removed.
+        Returns:
+            to_return (list of QCOutput objects)
         """
-        to_return = []
+
+        to_return = list()
+
+        # Split Q-Chem output file into sub-files
         with zopen(filename, 'rt') as f:
             text = re.split(r'\s*(?:Running\s+)*Job\s+\d+\s+of\s+\d+\s+',
                             f.read())
         if text[0] == '':
             text = text[1:]
+
         for i, sub_text in enumerate(text):
-            temp = open(filename + '.' + str(i), 'w')
-            temp.write(sub_text)
-            temp.close()
-            tempOutput = cls(filename + '.' + str(i))
-            to_return.append(tempOutput)
+            with open(filename + '.' + str(i), 'w') as temp:
+                temp.write(sub_text)
+
+            temp_output = cls(filename + '.' + str(i))
+            to_return.append(temp_output)
             if not keep_sub_files:
                 os.remove(filename + '.' + str(i))
         return to_return
@@ -389,6 +389,8 @@ class QCOutput(MSONable):
         """
         Parses charge and multiplicity.
         """
+
+        # Read total charge
         temp_charge = read_pattern(
             self.text, {
                 "key": r"\$molecule\s+([\-\d]+)\s+\d"
@@ -407,6 +409,7 @@ class QCOutput(MSONable):
             else:
                 self.data["charge"] = int(float(temp_charge[0][0]))
 
+        # Read spin multiplicity
         temp_multiplicity = read_pattern(
             self.text, {
                 "key": r"\$molecule\s+[\-\d]+\s+(\d)"
@@ -430,11 +433,13 @@ class QCOutput(MSONable):
         """
         Parses species and initial geometry.
         """
+
         header_pattern = r"Standard Nuclear Orientation \(Angstroms\)\s+I\s+Atom\s+X\s+Y\s+Z\s+-+"
         table_pattern = r"\s*\d+\s+([a-zA-Z]+)\s*([\d\-\.\*]+)\s*([\d\-\.\*]+)\s*([\d\-\.\*]+)\s*"
         footer_pattern = r"\s*-+"
         temp_geom = read_table_pattern(self.text, header_pattern,
                                        table_pattern, footer_pattern)
+
         if temp_geom is None or len(temp_geom) == 0:
             self.data["species"] = None
             self.data["initial_geometry"] = None
@@ -452,13 +457,14 @@ class QCOutput(MSONable):
             else:
                 self.data["point_group"] = None
             temp_geom = temp_geom[0]
-            species = []
+            species = list()
             geometry = np.zeros(shape=(len(temp_geom), 3), dtype=float)
             for ii, entry in enumerate(temp_geom):
                 species += [entry[0]]
                 for jj in range(3):
                     if "*" in entry[jj + 1]:
-                        geometry[ii, jj] = 10000000000.0
+                        # TODO: Should this be float("inf")
+                        geometry[ii, jj] = float("inf")
                     else:
                         geometry[ii, jj] = float(entry[jj + 1])
             self.data["species"] = species
@@ -476,7 +482,8 @@ class QCOutput(MSONable):
         """
         Parses both old and new SCFs.
         """
-        if self.data.get('using_GEN_SCFMAN', []):
+
+        if self.data.get('using_GEN_SCFMAN', False):
             if "SCF_failed_to_converge" in self.data.get("errors"):
                 footer_pattern = r"^\s*gen_scfman_exception: SCF failed to converge"
             else:
@@ -517,16 +524,18 @@ class QCOutput(MSONable):
 
         temp_scf = read_table_pattern(self.text, header_pattern, table_pattern,
                                       footer_pattern)
-        real_scf = []
+        real_scf = list()
         for one_scf in temp_scf:
             temp = np.zeros(shape=(len(one_scf), 2))
             for ii, entry in enumerate(one_scf):
                 temp[ii, 0] = float(entry[0])
                 temp[ii, 1] = float(entry[1]) * 10 ** float(entry[2])
-            real_scf += [temp]
+            real_scf.append(temp)
 
         self.data["SCF"] = real_scf
 
+        # Check for threshhold problems - when energy changes are less than the
+        # effective accuracy
         temp_thresh_warning = read_pattern(self.text, {
             "key": r"\n[a-zA-Z_\s/]+\.C::WARNING energy changes are now smaller than effective accuracy"
                    r"\.\n[a-zA-Z_\s/]+\.C::\s+calculation will continue, but THRESH should be increased\n"
@@ -542,6 +551,7 @@ class QCOutput(MSONable):
                     thresh_warning[ii] = float(entry[0])
                 self.data["warnings"]["thresh"] = thresh_warning
 
+        # Extract converged energy from SCF calculation
         temp_SCF_energy = read_pattern(self.text, {
             "key": r"SCF   energy in the final basis set =\s*([\d\-\.]+)"
         }).get('key')
@@ -554,6 +564,7 @@ class QCOutput(MSONable):
                     SCF_energy[ii] = float(val[0])
                 self.data["SCF_energy_in_the_final_basis_set"] = SCF_energy
 
+        # SCF energy, plus some other components (ex: solvent)
         temp_Total_energy = read_pattern(self.text, {
             "key": r"Total energy in the final basis set =\s*([\d\-\.]+)"
         }).get('key')
@@ -569,8 +580,12 @@ class QCOutput(MSONable):
     def _read_charges(self):
         """
         Parses Mulliken/ESP/RESP charges. Also parses spins given an unrestricted SCF.
+
+        All calculations should report Mulliken charges; ESP and RESP are
+            also checked.
         """
-        if self.data.get('unrestricted', []):
+
+        if self.data.get('unrestricted', False):
             header_pattern = r"\-+\s+Ground-State Mulliken Net Atomic Charges\s+Atom\s+Charge \(a\.u\.\)\s+" \
                              r"Spin\s\(a\.u\.\)\s+\-+"
             table_pattern = r"\s+\d+\s\w+\s+([\d\-\.]+)\s+([\d\-\.]+)"
@@ -582,9 +597,9 @@ class QCOutput(MSONable):
 
         temp_mulliken = read_table_pattern(self.text, header_pattern,
                                            table_pattern, footer_pattern)
-        real_mulliken = []
+        real_mulliken = list()
         for one_mulliken in temp_mulliken:
-            if self.data.get('unrestricted', []):
+            if self.data.get('unrestricted', False):
                 temp = np.zeros(shape=(len(one_mulliken), 2))
                 for ii, entry in enumerate(one_mulliken):
                     temp[ii, 0] = float(entry[0])
@@ -593,7 +608,7 @@ class QCOutput(MSONable):
                 temp = np.zeros(len(one_mulliken))
                 for ii, entry in enumerate(one_mulliken):
                     temp[ii] = float(entry[0])
-            real_mulliken += [temp]
+            real_mulliken.append(temp)
 
         self.data["Mulliken"] = real_mulliken
 
@@ -609,15 +624,19 @@ class QCOutput(MSONable):
 
             temp_esp_or_resp = read_table_pattern(self.text, header_pattern,
                                                   table_pattern, footer_pattern)
-            real_esp_or_resp = []
+            real_esp_or_resp = list()
             for one_entry in temp_esp_or_resp:
                 temp = np.zeros(len(one_entry))
                 for ii, entry in enumerate(one_entry):
                     temp[ii] = float(entry[0])
-                real_esp_or_resp += [temp]
+                real_esp_or_resp.append(temp)
             self.data[esp_or_resp[0][0]] = real_esp_or_resp
 
     def _detect_general_warnings(self):
+        """
+        Parse and identify common warnings.
+        """
+
         # Check for inaccurate integrated density
         temp_inac_integ = read_pattern(
             self.text, {
@@ -731,6 +750,7 @@ class QCOutput(MSONable):
         """
         Parses all geometries from an optimization trajectory.
         """
+
         geoms = list()
         header_pattern = r"\s+Optimization\sCycle:\s+\d+\s+Coordinates \(Angstroms\)\s+ATOM\s+X\s+Y\s+Z"
         table_pattern = r"\s+\d+\s+\w+\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
@@ -752,11 +772,11 @@ class QCOutput(MSONable):
                 charge=self.data.get('charge'),
                 spin_multiplicity=self.data.get('multiplicity'))
 
-        # Parses optimized XYZ coordinates. If not present, parses optimized Z-matrix.
+        # Parses optimized XYZ coordinates. If not present, parses optimized
+        # Z-matrix.
         header_pattern = r"\*+\s+OPTIMIZATION\s+CONVERGED\s+\*+\s+\*+\s+Coordinates \(Angstroms\)\s+ATOM\s+X\s+Y\s+Z"
         table_pattern = r"\s+\d+\s+\w+\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
         footer_pattern = r"\s+Z-matrix Print:"
-
         parsed_optimized_geometries = read_table_pattern(
             self.text, header_pattern, table_pattern, footer_pattern)
         if parsed_optimized_geometries == [] or None:
@@ -792,7 +812,13 @@ class QCOutput(MSONable):
     def _get_grad_format_length(self, header):
         """
         Determines the maximum number of gradient entries printed on a line,
-        which changes for different versions of Q-Chem
+        which changes for different versions of Q-Chem.
+
+        Args:
+            header (str): Gradient header regex pattern.
+        Returns:
+            int
+
         """
         found_end = False
         index = 1
@@ -826,7 +852,8 @@ class QCOutput(MSONable):
 
         parsed_gradients = read_table_pattern(
             self.text, grad_header_pattern, grad_table_pattern, footer_pattern)
-        sorted_gradients = np.zeros(shape=(len(parsed_gradients), len(self.data["initial_molecule"]), 3))
+        sorted_gradients = np.zeros(shape=(len(parsed_gradients),
+                                           len(self.data["initial_molecule"]), 3))
         for ii, grad in enumerate(parsed_gradients):
             for jj in range(int(len(grad) / 3)):
                 for kk in range(grad_format_length):
@@ -837,6 +864,8 @@ class QCOutput(MSONable):
 
         self.data["gradients"] = sorted_gradients
 
+        # If a solvent method is being used, extract the solvent component
+        # of the gradient
         if self.data["solvent_method"] is not None:
             header_pattern = r"total gradient after adding PCM contribution --\s+-+\s+Atom\s+X\s+Y\s+Z\s+-+"
             table_pattern = r"\s+\d+\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)\s"
@@ -845,7 +874,9 @@ class QCOutput(MSONable):
             parsed_gradients = read_table_pattern(
                 self.text, header_pattern, table_pattern, footer_pattern)
 
-            pcm_gradients = np.zeros(shape=(len(parsed_gradients), len(self.data["initial_molecule"]), 3))
+            pcm_gradients = np.zeros(shape=(len(parsed_gradients),
+                                            len(self.data["initial_molecule"]),
+                                            3))
             for ii, grad in enumerate(parsed_gradients):
                 for jj, entry in enumerate(grad):
                     for kk, val in enumerate(entry):
@@ -855,16 +886,16 @@ class QCOutput(MSONable):
         else:
             self.data["pcm_gradients"] = None
 
-        if read_pattern(self.text, {
-            "key": r"Gradient of CDS energy"
-        },
+        if read_pattern(self.text, {"key": r"Gradient of CDS energy"},
                         terminate_on_match=True).get('key') == [[]]:
             header_pattern = r"Gradient of CDS energy"
 
             parsed_gradients = read_table_pattern(
                 self.text, header_pattern, grad_table_pattern, grad_header_pattern)
 
-            sorted_gradients = np.zeros(shape=(len(parsed_gradients), len(self.data["initial_molecule"]), 3))
+            sorted_gradients = np.zeros(shape=(len(parsed_gradients),
+                                               len(self.data["initial_molecule"]),
+                                               3))
             for ii, grad in enumerate(parsed_gradients):
                 for jj in range(int(len(grad) / 3)):
                     for kk in range(grad_format_length):
@@ -878,49 +909,17 @@ class QCOutput(MSONable):
             self.data["CDS_gradients"] = None
 
     def _read_optimization_data(self):
-        temp_energy_trajectory = read_pattern(
-            self.text, {
-                "key": r"\sEnergy\sis\s+([\d\-\.]+)"
-            }).get('key')
-        if temp_energy_trajectory is None:
-            self.data["energy_trajectory"] = []
-        else:
-            real_energy_trajectory = np.zeros(len(temp_energy_trajectory))
-            for ii, entry in enumerate(temp_energy_trajectory):
-                real_energy_trajectory[ii] = float(entry[0])
-            self.data["energy_trajectory"] = real_energy_trajectory
-            self._read_geometries()
-            if have_babel:
-                self.data["structure_change"] = check_for_structure_changes(
-                    self.data["initial_molecule"],
-                    self.data["molecule_from_last_geometry"])
-            self._read_gradients()
-            # Then, if no optimized geometry or z-matrix is found, and no errors have been previously
-            # idenfied, check to see if the optimization failed to converge or if Lambda wasn't able
-            # to be determined.
-            if len(self.data.get("errors")) == 0 and self.data.get('optimized_geometry') is None \
-                    and len(self.data.get('optimized_zmat')) == 0:
-                if read_pattern(
-                        self.text, {
-                            "key": r"MAXIMUM OPTIMIZATION CYCLES REACHED"
-                        },
-                        terminate_on_match=True).get('key') == [[]]:
-                    self.data["errors"] += ["out_of_opt_cycles"]
-                elif read_pattern(
-                        self.text, {
-                            "key": r"UNABLE TO DETERMINE Lamda IN FormD"
-                        },
-                        terminate_on_match=True).get('key') == [[]]:
-                    self.data["errors"] += ["unable_to_determine_lamda"]
+        """
+        Parse information related to geometry optimization trajectory.
+        """
 
-    # Currently, ts is treated identically to opt; once we run more tests, this will need to change
-    def _read_transition_state_data(self):
+        # Read energies and gradients
         temp_energy_trajectory = read_pattern(
             self.text, {
                 "key": r"\sEnergy\sis\s+([\d\-\.]+)"
             }).get('key')
         if temp_energy_trajectory is None:
-            self.data["energy_trajectory"] = []
+            self.data["energy_trajectory"] = list()
         else:
             real_energy_trajectory = np.zeros(len(temp_energy_trajectory))
             for ii, entry in enumerate(temp_energy_trajectory):
@@ -932,10 +931,12 @@ class QCOutput(MSONable):
                     self.data["initial_molecule"],
                     self.data["molecule_from_last_geometry"])
             self._read_gradients()
-            # Then, if no optimized geometry or z-matrix is found, and no errors have been previously
-            # idenfied, check to see if the optimization failed to converge or if Lambda wasn't able
-            # to be determined.
-            if len(self.data.get("errors")) == 0 and self.data.get('optimized_geometry') is None \
+
+            # If no optimized geometry or z-matrix is found, and no errors have
+            # been previously identified, check to see if the optimization
+            # failed to converge or if Lambda wasn't able to be determined.
+            if len(self.data.get("errors")) == 0 \
+                    and self.data.get('optimized_geometry') is None \
                     and len(self.data.get('optimized_zmat')) == 0:
                 if read_pattern(
                         self.text, {
@@ -954,6 +955,7 @@ class QCOutput(MSONable):
         """
         Parses frequencies, enthalpy, entropy, and mode vectors.
         """
+
         temp_dict = read_pattern(
             self.text, {
                 "frequencies":
@@ -997,6 +999,7 @@ class QCOutput(MSONable):
             else:
                 self.data[key] = float(temp_dict.get(key)[0][0])
 
+        # Extract frequency information, including IR intensities and activities
         if temp_dict.get('frequencies') is None:
             self.data['frequencies'] = None
             self.data['IR_intens'] = None
@@ -1065,6 +1068,7 @@ class QCOutput(MSONable):
                         intens[ii] = float(entry)
             self.data['IR_intens'] = intens
 
+            # Extract frequency mode vectors
             header_pattern = r"\s*Raman Active:\s+[YESNO]+\s+(?:[YESNO]+\s+)*X\s+Y\s+Z\s+(?:X\s+Y\s+Z\s+)*"
             table_pattern = r"\s*[a-zA-Z][a-zA-Z\s]\s*([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*(?:([\d\-\.]+)\s*" \
                             r"([\d\-\.]+)\s*([\d\-\.]+)\s*(?:([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+))*)*"
@@ -1075,8 +1079,8 @@ class QCOutput(MSONable):
             freq_mode_vecs = np.zeros(
                 shape=(len(freqs), len(temp_freq_mode_vecs[0]), 3))
 
-            for ii, triple_FMV in enumerate(temp_freq_mode_vecs):
-                for jj, line in enumerate(triple_FMV):
+            for ii, triple_fmv in enumerate(temp_freq_mode_vecs):
+                for jj, line in enumerate(triple_fmv):
                     for kk, entry in enumerate(line):
                         if entry != 'None':
                             freq_mode_vecs[int(ii * 3 + math.floor(kk / 3)),
@@ -1092,6 +1096,7 @@ class QCOutput(MSONable):
         """
         Parses final free energy information from single-point calculations.
         """
+
         temp_dict = read_pattern(
             self.text, {
                 "final_energy":
@@ -1102,169 +1107,42 @@ class QCOutput(MSONable):
             self.data['final_energy'] = None
         else:
             # -1 in case of pcm
-            # Two lines will match the above; we want final calculation
+            # Two lines will match the above; final calculation is of interest
             self.data['final_energy'] = float(temp_dict.get('final_energy')[-1][0])
 
-    def _read_string_geometries(self):
-        """
-        Parses geometries for FSM calculations (which are formatted differently than for
-        optimization calculations)
-        """
-        geoms = list()
-        header_pattern = r"Standard Nuclear Orientation \(Angstroms\)\s+I\s+Atom\s+X\s+Y\s+Z\s+-+"
-        table_pattern = r"\s*\d+\s+([a-zA-Z]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*"
-        footer_pattern = r"\s*-+"
-
-        parsed_geometries = read_table_pattern(
-            self.text, header_pattern, table_pattern, footer_pattern)
-        for parsed_geometry in parsed_geometries:
-            if parsed_geometry == list() or None:
-                geoms.append(None)
-            else:
-                coords = [e[1:] for e in parsed_geometry]
-                geoms.append(process_parsed_coords(coords))
-
-        self.data["geometries"] = geoms
-        self.data["last_geometry"] = geoms[-1]
-
-        if self.data.get('charge') is not None:
-            self.data["molecule_from_last_geometry"] = Molecule(
-                species=self.data.get('species'),
-                coords=self.data.get('last_geometry'),
-                charge=self.data.get('charge'),
-                spin_multiplicity=self.data.get('multiplicity'))
-
-        self.data["string_initial_reactant_geometry"] = self.data["geometries"][0]
-        # Two reactant geometries should initially be present, so third is product
-        self.data["string_initial_product_geometry"] = self.data["geometries"][2]
-
-        reactant_mol = Molecule(
-            species=self.data.get("species"),
-            coords=self.data.get("geometries")[0],
-            charge=self.data.get("charge"),
-            spin_multiplicity=self.data.get("multiplicity"))
-        reactant_mg = MoleculeGraph.with_local_env_strategy(reactant_mol, OpenBabelNN(),
-                                                            extend_structure=False, reorder=False)
-        self.data["string_initial_reactant_molecules"] = [f.molecule for f in reactant_mg.get_disconnected_fragments()]
-
-        product_mol = Molecule(
-            species=self.data.get("species"),
-            coords=self.data.get("geometries")[2],
-            charge=self.data.get("charge"),
-            spin_multiplicity=self.data.get("multiplicity"))
-        product_mg = MoleculeGraph.with_local_env_strategy(product_mol, OpenBabelNN(),
-                                                           extend_structure=False, reorder=False)
-        self.data["string_initial_product_molecules"] = [f.molecule for f in product_mg.get_disconnected_fragments()]
-
-    def _read_freezing_string_data(self):
-        """
-        Parses information from freezing string method (FSM) calculation to predict the transition
-        state of the reaction.
-        """
-
-        dirname = os.path.dirname(self.filename)
-
-        vfile_parser = QCVFileParser(filename=os.path.join(dirname, "Vfile.txt"), method="fsm")
-        stringfile_parser = QCStringfileParser(filename=os.path.join(dirname, "stringfile.txt"))
-        perpgradfile_parser = QCPerpGradFileParser(filename=os.path.join(dirname,
-                                                                         "perp_grad_file.txt"),
-                                                   method="fsm")
-
-        self.data["string_num_images"] = vfile_parser.data["num_images"]
-        self.data["string_energies"] = vfile_parser.data["image_energies"]
-        self.data["string_relative_energies"] = vfile_parser.data["relative_energies"]
-
-        self.data["string_geometries"] = stringfile_parser.data["geometries"]
-        self.data["string_molecules"] = list()
-        string_mols = stringfile_parser.data["molecules"]
-        for mol in string_mols:
-            mol.set_charge_and_spin(charge=self.data.get("charge"),
-                                    spin_multiplicity=self.data.get("multiplicity"))
-            self.data["string_molecules"].append(mol)
-
-        self.data["string_absolute_distances"] = perpgradfile_parser.data["absolute_distances"]
-        self.data["string_proportional_distances"] = perpgradfile_parser.data["proportional_distances"]
-        self.data["string_gradient_magnitudes"] = perpgradfile_parser.data["gradient_magnitudes"]
-
-        string_max_energy = max(vfile_parser.data["image_energies"])
-        max_index = vfile_parser.data["image_energies"].index(string_max_energy)
-        molecule_max_energy = stringfile_parser.data["molecules"][max_index]
-        self.data["string_max_energy"] = string_max_energy
-        self.data["string_ts_guess"] = molecule_max_energy
-
-    def _read_growing_string_data(self):
-        """
-        Parses information from growing string method (GSM) calculation to predict the transition
-        state of the reaction.
-        """
-
-        dirname = os.path.dirname(self.filename)
-
-        vfile_parser = QCVFileParser(filename=os.path.join(dirname, "Vfile.txt"), method="gsm")
-        perpgradfile_parser = QCPerpGradFileParser(filename=os.path.join(dirname,
-                                                                         "perp_grad_file.txt"), method="gsm")
-
-        self.data["string_num_images"] = vfile_parser.data["num_images"]
-        self.data["string_relative_energies"] = vfile_parser.data["relative_energies"]
-        self.data["string_relative_energies_iterations"] = vfile_parser.data["relative_energies_iterations"]
-
-        self.data["string_gradient_magnitudes"] = perpgradfile_parser.data["gradient_magnitudes"]
-        self.data["string_gradient_magnitudes_iterations"] = perpgradfile_parser.data["gradient_magnitudes_iterations"]
-        self.data["string_total_gradient_magnitude"] = perpgradfile_parser.data["total_gradient_magnitude"]
-        self.data["string_total_gradient_magnitude_iterations"] = perpgradfile_parser.data["total_gradient_magnitude_iterations"]
-
-        header_pattern = r"\s*structure [0-9]+\s*"
-        row_pattern = r"\s*(?P<species>[A-Za-z]+)\s+(?P<x_coord>\-?[0-9]+\.[0-9]+)\s+(?P<y_coord>\-?[0-9]+\.[0-9]+)\s+(?P<z_coord>\-?[0-9]+\.[0-9]+)"
-        footer_pattern = r""
-
-        temp_data = read_table_pattern(self.text,
-                                       header_pattern=header_pattern,
-                                       row_pattern=row_pattern,
-                                       footer_pattern=footer_pattern)
-
-        molecules = list()
-        geometries = list()
-        for image in temp_data:
-            species = list()
-            coords = list()
-            for row in image:
-                species.append(row["species"])
-                coords.append([row["x_coord"],
-                               row["y_coord"],
-                               row["z_coord"]])
-            coords = process_parsed_coords(coords)
-            molecules.append(Molecule(species, coords,
-                                      charge=self.data.get("charge"),
-                                      spin_multiplicity=self.data.get("multiplicity")))
-            geometries.append(coords)
-        self.data["string_molecules"] = molecules
-        self.data["string_geometries"] = geometries
-
-        string_max_energy = max(vfile_parser.data["relative_energies"])
-        max_index = vfile_parser.data["relative_energies"].index(string_max_energy)
-        molecule_max_energy = self.data["string_molecules"][max_index]
-        self.data["string_max_relative_energy"] = string_max_energy
-        self.data["string_ts_guess"] = molecule_max_energy
-
     def _read_force_data(self):
+        """
+        Parses gradient information from a force calculation.
+        """
+
         self._read_gradients()
 
     def _read_scan_data(self):
+        """
+        Parses geometry trajectories and energy trajectories for PES_SCAN
+            calculations
+        """
+
         temp_energy_trajectory = read_pattern(
             self.text, {
                 "key": r"\sEnergy\sis\s+([\d\-\.]+)"
             }).get('key')
         if temp_energy_trajectory is None:
-            self.data["energy_trajectory"] = []
+            self.data["energy_trajectory"] = list()
         else:
             real_energy_trajectory = np.zeros(len(temp_energy_trajectory))
             for ii, entry in enumerate(temp_energy_trajectory):
                 real_energy_trajectory[ii] = float(entry[0])
             self.data["energy_trajectory"] = real_energy_trajectory
 
+        # Extract all geometries and gradients along the scan
         self._read_geometries()
         self._read_gradients()
 
+        self.data["scan_geometries"] = self.data["optimized_geometries"]
+        self.data["scan_molecules"] = self.data["molecules_from_optimized_geometries"]
+
+        # Identify common errors
         if len(self.data.get("errors")) == 0:
             if read_pattern(
                     self.text, {
@@ -1279,6 +1157,7 @@ class QCOutput(MSONable):
                     terminate_on_match=True).get('key') == [[]]:
                 self.data["errors"] += ["unable_to_determine_lamda"]
 
+        # Extract final energies at each step of the scan
         header_pattern = r"\s*\-+ Summary of potential scan\: \-+\s*"
         row_pattern_single = r"\s*([\-\.0-9]+)\s+([\-\.0-9]+)\s*\n"
         row_pattern_double = r"\s*([\-\.0-9]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+)\s*\n"
@@ -1309,7 +1188,6 @@ class QCOutput(MSONable):
                 self.data["scan_energies"].append((param, energy))
 
         constraint_head = r"\s+Constraints and their Current Values\s*\n\s+Value\s+Constraint"
-        # constraint_row = r"\s*(?:(Distance\(Angs\))\:\s+([0-9]+)\s([0-9]+)\s+([\.0-9]+)\s+([\.0-9]+))|(?:(Angle)\:\s+([0-9]+)\s([0-9]+)\s+([0-9]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+))|(?:(Dihedral)\:\s+([0-9]+)\s([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+))"
         constraint_row = r"\s*(Distance\(Angs\))|(Angle)|(Dihedral)\:(?:([0-9]+)\s+)+([\.0-9]+)\s+([\.0-9]+)"
         constraint_foot = r"\s*Hessian updated using BFGS update"
 
@@ -1405,6 +1283,7 @@ class QCOutput(MSONable):
         """
         Parses potential errors that can cause jobs to crash
         """
+
         if read_pattern(
                 self.text, {
                     "key":
@@ -1488,13 +1367,18 @@ class QCOutput(MSONable):
             if tmp_failed_line_searches is not None:
                 if len(tmp_failed_line_searches) > 10:
                     self.data["errors"] += ["SCF_failed_to_converge"]
-        if self.data.get("errors") == []:
-            self.data["errors"] += ["unknown_error"]
+
+        if self.data.get("errors") == list():
+            self.data["errors"].append("unknown_error")
 
     def as_dict(self):
         """
-            MSONAble dict.
+        Convert QCOutput to an MSONable dict.
+
+        Args:
+            None
         Returns:
+            dict
         """
         d = dict()
         d["data"] = self.data
@@ -1628,7 +1512,7 @@ def check_for_structure_changes(mol1: Molecule, mol2: Molecule) -> str:
                 "Comparing molecules with different atom ordering! "
                 "Turning off special treatment for coordinating metals."
             )
-            special_elements = []
+            special_elements = list()
 
     special_sites: List[List] = [[], []]
     for ii, mol in enumerate(mol_list):
@@ -1640,8 +1524,6 @@ def check_for_structure_changes(mol1: Molecule, mol2: Molecule) -> str:
         for jj, site in enumerate(mol):
             if site.specie.symbol in special_elements:
                 mol.__delitem__(jj)
-
-    # Can add logic to check the distances in the future if desired
 
     initial_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[0],
                                                               OpenBabelNN())

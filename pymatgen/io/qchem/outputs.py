@@ -34,12 +34,9 @@ except ImportError:
     ob = None
     have_babel = False
 
-from .utils import (read_table_pattern,
-                    read_pattern,
-                    read_table_pattern_with_useful_header_footer,
-                    process_parsed_coords)
+from pymatgen.io.qchem.utils import read_table_pattern, read_pattern, process_parsed_coords
 
-__author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath"
+__author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath, Evan Spotte-Smith"
 __copyright__ = "Copyright 2018, The Materials Project"
 __version__ = "0.1"
 
@@ -64,7 +61,8 @@ class QCOutput(MSONable):
         with zopen(filename, 'rt') as f:
             self.text = f.read()
 
-        # Check if output file contains multiple output files. If so, print an error message and exit
+        # Check if output file contains multiple output files.
+        # If so, print an error message and exit
         self.data["multiple_outputs"] = read_pattern(
             self.text, {
                 "key": r"Job\s+\d+\s+of\s+(\d+)\s+"
@@ -72,13 +70,9 @@ class QCOutput(MSONable):
             terminate_on_match=True).get('key')
         if not (self.data.get('multiple_outputs') is None
                 or self.data.get('multiple_outputs') == [['1']]):
-            print(
-                "ERROR: multiple calculation outputs found in file " +
-                filename +
-                ". Please instead call QCOutput.mulitple_outputs_from_file(QCOutput,'"
-                + filename + "')")
-            print("Exiting...")
-            exit()
+            #TODO: Is there a test case for this?
+            raise Exception("Multiple calculations in {}.".format(filename) +
+                            "Please call QCOutput.multiple_output_from_file.")
 
         # Parse the molecular details: charge, multiplicity,
         # species, and initial geometry.
@@ -125,9 +119,9 @@ class QCOutput(MSONable):
                     "key": r"SCF failed to converge"
                 },
                 terminate_on_match=True).get('key') == [[]]:
-            self.data["errors"] += ["SCF_failed_to_converge"]
+            self.data["errors"].append(["SCF_failed_to_converge"])
 
-        # Parse the SCF
+        # Parse the SCF calculations
         self._read_SCF()
 
         # Parse the Mulliken/ESP/RESP charges
@@ -1509,6 +1503,97 @@ class QCOutput(MSONable):
         return jsanitize(d, strict=True)
 
 
+class ScratchFileParser(MSONable):
+
+    def __init__(self, filename):
+        self.data = dict()
+        with zopen(filename, 'rt') as f:
+            self.text = f.read()
+
+        if "GRAD" in filename:
+            self._parse_grad()
+        elif "HESS" in filename:
+            self._parse_hess()
+
+    def _parse_grad(self):
+
+        temp_dict = read_pattern(
+            self.text, {
+                "energy": r"\$energy\s+([\-\.0-9]+)",
+            }
+        )
+
+        if temp_dict.get('energy') is None:
+            energy = None
+        else:
+            energy = float(temp_dict.get('energy')[0][0])
+
+        self.data["energy"] = energy
+
+        header_pattern = r"\$gradient"
+        row_pattern = r"\s+([\d\-\+\.Ee]+)\s*([\d\-\+\.Ee]+)\s*([\d\-\+\.Ee]+)"
+        footer_pattern = r"\$end"
+
+        temp_data = read_table_pattern(self.text,
+                                       header_pattern=header_pattern,
+                                       row_pattern=row_pattern,
+                                       footer_pattern=footer_pattern)
+
+        # There should only be one of these, right?
+        gradient = None
+        for ii, gg in enumerate(temp_data):
+            if gg not in [[], None]:
+                gradient = process_parsed_coords(gg)
+
+        self.data["gradient"] = gradient
+
+    def _parse_hess(self):
+
+        temp_dict = read_pattern(
+            self.text, {
+                "hessian": r"\$hessian\s+([A-Za-z]+)",
+                "dimension": r"Dimension\s+([0-9]+)",
+                "element": r"(\-?[0-9]\.[0-9]+(?:[Ee][\+\-])?[0-9]+)"
+            }
+        )
+
+        if temp_dict.get('hessian') is None:
+            hess_approx_exact = None
+        else:
+            hess_approx_exact = temp_dict.get('hessian')[0][0]
+
+        self.data["hess_approx_exact"] = hess_approx_exact
+
+        if temp_dict.get('dimension') is None:
+            raise ValueError("Cannot parse Hessian without knowledge of "
+                             "dimension!")
+        else:
+            hess_dimension = int(temp_dict.get('dimension')[0][0])
+
+        hess_matrix = np.zeros((hess_dimension,
+                               hess_dimension))
+
+        hess_values = [float(e[0]) for e in temp_dict.get('element')]
+        for i in range(hess_dimension):
+            for j in range(i + 1):
+                val = hess_values.pop(0)
+                hess_matrix[i, j] = val
+                hess_matrix[j, i] = val
+
+        self.data["hess_matrix"] = hess_matrix
+
+    def as_dict(self):
+        d = dict()
+        d["data"] = self.data
+        d["text"] = self.text
+        d["filename"] = os.path.split(self.filename)[-1]
+        if "GRAD" in d["filename"]:
+            d["type"] = "gradient"
+        elif "HESS" in d["filename"]:
+            d["type"] = "hessian"
+        return jsanitize(d, strict=True)
+
+
 def check_for_structure_changes(mol1: Molecule, mol2: Molecule) -> str:
     """
     Compares connectivity of two molecules (using MoleculeGraph w/ OpenBabelNN).
@@ -1530,6 +1615,7 @@ def check_for_structure_changes(mol1: Molecule, mol2: Molecule) -> str:
         One of ["unconnected_fragments", "fewer_bonds", "more_bonds",
         "bond_change", "no_change"]
     """
+
     special_elements = ["Li", "Na", "Mg", "Ca", "Zn"]
     mol_list = [copy.deepcopy(mol1), copy.deepcopy(mol2)]
 

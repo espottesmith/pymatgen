@@ -1350,13 +1350,16 @@ class QCOutput(MSONable):
 class ScratchFileParser(MSONable):
 
     def __init__(self, filename):
+        self.filename = filename
         self.data = dict()
         with zopen(filename, 'rt') as f:
             self.text = f.read()
 
         if "GRAD" in filename:
+            self.data["type"] = "gradient"
             self._parse_grad()
         elif "HESS" in filename:
+            self.data["type"] = "hessian"
             self._parse_hess()
 
     def _parse_grad(self):
@@ -1383,7 +1386,6 @@ class ScratchFileParser(MSONable):
                                        row_pattern=row_pattern,
                                        footer_pattern=footer_pattern)
 
-        # There should only be one of these, right?
         gradient = None
         for ii, gg in enumerate(temp_data):
             if gg not in [[], None]:

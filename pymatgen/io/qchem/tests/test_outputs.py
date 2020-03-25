@@ -264,5 +264,42 @@ class TestQCOutput(PymatgenTest):
                          "bond_change")
 
 
+class TestScratchFileParser(PymatgenTest):
+
+    def test_parse_grad(self):
+        grad_reference = loadfn("grad.json")
+        grad_parsed = ScratchFileParser(os.path.join(test_dir,
+                                                     "new_qchem_files",
+                                                     "scratch_tests",
+                                                     "GRAD"))
+
+        self.assertEqual(grad_reference["filename"],
+                         grad_parsed.filename)
+        self.assertEqual(grad_parsed.data["type"], "gradient")
+        self.assertEqual(grad_reference["data"]["energy"],
+                         grad_parsed.data["energy"])
+        for i in range(len(grad_parsed.data["gradient"])):
+            for j in range(3):
+                self.assertEqual(grad_reference["data"]["gradient"][i][j],
+                                 grad_parsed.data["gradient"][i][j])
+
+    def test_parsed_hess(self):
+        hess_reference = loadfn("hess.json")
+        hess_parsed = ScratchFileParser(os.path.join(test_dir,
+                                                     "new_qchem_files",
+                                                     "scratch_tests",
+                                                     "HESS"))
+
+        self.assertEqual(hess_reference["filename"],
+                         hess_parsed.filename)
+        self.assertEqual(hess_parsed.data["type"], "hessian")
+        self.assertEqual(hess_parsed.data["hess_approx_exact"],
+                         "approximate")
+        for i in range(len(hess_parsed.data["hess_matrix"])):
+            for j in range(len(hess_parsed.data["hess_matrix"])):
+                self.assertEqual(hess_reference["data"]["hess_matrix"][i][j],
+                                 hess_parsed.data["hess_matrix"][i][j])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -156,7 +156,7 @@ single_job_out_names = {"unable_to_determine_lambda_in_geom_opt.qcout",
                         "new_qchem_files/1570.qout",
                         "new_qchem_files/1570_2.qout",
                         "new_qchem_files/single_point.qout",
-                        "crazy_scf_values.qout"}
+                        "crazy_scf_values.qcout"}
 
 multi_job_out_names = {"not_enough_total_memory.qcout",
                        "new_qchem_files/VC_solv_eps10.qcout",
@@ -173,8 +173,8 @@ multi_job_out_names = {"not_enough_total_memory.qcout",
 class TestQCOutput(PymatgenTest):
 
     def setUp(self) -> None:
-        # self.generate_single_job_dict()
-        # self.generate_multi_job_dict()
+        self.generate_single_job_dict()
+        self.generate_multi_job_dict()
         pass
 
     @staticmethod
@@ -218,12 +218,10 @@ class TestQCOutput(PymatgenTest):
     def test_all(self):
         single_outs = dict()
         for file in single_job_out_names:
-            print(file)
             single_outs[file] = QCOutput(os.path.join(test_dir, file)).data
 
         multi_outs = dict()
         for file in multi_job_out_names:
-            print(file)
             multi_outs[file] = QCOutput.multiple_outputs_from_file(os.path.join(test_dir, file),
                                                                    keep_sub_files=False)
 

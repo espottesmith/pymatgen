@@ -3,7 +3,7 @@
 # Distributed under the terms of the MIT License.
 
 """
-Parsers for Q-Chem output files.
+Parsers for Qchem output files.
 """
 
 import re
@@ -15,18 +15,15 @@ import math
 import copy
 
 import numpy as np
-import networkx as nx
 
 from monty.io import zopen
 from monty.json import jsanitize
 from monty.json import MSONable
+from pymatgen.core import Molecule
 
-from pymatgen.core.structure import Molecule
 from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.analysis.local_env import OpenBabelNN
-from pymatgen.analysis.fragmenter import metal_edge_extender
-from pymatgen.io.qchem.utils import (read_table_pattern, read_pattern,
-                                     process_parsed_coords)
+import networkx as nx
 
 try:
     from openbabel import openbabel as ob
@@ -36,8 +33,9 @@ except ImportError:
     ob = None
     have_babel = False
 
+from .utils import read_table_pattern, read_pattern, process_parsed_coords
 
-__author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath, Evan Spotte-Smith"
+__author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath"
 __copyright__ = "Copyright 2018, The Materials Project"
 __version__ = "0.1"
 
@@ -46,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 class QCOutput(MSONable):
     """
-    Class to parse Q-Chem output files.
+    Class to parse QChem output files.
     """
 
     def __init__(self, filename):
@@ -75,8 +73,6 @@ class QCOutput(MSONable):
             raise Exception("Multiple calculations in {}.".format(filename) +
                             "Please call QCOutput.multiple_output_from_file.")
 
-        print("Finished reading multiple outputs")
-
         # Parse the molecular details: charge, multiplicity,
         # species, and initial geometry.
         self._read_charge_and_multiplicity()
@@ -87,8 +83,6 @@ class QCOutput(MSONable):
                 terminate_on_match=True).get('key') == [[]]:
             self._read_species_and_inital_geometry()
 
-        print("Finished reading charge, multiplicity, and initial geometry")
-
         # Check if calculation finished
         self.data["completion"] = read_pattern(
             self.text, {
@@ -96,7 +90,20 @@ class QCOutput(MSONable):
                     r"Thank you very much for using Q-Chem.\s+Have a nice day."
             },
             terminate_on_match=True).get('key')
-        print("Finished reading completion")
+
+        # If the calculation finished, parse the job time.
+        if self.data.get('completion', False):
+            temp_timings = read_pattern(
+                self.text, {
+                    "key":
+                        r"Total job time\:\s*([\d\-\.]+)s\(wall\)\,\s*([\d\-\.]+)s\(cpu\)"
+                }).get('key')
+            if temp_timings is not None:
+                self.data["walltime"] = float(temp_timings[0][0])
+                self.data["cputime"] = float(temp_timings[0][1])
+            else:
+                self.data["walltime"] = None
+                self.data["cputime"] = None
 
         # Check if calculation is unrestricted
         self.data["unrestricted"] = read_pattern(
@@ -125,20 +132,16 @@ class QCOutput(MSONable):
                     "key": r"SCF failed to converge"
                 },
                 terminate_on_match=True).get('key') == [[]]:
-            self.data["errors"].append(["SCF_failed_to_converge"])
-        print("Finished reading SCF method and errors")
+            self.data["errors"].append("SCF_failed_to_converge")
 
-        # Parse the SCF calculations
+        # Parse the SCF
         self._read_SCF()
-        print("Finished reading SCF")
 
         # Parse the Mulliken/ESP/RESP charges
         self._read_charges()
-        print("Finished reading charges")
 
         # Check for various warnings
         self._detect_general_warnings()
-        print("Finished reading general warnings")
 
         # Check to see if PCM or SMD are present
         self.data["solvent_method"] = None
@@ -172,7 +175,7 @@ class QCOutput(MSONable):
                         "key": r"Unrecognized solvent"
                     },
                     terminate_on_match=True).get('key') == [[]]:
-                if not self.data.get('completion', []):
+                if not self.data.get('completion', False):
                     self.data["errors"] += ["unrecognized_solvent"]
                 else:
                     self.data["warnings"]["unrecognized_solvent"] = True
@@ -192,7 +195,6 @@ class QCOutput(MSONable):
                             self.data["warnings"]["questionable_SMD_parsing"] = True
             self.data["solvent_data"]["SMD_solvent"] = temp_solvent[0][0]
             self._read_smd_information()
-        print("Finished reading solvent stuff")
 
         # Parse the final energy
         temp_final_energy = read_pattern(
@@ -203,7 +205,6 @@ class QCOutput(MSONable):
             self.data["final_energy"] = None
         else:
             self.data["final_energy"] = float(temp_final_energy[0][0])
-        print("Finished reading final energy")
 
         # Check if calculation is using dft_d and parse relevant info if so
         self.data["using_dft_d3"] = read_pattern(
@@ -212,7 +213,7 @@ class QCOutput(MSONable):
                     r"dft_d\s*= d3"
             },
             terminate_on_match=True).get('key')
-        if self.data.get('using_dft_d3', []):
+        if self.data.get('using_dft_d3', False):
             temp_d3 = read_pattern(self.text, {
                 "key": r"\-D3 energy without 3body term =\s*([\d\.\-]+) hartrees"
             }).get('key')
@@ -227,9 +228,8 @@ class QCOutput(MSONable):
                 self.data["dft_d3"] = real_d3
 
         # Parse the S2 values in the case of an unrestricted calculation
-        if self.data.get('unrestricted', []):
-            correct_s2 = 0.5 * (self.data["multiplicity"] - 1) * \
-                         (0.5 * (self.data["multiplicity"] - 1) + 1)
+        if self.data.get('unrestricted', False):
+            correct_s2 = 0.5 * (self.data["multiplicity"] - 1) * (0.5 * (self.data["multiplicity"] - 1) + 1)
             temp_S2 = read_pattern(self.text, {
                 "key": r"<S\^2>\s=\s+([\d\-\.]+)"
             }).get('key')
@@ -252,7 +252,6 @@ class QCOutput(MSONable):
                     for ii, entry in enumerate(self.data["S2"]):
                         spin_contamination[ii] = abs(correct_s2 - entry)
                     self.data["warnings"]["spin_contamination"] = spin_contamination
-        print("Finished reading D3, unrestricted")
 
         # Check if the calculation is a geometry optimization.
         # If so, parse the relevant output
@@ -260,9 +259,8 @@ class QCOutput(MSONable):
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*opt"
             }).get('key')
-        if self.data.get('optimization', list()):
+        if self.data.get('optimization', []):
             self._read_optimization_data()
-        print("Finished reading opt")
 
         # Check if the calculation is a transition state optimization.
         # If so, parse the relevant output
@@ -272,7 +270,6 @@ class QCOutput(MSONable):
             }).get('key')
         if self.data.get('transition_state', list()):
             self._read_optimization_data()
-        print("Finished reading ts")
 
         # Check if the calculation contains a constraint in an $opt section.
         self.data["opt_constraint"] = read_pattern(self.text, {
@@ -291,82 +288,43 @@ class QCOutput(MSONable):
                     if abs(float(self.data.get('opt_constraint')[5])) != abs(
                             float(self.data.get('opt_constraint')[6])):
                         raise ValueError(
-                            "ERROR: Opt section value and constraint should be the same!"
-                        )
-                    elif abs(float(
-                            self.data.get('opt_constraint')[5])) not in [
-                        0.0, 180.0
-                    ]:
+                            "ERROR: Opt section value and constraint should be "
+                            "the same!")
+                    elif abs(float(self.data.get('opt_constraint')[5])) \
+                            not in [0.0, 180.0]:
                         raise ValueError(
-                            "ERROR: Opt section value and constraint can only differ by a sign at 0.0 and 180.0!"
-                        )
-        print("Finished reading opt constraint")
+                            "ERROR: Opt section value and constraint can only "
+                            "differ by a sign at 0.0 and 180.0!")
 
-        # Check if the calculation is a frequency analysis.
-        # If so, parse the relevant output
+        # Check if the calculation is a frequency analysis. If so, parse the relevant output
         self.data["frequency_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*freq"
             },
             terminate_on_match=True).get('key')
-        if self.data.get('frequency_job', []):
+        if self.data.get('frequency_job', False):
             self._read_frequency_data()
-        print("Finished reading freq")
 
-        # Check if the calculation is a single-point calculation.
-        # If so, parse the relevant output
         self.data["single_point_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*sp"
             },
             terminate_on_match=True).get("key")
-        if self.data.get("single_point_job", []):
+        if self.data.get("single_point_job", False):
             self._read_single_point_data()
-        print("Finished reading sp")
 
-        # Check if the calculation is a force (gradient) calculation.
-        # If so, parse the relevant output
         self.data["force_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*force"
             },
             terminate_on_match=True).get("key")
-        if self.data.get("force_job", []):
+        if self.data.get("force", False):
             self._read_force_data()
-        print("Finished reading force")
 
-        # Check if the calculation is a pes_scan calculation.
-        # If so, parse the relevant output
-        self.data["scan_job"] = read_pattern(
-            self.text, {
-                "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*pes_scan"
-            },
-            terminate_on_match=True).get("key")
-        if self.data.get("scan_job", []):
-            self._read_scan_data()
-        print("Finished reading scan")
-
-        # If the calculation finished, parse the job time.
-        if self.data.get('completion', False):
-            temp_timings = read_pattern(
-                self.text, {
-                    "key":
-                        r"Total job time\:\s*([\d\-\.]+)s\(wall\)\,\s*([\d\-\.]+)s\(cpu\)"
-                }).get('key')
-            if temp_timings is not None:
-                self.data["walltime"] = float(temp_timings[0][0])
-                self.data["cputime"] = float(temp_timings[0][1])
-            else:
-                self.data["walltime"] = None
-                self.data["cputime"] = None
-        print("Finished reading time")
-
-        # If the calculation did not finish and no errors have been identified
-        # yet, check for other errors
+        # If the calculation did not finish and no errors have been identified yet, check for other errors
         if not self.data.get('completion', False) \
-                and self.data.get("errors") == list():
+                and self.data.get("errors") == []:
             self._check_completion_errors()
-        print("Finished reading completion errors")
 
     @classmethod
     def multiple_outputs_from_file(cls, filename, keep_sub_files=True):
@@ -377,7 +335,6 @@ class QCOutput(MSONable):
             a.) Find delimiter for multiple calculations
             b.) Make separate output sub-files
         2.) Creates separate QCOutputs for each one from the sub-files
-
         Args:
             filename (str): Filename to parse.
             keep_sub_files (bool): If True (default), then leave created Q-Chem
@@ -386,7 +343,6 @@ class QCOutput(MSONable):
         Returns:
             to_return (list of QCOutput objects)
         """
-
         to_return = list()
 
         # Split Q-Chem output file into sub-files
@@ -456,11 +412,10 @@ class QCOutput(MSONable):
         """
 
         header_pattern = r"Standard Nuclear Orientation \(Angstroms\)\s+I\s+Atom\s+X\s+Y\s+Z\s+-+"
-        table_pattern = r"\s*\d+\s+([a-zA-Z]+)\s*([\d\-\.\*]+)\s*([\d\-\.\*]+)\s*([\d\-\.\*]+)\s*"
+        table_pattern = r"\s*\d+\s+([a-zA-Z]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*"
         footer_pattern = r"\s*-+"
         temp_geom = read_table_pattern(self.text, header_pattern,
                                        table_pattern, footer_pattern)
-
         if temp_geom is None or len(temp_geom) == 0:
             self.data["species"] = None
             self.data["initial_geometry"] = None
@@ -484,13 +439,13 @@ class QCOutput(MSONable):
                 species += [entry[0]]
                 for jj in range(3):
                     if "*" in entry[jj + 1]:
-                        # TODO: Should this be float("inf")
-                        geometry[ii, jj] = 10000000000.0
+                        geometry[ii, jj] = float("inf")
                     else:
                         geometry[ii, jj] = float(entry[jj + 1])
             self.data["species"] = species
             self.data["initial_geometry"] = geometry
-            if self.data["charge"] is not None and self.data["multiplicity"] is not None:
+            if self.data["charge"] is not None \
+                    and self.data["multiplicity"] is not None:
                 self.data["initial_molecule"] = Molecule(
                     species=species,
                     coords=geometry,
@@ -513,7 +468,7 @@ class QCOutput(MSONable):
                              r"(?:\s*\-+\s+OpenMP\s+Integral\s+computing\s+Module\s+" \
                              r"(?:Release:\s+version\s+[\d\-\.]+\,\s+\w+\s+[\d\-\.]+\, " \
                              r"Q-Chem Inc\. Pittsburgh\s+)*\-+)*\n"
-            table_pattern = r"(?:\n[a-zA-Z_\s/]+(?:\.C)*::(?:WARNING energy changes are now smaller than effective " \
+            table_pattern = r"(?:\n[a-zA-Z_\s/]+\.C::(?:WARNING energy changes are now smaller than effective " \
                             r"accuracy\.)*(?:\s+calculation will continue, but THRESH should be increased)*" \
                             r"(?:\s+or SCF_CONVERGENCE decreased\. )*(?:\s+effective_thresh = [\d\-\.]+e[\d\-]+)*)*" \
                             r"(?:\s*Nonlocal correlation = [\d\-\.]+e[\d\-]+)*" \
@@ -551,7 +506,7 @@ class QCOutput(MSONable):
             for ii, entry in enumerate(one_scf):
                 temp[ii, 0] = float(entry[0])
                 temp[ii, 1] = float(entry[1]) * 10 ** float(entry[2])
-            real_scf.append(temp)
+            real_scf += [temp]
 
         self.data["SCF"] = real_scf
 
@@ -629,7 +584,7 @@ class QCOutput(MSONable):
                 temp = np.zeros(len(one_mulliken))
                 for ii, entry in enumerate(one_mulliken):
                     temp[ii] = float(entry[0])
-            real_mulliken.append(temp)
+            real_mulliken += [temp]
 
         self.data["Mulliken"] = real_mulliken
 
@@ -764,8 +719,6 @@ class QCOutput(MSONable):
         for scf in self.data["SCF"]:
             if abs(scf[0][0] - scf[1][0]) > 10.0:
                 self.data["warnings"]["bad_roothaan"] = True
-                if abs(scf[0][0] - scf[1][0]) > 100.0:
-                    self.data["warnings"]["very_bad_roothaan"] = True
 
     def _read_geometries(self):
         """
@@ -793,15 +746,17 @@ class QCOutput(MSONable):
                 charge=self.data.get('charge'),
                 spin_multiplicity=self.data.get('multiplicity'))
 
-        # Parses optimized XYZ coordinates. If not present, parses optimized
-        # Z-matrix.
+        # Parses optimized XYZ coordinates.
+        # If not present, parses optimized Z-matrix.
         header_pattern = r"\*+\s+OPTIMIZATION\s+CONVERGED\s+\*+\s+\*+\s+Coordinates \(Angstroms\)\s+ATOM\s+X\s+Y\s+Z"
         table_pattern = r"\s+\d+\s+\w+\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
         footer_pattern = r"\s+Z-matrix Print:"
+
         parsed_optimized_geometries = read_table_pattern(
             self.text, header_pattern, table_pattern, footer_pattern)
         if parsed_optimized_geometries == [] or None:
             self.data["optimized_geometry"] = None
+            self.data["optimized_geometries"] = None
             header_pattern = r"^\s+\*+\s+OPTIMIZATION CONVERGED\s+\*+\s+\*+\s+Z-matrix\s+" \
                              r"Print:\s+\$molecule\s+[\d\-]+\s+[\d\-]+\n"
             table_pattern = r"\s*(\w+)(?:\s+(\d+)\s+([\d\-\.]+)(?:\s+(\d+)\s+([\d\-\.]+)" \
@@ -811,8 +766,7 @@ class QCOutput(MSONable):
             self.data["optimized_zmat"] = read_table_pattern(
                 self.text, header_pattern, table_pattern, footer_pattern)
         else:
-            self.data["optimized_geometry"] = process_parsed_coords(
-                parsed_optimized_geometries[0])
+            self.data["optimized_geometry"] = process_parsed_coords(parsed_optimized_geometries[0])
             self.data["optimized_geometries"] = [process_parsed_coords(i)
                                                  for i in parsed_optimized_geometries]
             if self.data.get('charge') is not None:
@@ -821,6 +775,7 @@ class QCOutput(MSONable):
                     coords=self.data.get('optimized_geometry'),
                     charge=self.data.get('charge'),
                     spin_multiplicity=self.data.get('multiplicity'))
+
                 self.data["molecules_from_optimized_geometries"] = list()
                 for geom in self.data["optimized_geometries"]:
                     mol = Molecule(
@@ -839,8 +794,8 @@ class QCOutput(MSONable):
             header (str): Gradient header regex pattern.
         Returns:
             int
-
         """
+
         found_end = False
         index = 1
         pattern = header
@@ -874,7 +829,8 @@ class QCOutput(MSONable):
         parsed_gradients = read_table_pattern(
             self.text, grad_header_pattern, grad_table_pattern, footer_pattern)
         sorted_gradients = np.zeros(shape=(len(parsed_gradients),
-                                           len(self.data["initial_molecule"]), 3))
+                                           len(self.data["initial_molecule"]),
+                                           3))
         for ii, grad in enumerate(parsed_gradients):
             for jj in range(int(len(grad) / 3)):
                 for kk in range(grad_format_length):
@@ -940,7 +896,7 @@ class QCOutput(MSONable):
                 "key": r"\sEnergy\sis\s+([\d\-\.]+)"
             }).get('key')
         if temp_energy_trajectory is None:
-            self.data["energy_trajectory"] = list()
+            self.data["energy_trajectory"] = []
         else:
             real_energy_trajectory = np.zeros(len(temp_energy_trajectory))
             for ii, entry in enumerate(temp_energy_trajectory):
@@ -954,10 +910,9 @@ class QCOutput(MSONable):
             self._read_gradients()
 
             # If no optimized geometry or z-matrix is found, and no errors have
-            # been previously identified, check to see if the optimization
-            # failed to converge or if Lambda wasn't able to be determined.
-            if len(self.data.get("errors")) == 0 \
-                    and self.data.get('optimized_geometry') is None \
+            # been previously idenfied, check to see if the optimization failed
+            # to converge or if Lambda wasn't able to be determined.
+            if len(self.data.get("errors")) == 0 and self.data.get('optimized_geometry') is None \
                     and len(self.data.get('optimized_zmat')) == 0:
                 if read_pattern(
                         self.text, {
@@ -1020,7 +975,6 @@ class QCOutput(MSONable):
             else:
                 self.data[key] = float(temp_dict.get(key)[0][0])
 
-        # Extract frequency information, including IR intensities and activities
         if temp_dict.get('frequencies') is None:
             self.data['frequencies'] = None
             self.data['IR_intens'] = None
@@ -1089,7 +1043,6 @@ class QCOutput(MSONable):
                         intens[ii] = float(entry)
             self.data['IR_intens'] = intens
 
-            # Extract frequency mode vectors
             header_pattern = r"\s*Raman Active:\s+[YESNO]+\s+(?:[YESNO]+\s+)*X\s+Y\s+Z\s+(?:X\s+Y\s+Z\s+)*"
             table_pattern = r"\s*[a-zA-Z][a-zA-Z\s]\s*([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*(?:([\d\-\.]+)\s*" \
                             r"([\d\-\.]+)\s*([\d\-\.]+)\s*(?:([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+))*)*"
@@ -1115,7 +1068,7 @@ class QCOutput(MSONable):
 
     def _read_single_point_data(self):
         """
-        Parses final free energy information from single-point calculations.
+        Parses final energy information from single-point calculations.
         """
 
         temp_dict = read_pattern(
@@ -1128,7 +1081,7 @@ class QCOutput(MSONable):
             self.data['final_energy'] = None
         else:
             # -1 in case of pcm
-            # Two lines will match the above; final calculation is of interest
+            # Two lines will match the above; we want final calculation
             self.data['final_energy'] = float(temp_dict.get('final_energy')[-1][0])
 
     def _read_force_data(self):
@@ -1363,22 +1316,10 @@ class QCOutput(MSONable):
             self.data["errors"] += ["licensing_error"]
         elif read_pattern(
                 self.text, {
-                    "key": r"Unable to validate license"
-                },
-                terminate_on_match=True).get('key') == [[]]:
-            self.data["errors"] += ["licensing_error"]
-        elif read_pattern(
-                self.text, {
                     "key": r"Could not open driver file in ReadDriverFromDisk"
                 },
                 terminate_on_match=True).get('key') == [[]]:
             self.data["errors"] += ["driver_error"]
-        elif read_pattern(
-                self.text, {
-                    "key": r"gen_scfman_exception:  GDM:: Zero or negative preconditioner scaling factor"
-                },
-                terminate_on_match=True).get('key') == [[]]:
-            self.data["errors"] += ["gdm_neg_precon_error"]
         else:
             tmp_failed_line_searches = read_pattern(
                 self.text, {
@@ -1388,19 +1329,17 @@ class QCOutput(MSONable):
             if tmp_failed_line_searches is not None:
                 if len(tmp_failed_line_searches) > 10:
                     self.data["errors"] += ["SCF_failed_to_converge"]
-
-        if self.data.get("errors") == list():
-            self.data["errors"].append("unknown_error")
+        if self.data.get("errors") == []:
+            self.data["errors"] += ["unknown_error"]
 
     def as_dict(self):
         """
         Convert QCOutput to an MSONable dict.
 
-        Args:
-            None
         Returns:
-            dict
+            MSONAble dict.
         """
+
         d = dict()
         d["data"] = self.data
         d["text"] = self.text
@@ -1520,7 +1459,6 @@ def check_for_structure_changes(mol1: Molecule, mol2: Molecule) -> str:
         One of ["unconnected_fragments", "fewer_bonds", "more_bonds",
         "bond_change", "no_change"]
     """
-
     special_elements = ["Li", "Na", "Mg", "Ca", "Zn"]
     mol_list = [copy.deepcopy(mol1), copy.deepcopy(mol2)]
 
@@ -1533,7 +1471,7 @@ def check_for_structure_changes(mol1: Molecule, mol2: Molecule) -> str:
                 "Comparing molecules with different atom ordering! "
                 "Turning off special treatment for coordinating metals."
             )
-            special_elements = list()
+            special_elements = []
 
     special_sites: List[List] = [[], []]
     for ii, mol in enumerate(mol_list):
@@ -1548,11 +1486,9 @@ def check_for_structure_changes(mol1: Molecule, mol2: Molecule) -> str:
 
     initial_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[0],
                                                               OpenBabelNN())
-    initial_mol_graph = metal_edge_extender(initial_mol_graph)
     initial_graph = initial_mol_graph.graph
     last_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[1],
                                                            OpenBabelNN())
-    last_mol_graph = metal_edge_extender(last_mol_graph)
     last_graph = last_mol_graph.graph
     if initial_mol_graph.isomorphic_to(last_mol_graph):
         return "no_change"

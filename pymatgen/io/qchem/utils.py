@@ -1,5 +1,5 @@
 """
-Utilities for Qchem io.
+Utilities for Q-Chem IO.
 """
 
 import re
@@ -96,7 +96,6 @@ def read_table_pattern(text_str,
     table_pattern = re.compile(table_pattern_text, re.MULTILINE | re.DOTALL)
     rp = re.compile(row_pattern)
 
-    data = dict()
     tables = list()
 
     for mt in table_pattern.finditer(text_str):

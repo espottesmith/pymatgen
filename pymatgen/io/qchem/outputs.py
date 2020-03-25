@@ -464,7 +464,7 @@ class QCOutput(MSONable):
                 for jj in range(3):
                     if "*" in entry[jj + 1]:
                         # TODO: Should this be float("inf")
-                        geometry[ii, jj] = float("inf")
+                        geometry[ii, jj] = 10000000000.0
                     else:
                         geometry[ii, jj] = float(entry[jj + 1])
             self.data["species"] = species

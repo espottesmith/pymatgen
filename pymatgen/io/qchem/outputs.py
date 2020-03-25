@@ -75,6 +75,8 @@ class QCOutput(MSONable):
             raise Exception("Multiple calculations in {}.".format(filename) +
                             "Please call QCOutput.multiple_output_from_file.")
 
+        print("Finished reading multiple outputs")
+
         # Parse the molecular details: charge, multiplicity,
         # species, and initial geometry.
         self._read_charge_and_multiplicity()
@@ -85,6 +87,8 @@ class QCOutput(MSONable):
                 terminate_on_match=True).get('key') == [[]]:
             self._read_species_and_inital_geometry()
 
+        print("Finished reading charge, multiplicity, and initial geometry")
+
         # Check if calculation finished
         self.data["completion"] = read_pattern(
             self.text, {
@@ -92,6 +96,7 @@ class QCOutput(MSONable):
                     r"Thank you very much for using Q-Chem.\s+Have a nice day."
             },
             terminate_on_match=True).get('key')
+        print("Finished reading completion")
 
         # Check if calculation is unrestricted
         self.data["unrestricted"] = read_pattern(
@@ -121,15 +126,19 @@ class QCOutput(MSONable):
                 },
                 terminate_on_match=True).get('key') == [[]]:
             self.data["errors"].append(["SCF_failed_to_converge"])
+        print("Finished reading SCF method and errors")
 
         # Parse the SCF calculations
         self._read_SCF()
+        print("Finished reading SCF")
 
         # Parse the Mulliken/ESP/RESP charges
         self._read_charges()
+        print("Finished reading charges")
 
         # Check for various warnings
         self._detect_general_warnings()
+        print("Finished reading general warnings")
 
         # Check to see if PCM or SMD are present
         self.data["solvent_method"] = None
@@ -183,6 +192,7 @@ class QCOutput(MSONable):
                             self.data["warnings"]["questionable_SMD_parsing"] = True
             self.data["solvent_data"]["SMD_solvent"] = temp_solvent[0][0]
             self._read_smd_information()
+        print("Finished reading solvent stuff")
 
         # Parse the final energy
         temp_final_energy = read_pattern(
@@ -193,6 +203,7 @@ class QCOutput(MSONable):
             self.data["final_energy"] = None
         else:
             self.data["final_energy"] = float(temp_final_energy[0][0])
+        print("Finished reading final energy")
 
         # Check if calculation is using dft_d and parse relevant info if so
         self.data["using_dft_d3"] = read_pattern(
@@ -241,6 +252,7 @@ class QCOutput(MSONable):
                     for ii, entry in enumerate(self.data["S2"]):
                         spin_contamination[ii] = abs(correct_s2 - entry)
                     self.data["warnings"]["spin_contamination"] = spin_contamination
+        print("Finished reading D3, unrestricted")
 
         # Check if the calculation is a geometry optimization.
         # If so, parse the relevant output
@@ -250,6 +262,7 @@ class QCOutput(MSONable):
             }).get('key')
         if self.data.get('optimization', list()):
             self._read_optimization_data()
+        print("Finished reading opt")
 
         # Check if the calculation is a transition state optimization.
         # If so, parse the relevant output
@@ -259,6 +272,7 @@ class QCOutput(MSONable):
             }).get('key')
         if self.data.get('transition_state', list()):
             self._read_optimization_data()
+        print("Finished reading ts")
 
         # Check if the calculation contains a constraint in an $opt section.
         self.data["opt_constraint"] = read_pattern(self.text, {
@@ -286,6 +300,7 @@ class QCOutput(MSONable):
                         raise ValueError(
                             "ERROR: Opt section value and constraint can only differ by a sign at 0.0 and 180.0!"
                         )
+        print("Finished reading opt constraint")
 
         # Check if the calculation is a frequency analysis.
         # If so, parse the relevant output
@@ -296,6 +311,7 @@ class QCOutput(MSONable):
             terminate_on_match=True).get('key')
         if self.data.get('frequency_job', []):
             self._read_frequency_data()
+        print("Finished reading freq")
 
         # Check if the calculation is a single-point calculation.
         # If so, parse the relevant output
@@ -306,6 +322,7 @@ class QCOutput(MSONable):
             terminate_on_match=True).get("key")
         if self.data.get("single_point_job", []):
             self._read_single_point_data()
+        print("Finished reading sp")
 
         # Check if the calculation is a force (gradient) calculation.
         # If so, parse the relevant output
@@ -316,6 +333,7 @@ class QCOutput(MSONable):
             terminate_on_match=True).get("key")
         if self.data.get("force_job", []):
             self._read_force_data()
+        print("Finished reading force")
 
         # Check if the calculation is a pes_scan calculation.
         # If so, parse the relevant output
@@ -326,6 +344,7 @@ class QCOutput(MSONable):
             terminate_on_match=True).get("key")
         if self.data.get("scan_job", []):
             self._read_scan_data()
+        print("Finished reading scan")
 
         # If the calculation finished, parse the job time.
         if self.data.get('completion', False):
@@ -340,12 +359,14 @@ class QCOutput(MSONable):
             else:
                 self.data["walltime"] = None
                 self.data["cputime"] = None
+        print("Finished reading time")
 
         # If the calculation did not finish and no errors have been identified
         # yet, check for other errors
         if not self.data.get('completion', False) \
                 and self.data.get("errors") == list():
             self._check_completion_errors()
+        print("Finished reading completion errors")
 
     @classmethod
     def multiple_outputs_from_file(cls, filename, keep_sub_files=True):

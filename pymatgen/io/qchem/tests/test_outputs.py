@@ -142,7 +142,6 @@ single_job_out_names = {"unable_to_determine_lambda_in_geom_opt.qcout",
                         "new_qchem_files/pt_n2_trip_wb_90.0.qcout",
                         "new_qchem_files/pt_n2_gs_rimp2_pvqz_90.0.qcout",
                         "new_qchem_files/VC_solv_eps10.2.qcout",
-                        "crazy_scf_values.qcout",
                         "new_qchem_files/N2.qcout",
                         "new_qchem_files/julian.qcout",
                         "new_qchem_files/Frequency_no_equal.qout",
@@ -156,7 +155,8 @@ single_job_out_names = {"unable_to_determine_lambda_in_geom_opt.qcout",
                         "new_qchem_files/1746.qout",
                         "new_qchem_files/1570.qout",
                         "new_qchem_files/1570_2.qout",
-                        "new_qchem_files/single_point.qout"}
+                        "new_qchem_files/single_point.qout",
+                        "crazy_scf_values.qout"}
 
 multi_job_out_names = {"not_enough_total_memory.qcout",
                        "new_qchem_files/VC_solv_eps10.qcout",
@@ -195,8 +195,7 @@ class TestQCOutput(PymatgenTest):
         """
         multi_job = dict()
         for file in multi_job_out_names:
-            outputs = QCOutput.multiple_outputs_from_file(
-                QCOutput, os.path.join(test_dir, file), keep_sub_files=False)
+            outputs = QCOutput.multiple_outputs_from_file(os.path.join(test_dir, file), keep_sub_files=False)
             data = list()
             for sub_output in outputs:
                 data.append(sub_output.data)
@@ -225,8 +224,7 @@ class TestQCOutput(PymatgenTest):
         multi_outs = dict()
         for file in multi_job_out_names:
             print(file)
-            multi_outs[file] = QCOutput.multiple_outputs_from_file(QCOutput,
-                                                                   os.path.join(test_dir, file),
+            multi_outs[file] = QCOutput.multiple_outputs_from_file(os.path.join(test_dir, file),
                                                                    keep_sub_files=False)
 
         for key in property_list:

@@ -142,15 +142,6 @@ class TestFragmentMolecule(PymatgenTest):
         self.assertEqual(fragEC.new_unique_fragments, 11)
         self.assertEqual(fragEC.total_unique_fragments, 509 + 11)
 
-    def test_metal_edge_extender(self):
-        mol_graph = MoleculeGraph.with_edges(molecule=self.LiEC,
-                                             edges={(0, 2): None, (0, 1): None, (1, 3): None, (1, 4): None,
-                                                    (2, 7): None, (2, 5): None, (2, 8): None, (3, 6): None,
-                                                    (4, 5): None, (5, 9): None, (5, 10): None})
-        self.assertEqual(len(mol_graph.graph.edges), 11)
-        extended_mol_graph = metal_edge_extender(mol_graph)
-        self.assertEqual(len(mol_graph.graph.edges), 12)
-
     @unittest.skipIf(not M3_AVAILABLE, "M3 not available. Skipping...")
     def test_LiEC(self):
         edges=[[0, 2], [0, 1], [1, 3], [1, 4], [2, 7], [2, 5], [2, 8], [3, 6], [4, 5], [4, 6], [5, 9], [5, 10]]

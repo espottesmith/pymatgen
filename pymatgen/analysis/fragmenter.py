@@ -10,7 +10,9 @@ import logging
 import copy
 import itertools
 from monty.json import MSONable
-from pymatgen.analysis.graphs import MoleculeGraph, MolGraphSplitError
+from pymatgen.analysis.graphs import (MoleculeGraph,
+                                      MolGraphSplitError,
+                                      metal_edge_extender)
 from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.io.babel import BabelMolAdaptor
 
@@ -34,89 +36,121 @@ logger = logging.getLogger(__name__)
 
 class Fragmenter(MSONable):
     """
-    Molecule fragmenter class.
+    Class to identify possible unique molecular fragments from an initial
+    molecule.
     """
 
-    def __init__(self, molecule, edges=None, depth=1, open_rings=False, use_metal_edge_extender=False,
-                 opt_steps=10000, prev_unique_frag_dict=None, assume_previous_thoroughness=True, m3_cutoff=0.0):
+    def __init__(self, molecule, edges=None, depth=1, open_rings=False,
+                 use_metal_edge_extender=False,
+                 opt_steps=10000, prev_unique_frag_dict=None,
+                 assume_previous_thoroughness=True, m3_cutoff=0.0):
         """
-        Standard constructor for molecule fragmentation
+        Standard constructor for molecule fragmentation.
 
         Args:
             molecule (Molecule): The molecule to fragment.
-            edges (list): List of index pairs that define graph edges, aka molecule bonds. If not set,
-                edges will be determined with OpenBabel. Defaults to None.
-            depth (int): The number of levels of iterative fragmentation to perform, where each level
-                will include fragments obtained by breaking one bond of a fragment one level up.
-                Defaults to 1. However, if set to 0, instead all possible fragments are generated
-                using an alternative, non-iterative scheme.
-            open_rings (bool): Whether or not to open any rings encountered during fragmentation.
-                Defaults to False. If true, any bond that fails to yield disconnected graphs when
-                broken is instead removed and the entire structure is optimized with OpenBabel in
-                order to obtain a good initial guess for an opened geometry that can then be put
-                back into QChem to be optimized without the ring just reforming.
-            use_metal_edge_extender (bool): Whether or not to attempt to add additional edges from
-                O, N, F, or Cl to any Li or Mg atoms present that OpenBabel may have missed. Defaults
-                to False. Most important for ionic bonding. Note that additional metal edges may yield
-                new "rings" (e.g. -C-O-Li-O- in LiEC) that will not play nicely with ring opening.
-            opt_steps (int): Number of optimization steps when opening rings. Defaults to 10000.
-            prev_unique_frag_dict (dict): A dictionary of previously identified unique fragments.
-                Defaults to None. Typically only used when trying to find the set of unique fragments
-                that come from multiple molecules.
-            assume_previous_thoroughness (bool): Whether or not to assume that a molecule / fragment
-                provided in prev_unique_frag_dict has all of its unique subfragments also provided in
-                prev_unique_frag_dict. Defaults to True. This is an essential optimization when trying
-                to find the set of unique fragments that come from multiple molecules if all of those
-                molecules are being fully iteratively fragmented. However, if you're passing a
-                prev_unique_frag_dict which includes a molecule and its fragments that were generated
-                at insufficient depth to find all possible subfragments to a fragmentation calculation
-                of a different molecule that you aim to find all possible subfragments of and which has
-                common subfragments with the previous molecule, this optimization will cause you to
-                miss some unique subfragments.
+            edges (list of tuples): List of index pairs that define graph edges,
+                aka molecule bonds. If not set, edges will be determined with
+                OpenBabelNN (and metal_edge_extender, if selected). Defaults to
+                None.
+            depth (int): The number of levels of iterative fragmentation to
+                perform, where each level will include fragments obtained by
+                breaking one bond of a fragment one level up. Defaults to 1.
+                If set to 0, instead all possible fragments are generated using
+                an alternative, non-iterative scheme.
+            open_rings (bool): Whether or not to open any rings encountered
+                during fragmentation. Defaults to False. If true, any bond that
+                fails to yield disconnected graphs when broken is instead
+                removed and the entire structure is optimized with OpenBabel in
+                order to obtain a good initial guess for an opened geometry
+                that can then be put back into QChem to be optimized without
+                the ring just reforming.
+            use_metal_edge_extender (bool): Whether or not to attempt to add
+                additional edges from O, N, F, or Cl to any Li or Mg atoms
+                present that OpenBabel may have missed. Defaults to False. Most
+                important for ionic bonding. Note that additional metal edges
+                may yield new "rings" (e.g. -C-O-Li-O- in LiEC) that will not
+                play nicely with ring opening.
+            opt_steps (int): Number of optimization steps when opening rings.
+                Defaults to 10000.
+            prev_unique_frag_dict (dict): A dictionary of previously identified
+                unique fragments. Defaults to None. Typically only used when
+                trying to find the set of unique fragments that come from
+                multiple molecules.
+            assume_previous_thoroughness (bool): Whether or not to assume that
+                a molecule / fragment provided in prev_unique_frag_dict has all
+                of its unique subfragments also provided in
+                prev_unique_frag_dict. Defaults to True. This is an essential
+                optimization when trying to find the set of unique fragments
+                that come from multiple molecules if all of those molecules are
+                being fully iteratively fragmented. However, if you're passing a
+                prev_unique_frag_dict which includes a molecule and its
+                fragments that were generated at insufficient depth to find all
+                possible subfragments to a fragmentation calculation of a
+                different molecule that you aim to find all possible
+                subfragments of and which has common subfragments with the
+                previous molecule, this optimization will cause you to miss
+                some unique subfragments.
+            m3_cutoff (float): Defaults to 0.0. If m3_cutoff is 0.0, then graph
+                isomorphism alone will be used to define unique molecules.
+                Otherwise, in addition to isomorphism, the M3 comparison
+                metric from graphdot will be used to determine the uniqueness.
+                The lower m3_cutoff is, the more stringent the requirement. In
+                general, a cutoff between 0.1 and 0.2 is appropriate.
         """
+
         self.assume_previous_thoroughness = assume_previous_thoroughness
         self.open_rings = open_rings
         self.opt_steps = opt_steps
         self.m3_cutoff = m3_cutoff
 
         if m3_cutoff > 0.0 and not M3_AVAILABLE:
-            raise RuntimeError("M3 requested but not available for import! Exiting...")
+            raise RuntimeError("M3 requested but not available for import! "
+                               "Exiting...")
         elif m3_cutoff > 0.0:
             m3 = M3()
 
         if edges is None:
-            self.mol_graph = MoleculeGraph.with_local_env_strategy(molecule, OpenBabelNN())
+            self.mol_graph = MoleculeGraph.with_local_env_strategy(molecule,
+                                                                   OpenBabelNN())
         else:
             edges = {(e[0], e[1]): None for e in edges}
             self.mol_graph = MoleculeGraph.with_edges(molecule, edges)
 
-        if ("Li" in molecule.composition or "Mg" in molecule.composition) and use_metal_edge_extender:
+        # metal_edge_extender currently only supports Li and Mg
+        # If those atoms are present, and the metal_edge_extender has been
+        # requested, add missing metal coordination bonds
+        if ("Li" in molecule.composition or "Mg" in molecule.composition) \
+                and use_metal_edge_extender:
             self.mol_graph = metal_edge_extender(self.mol_graph)
 
-        self.prev_unique_frag_dict = prev_unique_frag_dict or {}
-        self.new_unique_frag_dict = {}  # new fragments from the given molecule not contained in prev_unique_frag_dict
-        self.all_unique_frag_dict = {}  # all fragments from just the given molecule
-        self.unique_frag_dict = {}  # all fragments from both the given molecule and prev_unique_frag_dict
+        self.prev_unique_frag_dict = prev_unique_frag_dict or dict()
+        # new fragments from the given molecule not contained in prev_unique_frag_dict
+        self.new_unique_frag_dict = dict()
+        # all fragments from just the given molecule
+        self.all_unique_frag_dict = dict()
+        # all fragments from both the given molecule and prev_unique_frag_dict
+        self.unique_frag_dict = dict()
 
-        if depth == 0:  # Non-iterative, find all possible fragments:
-
+        # Non-iterative, find all possible fragments:
+        if depth == 0:
             # Find all unique fragments besides those involving ring opening
             self.all_unique_frag_dict = self.mol_graph.build_unique_fragments(m3_cutoff=m3_cutoff)
 
-            # Then, if self.open_rings is True, open all rings present in self.unique_fragments
-            # in order to capture all unique fragments that require ring opening.
             if self.open_rings:
+                # Open all rings present in self.unique_fragments in order to
+                # capture all fragments with broken ring bonds.
                 if m3_cutoff > 0.0:
-                    raise RuntimeError("M3 requested but open_rings does not yet support M3! Exiting...")
+                    raise RuntimeError("M3 requested but open_rings does not "
+                                       "yet support M3! Exiting...")
                 else:
                     self._open_all_rings()
 
-        else:  # Iterative fragment generation:
-            self.fragments_by_level = {}
+        # Iterative fragment generation:
+        else:
+            self.fragments_by_level = dict()
 
-            # Loop through the number of levels,
             for level in range(depth):
-                # If on the first level, perform one level of fragmentation on the principle molecule graph:
                 if level == 0:
                     self.fragments_by_level["0"] = self._fragment_one_level({str(
                         self.mol_graph.molecule.composition.alphabetical_formula) + " E" + str(
@@ -128,12 +162,15 @@ class Fragmenter(MSONable):
                     if num_frags_prev_level == 0:
                         # Nothing left to fragment, so exit the loop:
                         break
-                    else:  # If not on the first level, and there are fragments present in the previous level, then
-                        # perform one level of fragmentation on all fragments present in the previous level:
+                    else:
+                        # If not on the first level, and there are fragments
+                        # present in the previous level, then perform one level
+                        # of fragmentation on all fragments present in the
+                        # previous level:
                         self.fragments_by_level[str(level)] = self._fragment_one_level(
                             self.fragments_by_level[str(level-1)])
 
-        if self.prev_unique_frag_dict == {}:
+        if len(self.prev_unique_frag_dict) == 0:
             self.new_unique_frag_dict = copy.deepcopy(self.all_unique_frag_dict)
         else:
             for frag_key in self.all_unique_frag_dict:
@@ -348,45 +385,5 @@ def open_ring(mol_graph, bond, opt_steps):
     obmol = BabelMolAdaptor.from_molecule_graph(mol_graph)
     obmol.remove_bond(bond[0][0] + 1, bond[0][1] + 1)
     obmol.localopt(steps=opt_steps, forcefield='uff')
-    return MoleculeGraph.with_local_env_strategy(obmol.pymatgen_mol, OpenBabelNN())
-
-
-def metal_edge_extender(mol_graph):
-    """
-    Function to identify and add missed edges in ionic bonding of Li and Mg ions.
-    """
-    metal_sites = {"Li": {}, "Mg": {}}
-    coordinators = ["O", "N", "F", "Cl"]
-    num_new_edges = 0
-    for idx in mol_graph.graph.nodes():
-        if mol_graph.graph.nodes()[idx]["specie"] in metal_sites:
-            metal_sites[mol_graph.graph.nodes()[idx]["specie"]][idx] = [site[2] for site in
-                                                                        mol_graph.get_connected_sites(idx)]
-    for metal in metal_sites:
-        for idx in metal_sites[metal]:
-            for ii, site in enumerate(mol_graph.molecule):
-                if ii != idx and ii not in metal_sites[metal][idx]:
-                    if str(site.specie) in coordinators:
-                        if site.distance(mol_graph.molecule[idx]) < 2.5:
-                            mol_graph.add_edge(idx, ii)
-                            num_new_edges += 1
-                            metal_sites[metal][idx].append(ii)
-    total_metal_edges = 0
-    for metal in metal_sites:
-        for idx in metal_sites[metal]:
-            total_metal_edges += len(metal_sites[metal][idx])
-    if total_metal_edges == 0:
-        for metal in metal_sites:
-            for idx in metal_sites[metal]:
-                for ii, site in enumerate(mol_graph.molecule):
-                    if ii != idx and ii not in metal_sites[metal][idx]:
-                        if str(site.specie) in coordinators:
-                            if site.distance(mol_graph.molecule[idx]) < 3.5:
-                                mol_graph.add_edge(idx, ii)
-                                num_new_edges += 1
-                                metal_sites[metal][idx].append(ii)
-    total_metal_edges = 0
-    for metal in metal_sites:
-        for idx in metal_sites[metal]:
-            total_metal_edges += len(metal_sites[metal][idx])
-    return mol_graph
+    return MoleculeGraph.with_local_env_strategy(obmol.pymatgen_mol,
+                                                 OpenBabelNN())

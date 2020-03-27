@@ -41,6 +41,8 @@ __date__ = "August 2017"
 module_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 molecule_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..",
                             "test_files", "molecules")
+frag_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..",
+                        'test_files', 'fragmenter_files')
 
 
 class StructureGraphTest(PymatgenTest):
@@ -1058,20 +1060,26 @@ class GraphUtilsTest(unittest.TestCase):
         liec0 = Molecule.from_file(os.path.join(molecule_dir, "liec0.mol"))
         ro_liec0 = Molecule.from_file(os.path.join(molecule_dir, "ro_liec0.mol"))
 
-        rct_mg = MoleculeGraph.with_local_env_strategy(liec0, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
+        rct_mg = MoleculeGraph.with_local_env_strategy(liec0, OpenBabelNN())
 
-        pro_mg = MoleculeGraph.with_local_env_strategy(ro_liec0, OpenBabelNN(),
-                                                       reorder=False,
-                                                       extend_structure=False)
+        pro_mg = MoleculeGraph.with_local_env_strategy(ro_liec0, OpenBabelNN())
 
         self.assertEqual(disconnected_isomorphic(rct_mg.graph, pro_mg.graph,
-                                                 num_allowed=0),
+                                                 num_changes=0),
                          (False, None))
         self.assertEqual(disconnected_isomorphic(rct_mg.graph, pro_mg.graph,
-                                                 num_allowed=1),
+                                                 num_changes=1),
                          (True, [(4, 5)]))
+
+    def test_metal_edge_extender(self):
+        liec = Molecule.from_file(os.path.join(frag_dir, "LiEC.xyz"))
+        mol_graph = MoleculeGraph.with_edges(molecule=liec,
+                                             edges={(0, 2): None, (0, 1): None, (1, 3): None, (1, 4): None,
+                                                    (2, 7): None, (2, 5): None, (2, 8): None, (3, 6): None,
+                                                    (4, 5): None, (5, 9): None, (5, 10): None})
+        self.assertEqual(len(mol_graph.graph.edges), 11)
+        mol_graph = metal_edge_extender(mol_graph)
+        self.assertEqual(len(mol_graph.graph.edges), 12)
 
 
 if __name__ == "__main__":

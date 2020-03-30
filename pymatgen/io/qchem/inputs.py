@@ -4,15 +4,21 @@
 
 
 import logging
+import numpy as np
 from monty.json import MSONable
 from monty.io import zopen
 from pymatgen.core import Molecule
-from .utils import read_table_pattern, read_pattern, lower_and_check_unique
+from pymatgen.analysis.graphs import MoleculeGraph
+from pymatgen.analysis.local_env import OpenBabelNN
+from .utils import (read_table_pattern,
+                    read_pattern,
+                    lower_and_check_unique,
+                    generate_string_start)
 
-# Classes for reading/manipulating/writing QChem ouput files.
+# Classes for reading/manipulating/writing QChem input files.
 
-
-__author__ = "Brandon Wood, Samuel Blau, Shyam Dwaraknath, Julian Self"
+__author__ = "Brandon Wood, Samuel Blau, Shyam Dwaraknath, Julian Self, " \
+             "Evan Spotte-Smith"
 __copyright__ = "Copyright 2018, The Materials Project"
 __version__ = "0.1"
 __email__ = "b.wood@berkeley.edu"
@@ -42,26 +48,81 @@ class QCInput(MSONable):
             values are a list of strings. Stings must be formatted as instructed by the QChem manual.
             The different opt sections are: CONSTRAINT, FIXED, DUMMY, and CONNECT
             Ex. opt = {"CONSTRAINT": ["tors 2 3 4 5 25.0", "tors 2 5 7 9 80.0"], "FIXED": ["2 XY"]}
+        scan (dict of lists):
+            A dictionary of scan variables. Because two constraints of the same type are allowed (for instance, two
+            torsions or two bond stretches), each TYPE of variable (stre, bend, tors) should be its own key in the dict,
+            rather than each variable. Note that the total number of variable (sum of lengths of all lists) CANNOT be
+            more than two.
+            Ex. scan = {"stre": ["3 6 1.5 1.9 0.1"], "tors": ["1 2 3 4 -180 180 15"]}
     """
 
-    def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None, smx=None):
+    def __init__(self, molecule, rem, opt=None, pcm=None, solvent=None,
+                 smx=None, scan=None, plots=None):
         self.molecule = molecule
         self.rem = lower_and_check_unique(rem)
         self.opt = opt
         self.pcm = lower_and_check_unique(pcm)
         self.solvent = lower_and_check_unique(solvent)
         self.smx = lower_and_check_unique(smx)
+        self.scan = lower_and_check_unique(scan)
+        self.plots = lower_and_check_unique(plots)
 
-        # Make sure molecule is valid: either the string "read" or a pymatgen molecule object
+        # Make sure molecule is valid
 
         if isinstance(self.molecule, str):
             self.molecule = self.molecule.lower()
             if self.molecule != "read":
                 raise ValueError(
                     'The only acceptable text value for molecule is "read"')
+
+        # Allows for multiple molecules, which is necessary for fsm jobs
+        elif isinstance(self.molecule, dict):
+            # Make sure that dict has proper keys
+            if not ("reactants" in self.molecule
+                    and "products" in self.molecule):
+                raise ValueError("Molecule dictionaries must include two keys, "
+                                 "'reactants' and 'products', the values of "
+                                 "which are lists of pymatgen Molecule objects.")
+
+            # Make sure that all entries are actually Molecule objects
+            try:
+                mols = self.molecule["reactants"] + self.molecule["products"]
+
+                for mol in mols:
+                    if not isinstance(mol, Molecule):
+                        raise ValueError("All entries in molecule "
+                                         "dictionaries must be lists of "
+                                         "pymatgen Molecule objects.")
+
+            except TypeError:
+                raise ValueError("Molecule dictionaries must include two "
+                                 "keys, 'reactants' and 'products', the "
+                                 "values of which are lists of pymatgen "
+                                 "Molecule objects.")
+
+            # Make sure that reactants and products are identical
+            rct_len = sum(len(m) for m in self.molecule["reactants"])
+            rct_spec = list()
+
+            for rct in self.molecule["reactants"]:
+                for site in rct.sites:
+                    rct_spec.append(str(site.specie))
+
+            pro_len = sum(len(m) for m in self.molecule["products"])
+            pro_spec = list()
+
+            for pro in self.molecule["products"]:
+                for site in pro.sites:
+                    pro_spec.append(str(site.specie))
+
+            if rct_len != pro_len or rct_spec != pro_spec:
+                raise ValueError("Reactants and products are not identical.")
+
         elif not isinstance(self.molecule, Molecule):
             raise ValueError(
-                "The molecule must either be the string 'read' or be a pymatgen Molecule object"
+                "The molecule must either be the string 'read', a pymatgen "
+                "Molecule object, or a dictionary of lists of Molecule objects "
+                "with two keys, 'reactants' and 'products'."
             )
 
         # Make sure rem is valid:
@@ -69,9 +130,8 @@ class QCInput(MSONable):
         #   - Has a method or DFT exchange functional
         #   - Has a valid job_type or jobtype
 
-        valid_job_types = [
-            "opt", "optimization", "sp", "freq", "frequency", "force", "nmr"
-        ]
+        valid_job_types = ["opt", "optimization", "sp", "freq", "frequency",
+                           "force", "fsm", "nmr", "ts", "gsm", "pes_scan"]
 
         if "basis" not in self.rem:
             raise ValueError("The rem dictionary must contain a 'basis' entry")
@@ -95,9 +155,12 @@ class QCInput(MSONable):
         #   - Check OPT and PCM sections?
 
     def __str__(self):
-        combined_list = []
+        combined_list = list()
         # molecule section
-        combined_list.append(self.molecule_template(self.molecule))
+        if isinstance(self.molecule, dict):
+            combined_list.append(self.multi_molecule_template(self.molecule))
+        else:
+            combined_list.append(self.molecule_template(self.molecule))
         combined_list.append("")
         # rem section
         combined_list.append(self.rem_template(self.rem))
@@ -116,6 +179,13 @@ class QCInput(MSONable):
             combined_list.append("")
         if self.smx:
             combined_list.append(self.smx_template(self.smx))
+            combined_list.append("")
+        if self.scan:
+            combined_list.append(self.scan_template(self.scan))
+            combined_list.append("")
+        # plots section
+        if self.plots:
+            combined_list.append(self.plots_template(self.plots))
             combined_list.append("")
         return '\n'.join(combined_list)
 
@@ -139,6 +209,8 @@ class QCInput(MSONable):
         pcm = None
         solvent = None
         smx = None
+        scan = None
+        plots = None
         if "opt" in sections:
             opt = cls.read_opt(string)
         if "pcm" in sections:
@@ -147,7 +219,11 @@ class QCInput(MSONable):
             solvent = cls.read_solvent(string)
         if "smx" in sections:
             smx = cls.read_smx(string)
-        return cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx)
+        if "scan" in sections:
+            scan = cls.read_scan(string)
+        if "plots" in sections:
+            plots = cls.read_plots(string)
+        return cls(molecule, rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx, scan=scan, plots=plots)
 
     def write_file(self, filename):
         with zopen(filename, 'wt') as f:
@@ -176,7 +252,7 @@ class QCInput(MSONable):
     @staticmethod
     def molecule_template(molecule):
         # todo: add ghost atoms
-        mol_list = []
+        mol_list = list()
         mol_list.append("$molecule")
         if isinstance(molecule, str):
             if molecule == "read":
@@ -196,8 +272,87 @@ class QCInput(MSONable):
         return '\n'.join(mol_list)
 
     @staticmethod
+    def multi_molecule_template(molecule):
+        mol_list = list()
+        mol_list.append("$molecule")
+
+        if len(molecule["reactants"]) == 1:
+            start = generate_string_start(molecule["products"],
+                                          molecule["reactants"][0],
+                                          OpenBabelNN(),
+                                          separation_dist=1.6)
+            reactants = start["products"]
+            products = start["reactants"]
+        elif len(molecule["products"]) == 1:
+            start = generate_string_start(molecule["reactants"],
+                                          molecule["products"][0],
+                                          OpenBabelNN(),
+                                          separation_dist=1.6)
+            reactants = start["reactants"]
+            products = start["products"]
+        else:
+            # Make sure molecules are sufficiently separated
+            reactants = list()
+            products = list()
+            for rct in molecule["reactants"]:
+                reactants.append(rct.get_centered_molecule())
+            for pro in molecule["products"]:
+                products.append(pro.get_centered_molecule())
+
+            rct_dist_sum = 0
+            pro_dist_sum = 0
+            for rct in reactants:
+                radius = np.max(rct.distance_matrix) / 2
+                if rct_dist_sum > 0:
+                    rct.translate_sites(vector=np.array([rct_dist_sum + radius + 0.1
+                                                         for _ in range(3)]))
+                rct_dist_sum += radius + 0.1
+
+            for pro in products:
+                radius = np.max(pro.distance_matrix) / 2
+                if pro_dist_sum > 0:
+                    pro.translate_sites(vector=np.array([pro_dist_sum + radius + 0.1
+                                                         for _ in range(3)]))
+
+                pro_dist_sum += radius + 0.1
+
+        total_charge = int(sum([mol.charge for mol in products]))
+        if len(products) == 1:
+            total_spin = products[0].spin_multiplicity
+        elif len(reactants) == 1:
+            total_spin = reactants[0].spin_multiplicity
+        else:
+            species = list()
+            coords = list()
+            charge = total_charge
+            for mol in products:
+                for site in mol:
+                    species.append(site.species)
+                    coords.append(site.coords)
+            total_mol = Molecule(species, coords, charge=charge)
+            total_spin = total_mol.spin_multiplicity
+        mol_list.append(" {charge} {spin_mult}".format(
+            charge=total_charge,
+            spin_mult=total_spin))
+        for rct in reactants:
+            for site in rct.sites:
+                mol_list.append(
+                    " {atom}     {x: .10f}     {y: .10f}     {z: .10f}".format(
+                        atom=site.species_string, x=site.x, y=site.y,
+                        z=site.z))
+        mol_list.append(" ****")
+        for pro in products:
+            for site in pro.sites:
+                mol_list.append(
+                    " {atom}     {x: .10f}     {y: .10f}     {z: .10f}".format(
+                        atom=site.species_string, x=site.x, y=site.y,
+                        z=site.z))
+        mol_list.append("$end")
+        return '\n'.join(mol_list)
+
+    @staticmethod
     def rem_template(rem):
-        rem_list = []
+        rem_list = list()
         rem_list.append("$rem")
         for key, value in rem.items():
             rem_list.append("   {key} = {value}".format(key=key, value=value))
@@ -206,7 +361,7 @@ class QCInput(MSONable):
 
     @staticmethod
     def opt_template(opt):
-        opt_list = []
+        opt_list = list()
         opt_list.append("$opt")
         # loops over all opt sections
         for key, value in opt.items():
@@ -223,7 +378,7 @@ class QCInput(MSONable):
 
     @staticmethod
     def pcm_template(pcm):
-        pcm_list = []
+        pcm_list = list()
         pcm_list.append("$pcm")
         for key, value in pcm.items():
             pcm_list.append("   {key} {value}".format(key=key, value=value))
@@ -232,7 +387,7 @@ class QCInput(MSONable):
 
     @staticmethod
     def solvent_template(solvent):
-        solvent_list = []
+        solvent_list = list()
         solvent_list.append("$solvent")
         for key, value in solvent.items():
             solvent_list.append("   {key} {value}".format(
@@ -242,7 +397,7 @@ class QCInput(MSONable):
 
     @staticmethod
     def smx_template(smx):
-        smx_list = []
+        smx_list = list()
         smx_list.append("$smx")
         for key, value in smx.items():
             if value == "tetrahydrofuran":
@@ -253,6 +408,32 @@ class QCInput(MSONable):
                     key=key, value=value))
         smx_list.append("$end")
         return '\n'.join(smx_list)
+
+    @staticmethod
+    def scan_template(scan):
+        scan_list = list()
+        scan_list.append("$scan")
+        total_vars = sum([len(v) for v in scan.values()])
+        if total_vars > 2:
+            raise ValueError("Q-Chem only supports PES_SCAN with two or less "
+                             "variables.")
+        for var_type, variables in scan.items():
+            if variables not in [None, list()]:
+                for var in variables:
+                    scan_list.append("   {var_type} {var}".format(
+                        var_type=var_type, var=var))
+        scan_list.append("$end")
+        return '\n'.join(scan_list)
+
+    @staticmethod
+    def plots_template(plots):
+        plots_list = list()
+        plots_list.append("$plots")
+        for key, value in plots.items():
+            plots_list.append("   {key} {value}".format(
+                key=key, value=value))
+        plots_list.append("$end")
+        return '\n'.join(plots_list)
 
     @staticmethod
     def find_sections(string):
@@ -273,18 +454,21 @@ class QCInput(MSONable):
             raise ValueError("Output file does not contain a rem section")
         return sections
 
-    @staticmethod
-    def read_molecule(string):
+    @classmethod
+    def read_molecule(cls, string):
         charge = None
         spin_mult = None
         patterns = {
             "read": r"^\s*\$molecule\n\s*(read)",
+            "break": r"\s*\*{4}",
             "charge": r"^\s*\$molecule\n\s*((?:\-)*\d+)\s+\d",
             "spin_mult": r"^\s*\$molecule\n\s(?:\-)*\d+\s*(\d)"
         }
         matches = read_pattern(string, patterns)
         if "read" in matches.keys():
             return "read"
+        if "break" in matches.keys():
+            return cls.read_multi_molecule(string)
         if "charge" in matches.keys():
             charge = float(matches["charge"][0][0])
         if "spin_mult" in matches.keys():
@@ -305,6 +489,68 @@ class QCInput(MSONable):
             coords=coords,
             charge=charge,
             spin_multiplicity=spin_mult)
+        return mol
+
+    @staticmethod
+    def read_multi_molecule(string):
+        mol = dict()
+
+        # NOTE: We avoid the issue of spin multiplicity assignment
+        patterns = {
+            "charge": r"^\s*\$molecule\n\s*((?:\-)*\d+)\s+\d",
+        }
+
+        header_rct = r"^\s*\$molecule\n\s*(?:\-)*\d+\s*\d$"
+        header_pro = r"^\s*\$molecule\s*$"
+        row = r"\s*((?i)[a-z]+)\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
+        footer = r"^\$end\s*"
+
+        # Split string into reactants and products
+        string = string.replace(" ****", "$end\n****\n$molecule")
+        strings = string.split("\n****\n")
+        rct_string = strings[0]
+        pro_string = strings[1]
+
+        # Parse reactant molecule(s)
+        charge_rct = None
+        matches_rct = read_pattern(rct_string, patterns)
+        if "charge" in matches_rct.keys():
+            charge_rct = int(matches_rct["charge"][0][0])
+        rct_table = read_table_pattern(
+            rct_string,
+            header_pattern=header_rct,
+            row_pattern=row,
+            footer_pattern=footer)
+        species_rct = [val[0] for val in rct_table[0]]
+        coords_rct = [[float(val[1]), float(val[2]),
+                       float(val[3])] for val in rct_table[0]]
+
+        rct_mol = Molecule(
+            species=species_rct,
+            coords=coords_rct,
+            charge=charge_rct)
+        rct_mg = MoleculeGraph.with_local_env_strategy(rct_mol, OpenBabelNN())
+
+        mol["reactants"] = [r.molecule for r
+                            in rct_mg.get_disconnected_fragments()]
+
+        charge_pro = charge_rct
+        pro_table = read_table_pattern(
+            pro_string,
+            header_pattern=header_pro,
+            row_pattern=row,
+            footer_pattern=footer)
+        species_pro = [val[0] for val in pro_table[0]]
+        coords_pro = [[float(val[1]), float(val[2]),
+                       float(val[3])] for val in pro_table[0]]
+
+        pro_mol = Molecule(
+            species=species_pro,
+            coords=coords_pro,
+            charge=charge_pro)
+        pro_mg = MoleculeGraph.with_local_env_strategy(pro_mol, OpenBabelNN())
+        mol["products"] = [p.molecule for p in pro_mg.get_disconnected_fragments()]
+
         return mol
 
     @staticmethod
@@ -383,7 +629,7 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        if pcm_table == []:
+        if len(pcm_table) == 0:
             print(
                 "No valid PCM inputs found. Note that there should be no '=' chracters in PCM input lines."
             )
@@ -402,7 +648,7 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        if solvent_table == []:
+        if len(solvent_table) == 0:
             print(
                 "No valid solvent inputs found. Note that there should be no '=' chracters in solvent input lines."
             )
@@ -421,13 +667,63 @@ class QCInput(MSONable):
             header_pattern=header,
             row_pattern=row,
             footer_pattern=footer)
-        if smx_table == []:
+        if len(smx_table) == 0:
             print(
                 "No valid smx inputs found. Note that there should be no '=' chracters in smx input lines."
             )
-            return {}
+            return dict()
         else:
             smx = {key: val for key, val in smx_table[0]}
             if smx["solvent"] == "tetrahydrofuran":
                 smx["solvent"] = "thf"
             return smx
+
+    @staticmethod
+    def read_scan(string):
+        header = r"^\s*\$scan"
+        row = r"\s*(stre|bend|tors|STRE|BEND|TORS)\s+((?:[\-\.0-9]+\s*)+)"
+        footer = r"^\s*\$end"
+        scan_table = read_table_pattern(string,
+                                        header_pattern=header,
+                                        row_pattern=row,
+                                        footer_pattern=footer)
+        if scan_table == list():
+            print(
+                "No valid scan inputs found. Note that there should be no '=' chracters in scan input lines."
+            )
+            return dict()
+        else:
+            stre = list()
+            bend = list()
+            tors = list()
+            for row in scan_table[0]:
+                if row[0].lower() == "stre":
+                    stre.append(row[1].replace("\n", "").rstrip())
+                elif row[0].lower() == "bend":
+                    bend.append(row[1].replace("\n", "").rstrip())
+                elif row[0].lower() == "tors":
+                    tors.append(row[1].replace("\n", "").rstrip())
+
+            if len(stre) + len(bend) + len(tors) > 2:
+                raise ValueError("No more than two variables are allows in the scan section!")
+
+            return {"stre": stre, "bend": bend, "tors": tors}
+
+    @staticmethod
+    def read_plots(string):
+        header = r"^\s*\$plots"
+        row = r"\s*([a-zA-Z\_]+)\s+(\S+)"
+        footer = r"^\s*\$end"
+        plots_table = read_table_pattern(
+            string,
+            header_pattern=header,
+            row_pattern=row,
+            footer_pattern=footer)
+        if len(plots_table) == 0:
+            print(
+                "No valid plots inputs found. Note that there should be no '=' chracters in plots input lines."
+            )
+            return dict()
+        else:
+            plots = {key: val for key, val in plots_table[0]}
+            return plots

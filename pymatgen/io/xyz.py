@@ -33,7 +33,7 @@ class XYZ:
         written in this format and no information is retained about the
         lattice.
     """
-    def __init__(self, mol, coord_precision=6):
+    def __init__(self, mol, coord_precision=10):
         if isinstance(mol, Molecule) or not isinstance(mol, list):
             self._mols = [mol]
         else:

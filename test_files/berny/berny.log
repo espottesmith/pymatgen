@@ -1,0 +1,117 @@
+Internal coordinates:
+* Number of fragments: 1
+* Number of internal coordinates: 15
+* Number of strong bonds: 5
+* Number of strong angles: 6
+* Number of strong dihedrals: 4
+Energy: -78.5663910134
+Minimization on sphere was performed:
+* Trust radius: 0.3
+* Number of negative eigenvalues: 0
+* Lowest eigenvalue: 0.0075
+* lambda: -0.0615
+Quadratic step: RMS: 0.0775, max: 0.149
+* Predicted energy change: -0.0287
+Total step: RMS: 0.0775, max: 0.149
+Perfect transformation to cartesians in 5 iterations
+* RMS(dcart): 8.92e-08, RMS(dq): 1.58e-07
+Convergence criteria:
+* Gradient RMS: 0.049 > 0.00015 => no
+* Gradient maximum: 0.0821 > 0.00045 => no
+* Minimization on sphere: Minimization on sphere => no
+Energy: -78.5941422303
+Hessian update information:
+* Change: RMS: 0.00261, max: 0.0104
+Trust update: Fletcher's parameter: 0.968
+Linear interpolation:
+* Energies: -78.594142, -78.566391
+* Derivatives: 0.00697, 0.0518
+* Quartic interpolation was performed: t = -0.207
+* Interpolated energy: -78.594852
+Pure RFO step was performed:
+* Trust radius: 0.6
+* Number of negative eigenvalues: 0
+* Lowest eigenvalue: 0.0075
+* lambda: -0.000384
+Quadratic step: RMS: 0.00878, max: 0.0155
+* Predicted energy change: -0.000192
+Total step: RMS: 0.0151, max: 0.0239
+Perfect transformation to cartesians in 3 iterations
+* RMS(dcart): 6.63e-07, RMS(dq): 1.28e-06
+Convergence criteria:
+* Gradient RMS: 0.009 > 0.00015 => no
+* Gradient maximum: 0.0212 > 0.00045 => no
+* Step RMS: 0.0151 > 0.0012 => no
+* Step maximum: 0.0239 > 0.0018 => no
+Energy: -78.5949829029
+Hessian update information:
+* Change: RMS: 0.0073, max: 0.0203
+Trust update: Fletcher's parameter: 4.38
+Linear interpolation:
+* Energies: -78.594983, -78.594142
+* Derivatives: 0.000342, 0.00135
+* Quartic interpolation was performed: t = -0.355
+* Interpolated energy: -78.595043
+Pure RFO step was performed:
+* Trust radius: 0.6
+* Number of negative eigenvalues: 0
+* Lowest eigenvalue: 0.0075
+* lambda: -3.21e-05
+Quadratic step: RMS: 0.00295, max: 0.00608
+* Predicted energy change: -1.6e-05
+Total step: RMS: 0.00696, max: 0.0125
+Perfect transformation to cartesians in 3 iterations
+* RMS(dcart): 7.96e-08, RMS(dq): 1.64e-07
+Convergence criteria:
+* Gradient RMS: 0.00204 > 0.00015 => no
+* Gradient maximum: 0.00451 > 0.00045 => no
+* Step RMS: 0.00696 > 0.0012 => no
+* Step maximum: 0.0125 > 0.0018 => no
+Energy: -78.5950614572
+Hessian update information:
+* Change: RMS: 0.00434, max: 0.0152
+Trust update: Fletcher's parameter: 4.89
+Linear interpolation:
+* Energies: -78.595061, -78.594983
+* Derivatives: 9.08e-06, 0.000148
+* Quartic interpolation was performed: t = -0.0658
+* Interpolated energy: -78.595062
+Pure RFO step was performed:
+* Trust radius: 0.6
+* Number of negative eigenvalues: 0
+* Lowest eigenvalue: 0.0075
+* lambda: -3.2e-06
+Quadratic step: RMS: 0.000864, max: 0.00166
+* Predicted energy change: -1.6e-06
+Total step: RMS: 0.00117, max: 0.00248
+Perfect transformation to cartesians in 2 iterations
+* RMS(dcart): 3.96e-07, RMS(dq): 8.19e-07
+Convergence criteria:
+* Gradient RMS: 0.000369 > 0.00015 => no
+* Gradient maximum: 0.00101 > 0.00045 => no
+* Step RMS: 0.00117 < 0.0012 => OK
+* Step maximum: 0.00248 > 0.0018 => no
+Energy: -78.595063778
+Hessian update information:
+* Change: RMS: 0.00948, max: 0.0661
+Trust update: Fletcher's parameter: 1.45
+Linear interpolation:
+* Energies: -78.595064, -78.595061
+* Derivatives: 8.46e-07, 3.79e-06
+* No fit succeeded, staying in new point
+Pure RFO step was performed:
+* Trust radius: 0.6
+* Number of negative eigenvalues: 0
+* Lowest eigenvalue: 0.0075
+* lambda: -6.36e-07
+Quadratic step: RMS: 0.000531, max: 0.00113
+* Predicted energy change: -3.18e-07
+Total step: RMS: 0.000531, max: 0.00113
+Perfect transformation to cartesians in 2 iterations
+* RMS(dcart): 9.32e-08, RMS(dq): 1.87e-07
+Convergence criteria:
+* Gradient RMS: 8.77e-05 < 0.00015 => OK
+* Gradient maximum: 0.000182 < 0.00045 => OK
+* Step RMS: 0.000531 < 0.0012 => OK
+* Step maximum: 0.00113 < 0.0018 => OK
+* All criteria matched

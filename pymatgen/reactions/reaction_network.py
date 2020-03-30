@@ -1188,8 +1188,8 @@ class ReactionNetwork(MSONable):
 
         graph = json_graph.adjacency_graph(d["graph"], directed=True)
 
-        return cls(d["electron_free_energy"], entries, entries_list, graph,
-                   d["PR_record"], d["min_cost"], d["num_starts"])
+        return cls(d["electron_free_energy"], entries, entries_list, buckets,
+                   graph, d["PR_record"], d["min_cost"], d["num_starts"])
 
 
 def entries_from_reaction_label(network, label):

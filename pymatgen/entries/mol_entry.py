@@ -6,11 +6,11 @@
 import json
 
 from monty.json import MontyEncoder, MontyDecoder
+from monty.json import MSONable
 
 from networkx.readwrite import json_graph
 
 from pymatgen.core.composition import Composition
-from monty.json import MSONable
 from pymatgen.analysis.graphs import MoleculeGraph, MolGraphSplitError
 from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.io.babel import BabelMolAdaptor
@@ -96,7 +96,7 @@ class MoleculeEntry(MSONable):
             Gibbs free energy in eV
         """
         if self.enthalpy is not None and self.entropy is not None:
-            return self.energy*27.21139 + 0.0433641*self.enthalpy - temp*self.entropy*0.0000433641
+            return self.energy * 27.21139 + 0.0433641 * self.enthalpy - temp * self.entropy * 0.0000433641
         else:
             return None
 

@@ -2037,7 +2037,7 @@ class BernyLogParser(MSONable):
 
 def check_for_structure_changes(mol1, mol2):
     # special_elements = ["Li", "Na", "Mg", "Ca", "Zn"]
-    mol_list = [copy.deepcopy(mol1), copy.deepcopy(mol2)]
+    # mol_list = [copy.deepcopy(mol1), copy.deepcopy(mol2)]
 
     if mol1.composition != mol2.composition:
         raise RuntimeError("Molecules have different compositions! Exiting...")

@@ -2061,10 +2061,10 @@ def check_for_structure_changes(mol1, mol2):
 
     # Can add logic to check the distances in the future if desired
 
-    initial_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[0],
+    initial_mol_graph = MoleculeGraph.with_local_env_strategy(mol1,
                                                               OpenBabelNN())
     initial_graph = initial_mol_graph.graph
-    last_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[1],
+    last_mol_graph = MoleculeGraph.with_local_env_strategy(mol2,
                                                            OpenBabelNN())
     last_graph = last_mol_graph.graph
     if initial_mol_graph.isomorphic_to(last_mol_graph):

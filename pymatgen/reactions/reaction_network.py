@@ -21,6 +21,9 @@ from pymatgen.analysis.fragmenter import metal_edge_extender
 from networkx.algorithms import bipartite
 from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.core.composition import CompositionError
+from pymatgen.reactions.reaction_rates import (ReactionRateCalculator,
+                                               BEPRateCalculator,
+                                               ExpandedBEPRateCalculator)
 
 
 def categorize(reaction, classes, templates, environment, charge):
@@ -77,7 +80,55 @@ class Reaction(MSONable, metaclass=ABCMeta):
         self.reactants = reactants
         self.products = products
         self.transition_state = transition_state
+        if self.transition_state is None:
+            # Provide no reference initially
+            self.rate_calculator = ExpandedBEPRateCalculator(reactants, products,
+                                                             0.0, 0.0, 0.0,
+                                                             0.0, 0.0, 0.0,
+                                                             alpha=-1.0)
+        else:
+            self.rate_calculator = ReactionRateCalculator(reactants, products,
+                                                          self.transition_state)
         self.entry_ids = {e.entry_id for e in self.reactants}
+
+    def update_calculator(self, transition_state=None, reference=None):
+        """
+        Update the rate calculator with either a transition state (or a new
+            transition state) or the thermodynamic properties of a reaction
+
+        Args:
+            transition_state (MoleculeEntry): MoleculeEntry referring to a
+                transition state
+            reference (dict): Dictionary containing relevant thermodynamic
+                values for a reference reaction
+                Keys:
+                    delta_ea: Activation energy
+                    delta_ha: Activation enthalpy
+                    delta_sa: Activation entropy
+                    delta_e: Reaction energy change
+                    delta_h: Reaction enthalpy change
+                    delta_s: Reaction entropy change
+        Returns:
+            None
+        """
+
+        if transition_state is None:
+            if reference is None:
+                pass
+            else:
+                self.rate_calculator = ExpandedBEPRateCalculator(
+                    reactants=self.reactants,
+                    products=self.products,
+                    delta_ea_reference=reference["delta_ea"],
+                    delta_ha_reference=reference["delta_ha"],
+                    delta_sa_reference=reference["delta_sa"],
+                    delta_e_reference=reference["delta_e"],
+                    delta_h_reference=reference["delta_h"],
+                    delta_s_reference=reference["delta_s"],
+                )
+        else:
+            self.rate_calculator = ReactionRateCalculator(self.reactants, self.products,
+                                                          transition_state)
 
     def __in__(self, entry):
         return entry.entry_id in self.entry_ids
@@ -103,8 +154,8 @@ class Reaction(MSONable, metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def rate(self):
-        pass
+    def rate_constant(self):
+
 
 
 class RedoxReaction(Reaction):
@@ -202,8 +253,11 @@ class RedoxReaction(Reaction):
 
         return {"energy_A": energy_A, "energy_B": energy_B}
 
-    def rate(self):
-        pass
+    def rate_constant(self):
+        """
+        For now, all redox reactions will have the same
+        """
+        return 10.0 ** 11
 
 
 class IntramolSingleBondChangeReaction(Reaction):
@@ -301,7 +355,7 @@ class IntramolSingleBondChangeReaction(Reaction):
 
         return {"energy_A": energy_A, "energy_B": energy_B}
 
-    def rate(self):
+    def rate_constant(self):
         pass
 
 
@@ -406,7 +460,7 @@ class IntermolecularReaction(Reaction):
 
         return {"energy_A": energy_A, "energy_B": energy_B}
 
-    def rate(self):
+    def rate_constant(self):
         pass
 
 
@@ -544,7 +598,7 @@ class CoordinationBondChangeReaction(Reaction):
 
         return {"energy_A": energy_A, "energy_B": energy_B}
 
-    def rate(self):
+    def rate_constant(self):
         pass
 
 
@@ -702,8 +756,7 @@ class ReactionNetwork:
     """
 
     def __init__(self, electron_free_energy, entries_dict, entries_list, classes,
-                 graph, reactions, PR_record, min_cost, num_starts, local_order=1,
-                 consider_charge_categories=True):
+                 graph, reactions, PR_record, min_cost, num_starts):
         """
 
         :param electron_free_energy: Electron free energy (in eV)
@@ -715,13 +768,6 @@ class ReactionNetwork:
         :param reactions: list of Reaction objects
         :param min_cost: dict containing costs of entries in the network
         :param num_starts: <-- What DOES this represent?
-        :param local_order: int indicating the extent to which the local
-            environment of a bond should be taken into account when categorizing
-            reactions. Default is 1, meaning that first-nearest-neighbors are
-            taken into account, but no other neighbors.
-        :param consider_charge_categories: bool. If True (default), reactions
-            involving different total charges should always be placed in
-            different categories.
         """
 
         self.electron_free_energy = electron_free_energy
@@ -732,29 +778,18 @@ class ReactionNetwork:
         self.graph = graph
         self.PR_record = PR_record
         self.reactions = reactions
+        self.classes = classes
 
         self.min_cost = min_cost
         self.num_starts = num_starts
 
-        self.classes = classes
-        self.local_order = local_order
-        self.consider_charge_categories = consider_charge_categories
-
     @classmethod
-    def from_input_entries(cls, input_entries, electron_free_energy=-2.15,
-                           local_order=1, consider_charge_categories=True):
+    def from_input_entries(cls, input_entries, electron_free_energy=-2.15):
         """
         Generate a ReactionNetwork from a set of MoleculeEntries
 
         :param input_entries: list of MoleculeEntries which will make up the
             network
-        :param local_order: int indicating the extent to which the local
-            environment of a bond should be taken into account when categorizing
-            reactions. Default is 1, meaning that first-nearest-neighbors are
-            taken into account, but no other neighbors.
-        :param consider_charge_categories: bool. If True (default), reactions
-            involving different total charges should always be placed in
-            different categories.
         :param electron_free_energy: float representing the Gibbs free energy
             required to add an electron
         :return:
@@ -825,8 +860,7 @@ class ReactionNetwork:
         graph = nx.DiGraph()
 
         network = cls(electron_free_energy, entries, entries_list, dict(),
-                      graph, list(), None, dict(), None, local_order=local_order,
-                      consider_charge_categories=consider_charge_categories)
+                      graph, list(), None, dict(), None)
 
         return network
 
@@ -838,12 +872,15 @@ class ReactionNetwork:
     def exponent(free_energy):
         return np.exp(free_energy)
 
-    def build(self, reaction_types=None):
+    def build(self, reaction_types=None, transition_states=None):
         """
         Build a ReactionNetwork based on certain reaction types.
 
         Args:
-            reaction_types (str):
+            reaction_types (set of str): Class names for different reaction
+                classes
+            transition_states (list of MoleculeEntry objects): transition states
+                to be associated with reactions for rate calculations
         :return:
         """
 
@@ -857,7 +894,8 @@ class ReactionNetwork:
 
         all_reactions = list()
         for rtype, rclass in reaction_classes.items():
-            reactions, classes = rclass.generate(self.entries)
+            reactions, classes = rclass.generate(self.entries,
+                                                 transition_states=transition_states)
             self.classes[rtype] = classes
             all_reactions.append(reactions)
         self.reactions = [i for i in self.reactions if i]

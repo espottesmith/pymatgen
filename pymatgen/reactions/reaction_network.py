@@ -29,7 +29,7 @@ from pymatgen.reactions.reaction_rates import (ReactionRateCalculator,
 def categorize(reaction, classes, templates, environment, charge):
     """
     Given reactants, products, and a local bonding environment, place a
-        reaction into a "bucket".
+        reaction into a reaction class.
 
     Note: This is not designed for redox reactions
 

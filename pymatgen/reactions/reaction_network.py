@@ -944,7 +944,7 @@ class ReactionNetwork:
     def exponent(free_energy):
         return np.exp(free_energy)
 
-    def build(self, reaction_types=None, transition_states=None):
+    def build(self, reaction_types=None):
         """
         Build a ReactionNetwork based on certain reaction types.
 
@@ -996,7 +996,7 @@ class ReactionNetwork:
         self.graph.add_nodes_from(graph_representation.nodes(data=True))
         self.graph.add_edges_from(graph_representation.edges(data=True))
 
-    def as_dict(self):
+    def as_dict(self) -> dict:
         entries = dict()
         for formula in self.entries.keys():
             entries[formula] = dict()

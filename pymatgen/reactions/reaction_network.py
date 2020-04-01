@@ -8,6 +8,7 @@ import itertools
 import heapq
 
 import numpy as np
+from scipy.constants import h, k, R, N_A, pi
 import networkx as nx
 from networkx.readwrite import json_graph
 import networkx.algorithms.isomorphism as iso
@@ -22,7 +23,6 @@ from networkx.algorithms import bipartite
 from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.core.composition import CompositionError
 from pymatgen.reactions.reaction_rates import (ReactionRateCalculator,
-                                               BEPRateCalculator,
                                                ExpandedBEPRateCalculator)
 
 
@@ -33,13 +33,16 @@ def categorize(reaction, classes, templates, environment, charge):
 
     Note: This is not designed for redox reactions
 
-    :param reaction: Reaction object
-    :param classes: dict of dicts representing families of reactions
-    :param environment: a nx.Graph object representing a submolecule that
-        defines the type of reaction
-    :param templates: list of nx.Graph objects that define other classes
-    :param charge: int representing the charge of the reaction
-    :return:
+    Args:
+        reaction: Reaction object
+        classes: dict of dicts representing families of reactions
+        environment: a nx.Graph object representing a submolecule that
+            defines the type of reaction
+        templates: list of nx.Graph objects that define other classes
+        charge: int representing the charge of the reaction
+    Returns:
+        classes: nested dict containing categorized reactions
+        templates: list of graph representations of molecule "templates"
     """
 
     nm = iso.categorical_node_match("specie", "ERROR")
@@ -155,7 +158,7 @@ class Reaction(MSONable, metaclass=ABCMeta):
 
     @abstractmethod
     def rate_constant(self):
-
+        pass
 
 
 class RedoxReaction(Reaction):
@@ -356,7 +359,30 @@ class IntramolSingleBondChangeReaction(Reaction):
         return {"energy_A": energy_A, "energy_B": energy_B}
 
     def rate_constant(self):
-        pass
+        if isinstance(self.rate_calculator, ReactionRateCalculator):
+            return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+        elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
+            # No reference is set
+            # Use barrierless reaction
+            if self.rate_calculator.alpha == -1:
+                rate_constant = dict()
+                free_energy = self.free_energy()
+
+                if free_energy["free_energy_A"] < 0:
+                    rate_constant["k_A"] = k * 298.15 / h
+                else:
+                    rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+
+                if free_energy["free_energy_B"] < 0:
+                    rate_constant["k_B"] = k * 298.15 / h
+                else:
+                    rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+
+                return rate_constant
+            else:
+                return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                        "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
 
 
 class IntermolecularReaction(Reaction):
@@ -461,7 +487,30 @@ class IntermolecularReaction(Reaction):
         return {"energy_A": energy_A, "energy_B": energy_B}
 
     def rate_constant(self):
-        pass
+        if isinstance(self.rate_calculator, ReactionRateCalculator):
+            return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+        elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
+            # No reference is set
+            # Use barrierless reaction
+            if self.rate_calculator.alpha == -1:
+                rate_constant = dict()
+                free_energy = self.free_energy()
+
+                if free_energy["free_energy_A"] < 0:
+                    rate_constant["k_A"] = k * 298.15 / h
+                else:
+                    rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+
+                if free_energy["free_energy_B"] < 0:
+                    rate_constant["k_B"] = k * 298.15 / h
+                else:
+                    rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+
+                return rate_constant
+            else:
+                return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                        "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
 
 
 class CoordinationBondChangeReaction(Reaction):
@@ -599,7 +648,30 @@ class CoordinationBondChangeReaction(Reaction):
         return {"energy_A": energy_A, "energy_B": energy_B}
 
     def rate_constant(self):
-        pass
+        if isinstance(self.rate_calculator, ReactionRateCalculator):
+            return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+        elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
+            # No reference is set
+            # Use barrierless reaction
+            if self.rate_calculator.alpha == -1:
+                rate_constant = dict()
+                free_energy = self.free_energy()
+
+                if free_energy["free_energy_A"] < 0:
+                    rate_constant["k_A"] = k * 298.15 / h
+                else:
+                    rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+
+                if free_energy["free_energy_B"] < 0:
+                    rate_constant["k_B"] = k * 298.15 / h
+                else:
+                    rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+
+                return rate_constant
+            else:
+                return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                        "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
 
 
 def graph_rep_1_2(reaction) -> nx.DiGraph:
@@ -894,8 +966,7 @@ class ReactionNetwork:
 
         all_reactions = list()
         for rtype, rclass in reaction_classes.items():
-            reactions, classes = rclass.generate(self.entries,
-                                                 transition_states=transition_states)
+            reactions, classes = rclass.generate(self.entries)
             self.classes[rtype] = classes
             all_reactions.append(reactions)
         self.reactions = [i for i in self.reactions if i]
@@ -925,85 +996,79 @@ class ReactionNetwork:
         self.graph.add_nodes_from(graph_representation.nodes(data=True))
         self.graph.add_edges_from(graph_representation.edges(data=True))
 
-    # def as_dict(self):
-    #     entries = dict()
-    #     for formula in self.entries.keys():
-    #         entries[formula] = dict()
-    #         for bonds in self.entries[formula].keys():
-    #             entries[formula][bonds] = dict()
-    #             for charge in self.entries[formula][bonds].keys():
-    #                 entries[formula][bonds][charge] = list()
-    #                 for entry in self.entries[formula][bonds][charge]:
-    #                     entries[formula][bonds][charge].append(entry.as_dict())
-    #
-    #     entries_list = [e.as_dict() for e in self.entries_list]
-    #
-    #     reactions = [r.as_dict() for r in self.reactions]
-    #
-    #     classes = dict()
-    #     for category in self.buckets.keys():
-    #         classes[category] = dict()
-    #         for charge in self.buckets[category].keys():
-    #             classes[category][charge] = dict()
-    #             for label in self.buckets[category][charge].keys():
-    #                 classes[category][charge][label] = list()
-    #                 for reaction in self.buckets[category][charge][label]:
-    #                     classes[category][charge][label].append(reaction.as_dict())
-    #
-    #     d = {"@module": self.__class__.__module__,
-    #          "@class": self.__class__.__name__,
-    #          "entries_dict": entries,
-    #          "entries_list": entries_list,
-    #          "reactions": reactions,
-    #          "classes": classes,
-    #          "electron_free_energy": self.electron_free_energy,
-    #          "graph": json_graph.adjacency_data(self.graph),
-    #          "PR_record": self.PR_record,
-    #          "min_cost": self.min_cost,
-    #          "num_starts": self.num_starts,
-    #          "local_order": self.local_order,
-    #          "consider_charge_categories": self.consider_charge_categories}
-    #
-    #     return d
-    #
-    # @classmethod
-    # def from_dict(cls, d):
-    #
-    #     entries = dict()
-    #     d_entries = d["entries_dict"]
-    #     for formula in d_entries.keys():
-    #         entries[formula] = dict()
-    #         for bonds in d_entries[formula].keys():
-    #             entries[formula][bonds] = dict()
-    #             for charge in d_entries[formula][bonds].keys():
-    #                 entries[formula][bonds][charge] = list()
-    #                 for entry in d_entries[formula][bonds][charge]:
-    #                     entries[formula][bonds][charge].append(MoleculeEntry.from_dict(entry))
-    #
-    #     entries_list = [MoleculeEntry.from_dict(e) for e in d["entries_list"]]
-    #
-    #     for reaction in d["reactions"]:
-    #         rclass =
-    #
-    #     classes = dict()
-    #     for category in d["buckets"].keys():
-    #         classes[category] = dict()
-    #         if d["consider_charge_categories"]:
-    #             for charge in d["buckets"][category].keys():
-    #                 classes[category][charge] = dict()
-    #                 for label in d["buckets"][category][charge].keys():
-    #                     classes[category][charge][label] = list()
-    #                     for reaction in d["buckets"][category][charge][label]:
-    #                         classes[category][charge][label].append()
-    #         else:
-    #             for label in d["buckets"][category].keys():
-    #                 buckets[category][label] = list()
-    #                 for reaction in d["buckets"][category][label]:
-    #                     rcts = [MoleculeEntry.from_dict(e) for e in reaction[0]]
-    #                     pros = [MoleculeEntry.from_dict(e) for e in reaction[1]]
-    #                     buckets[category][label].append((rcts, pros))
-    #
-    #     graph = json_graph.adjacency_graph(d["graph"], directed=True)
-    #
-    #     return cls(d["electron_free_energy"], entries, entries_list, buckets,
-    #                graph, d["PR_record"], d["min_cost"], d["num_starts"])
+    def as_dict(self):
+        entries = dict()
+        for formula in self.entries.keys():
+            entries[formula] = dict()
+            for bonds in self.entries[formula].keys():
+                entries[formula][bonds] = dict()
+                for charge in self.entries[formula][bonds].keys():
+                    entries[formula][bonds][charge] = list()
+                    for entry in self.entries[formula][bonds][charge]:
+                        entries[formula][bonds][charge].append(entry.as_dict())
+
+        entries_list = [e.as_dict() for e in self.entries_list]
+
+        reactions = [r.as_dict() for r in self.reactions]
+
+        classes = dict()
+        for category in self.classes.keys():
+            classes[category] = dict()
+            for charge in self.classes[category].keys():
+                classes[category][charge] = dict()
+                for label in self.classes[category][charge].keys():
+                    classes[category][charge][label] = list()
+                    for reaction in self.classes[category][charge][label]:
+                        classes[category][charge][label].append(reaction.as_dict())
+
+        d = {"@module": self.__class__.__module__,
+             "@class": self.__class__.__name__,
+             "entries_dict": entries,
+             "entries_list": entries_list,
+             "reactions": reactions,
+             "classes": classes,
+             "electron_free_energy": self.electron_free_energy,
+             "graph": json_graph.adjacency_data(self.graph),
+             "PR_record": self.PR_record,
+             "min_cost": self.min_cost,
+             "num_starts": self.num_starts}
+
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+
+        entries = dict()
+        d_entries = d["entries_dict"]
+        for formula in d_entries.keys():
+            entries[formula] = dict()
+            for bonds in d_entries[formula].keys():
+                entries[formula][bonds] = dict()
+                for charge in d_entries[formula][bonds].keys():
+                    entries[formula][bonds][charge] = list()
+                    for entry in d_entries[formula][bonds][charge]:
+                        entries[formula][bonds][charge].append(MoleculeEntry.from_dict(entry))
+
+        entries_list = [MoleculeEntry.from_dict(e) for e in d["entries_list"]]
+
+        reactions = list()
+        for reaction in d["reactions"]:
+            rclass = load_class(str(cls.__module__)+"."+ reaction["@class"])
+            reactions.append(rclass.from_dict(reaction))
+
+
+        classes = dict()
+        for category in d["classes"].keys():
+            classes[category] = dict()
+            for charge in d["classes"][category].keys():
+                classes[category][charge] = dict()
+                for label in d["classes"][category][charge].keys():
+                    classes[category][charge][label] = list()
+                    for reaction in d["classes"][category][charge][label]:
+                        rclass = load_class(str(cls.__module__) + "." + reaction["@class"])
+                        classes[category][charge][label].append(rclass.from_dict(reaction))
+
+        graph = json_graph.adjacency_graph(d["graph"], directed=True)
+
+        return cls(d["electron_free_energy"], entries, entries_list, classes,
+                   graph, reactions, d["PR_record"], d["min_cost"], d["num_starts"])

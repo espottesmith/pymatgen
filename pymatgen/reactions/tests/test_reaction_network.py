@@ -138,7 +138,7 @@ class TestReactionNetwork(PymatgenTest):
         self.assertEqual(len(RN.entries_list),251)
         self.assertEqual(len(RN.graph.nodes),2021)
         self.assertEqual(len(RN.graph.edges),4022)
-        dumpfn(RN,"RN.json")
+        # dumpfn(RN,"RN.json")
         loaded_RN = loadfn("RN.json")
         self.assertEqual(RN.as_dict(),loaded_RN.as_dict())
 
@@ -201,15 +201,15 @@ class TestReactionNetwork(PymatgenTest):
     #     self.assertEqual(paths[9]["overall_free_energy_change"],-5.13165788713941)
     #     self.assertEqual(paths[9]["hardest_step_deltaG"],2.7270388301945787)
 
-    # def test_as_from_dict(self):
-    #     orig = ReactionNetwork.from_input_entries(self.LiEC_reextended_entries,
-    #                                               electron_free_energy=-2.15)
-    #
-    #     rn_dict = orig.as_dict()
-    #
-    #     rn_from_dict = ReactionNetwork.from_dict(rn_dict)
-    #
-    #     self.assertEqual(len(rn_from_dict.entries_list), len(orig.entries_list))
+    def test_as_from_dict(self):
+        orig = ReactionNetwork.from_input_entries(self.LiEC_reextended_entries,
+                                                  electron_free_energy=-2.15)
+
+        rn_dict = orig.as_dict()
+
+        rn_from_dict = ReactionNetwork.from_dict(rn_dict)
+
+        self.assertEqual(len(rn_from_dict.entries_list), len(orig.entries_list))
 
     # def _test_find_multi_paths(self):
     #     RN = loadfn("RN.json")

@@ -3,10 +3,11 @@ import logging
 import numpy as np
 from scipy.constants import h, k, R, N_A, pi
 
+from monty.json import MSONable, MontyDecoder
+
 from pymatgen.core.units import amu_to_kg
 from pymatgen.util.num import product
 from pymatgen.entries.mol_entry import MoleculeEntry
-from pymatgen.analysis.reaction_calculator import Reaction, ReactionError
 
 
 __author__ = "Evan Spotte-Smith"
@@ -19,7 +20,7 @@ __date__ = "September 2019"
 logger = logging.getLogger(__name__)
 
 
-class ReactionRateCalculator:
+class ReactionRateCalculator(MSONable):
 
     """
     An object which represents a chemical reaction (in terms of reactants, transition state,
@@ -33,16 +34,12 @@ class ReactionRateCalculator:
         products (list): list of MoleculeEntry objects
         transition_state (MoleculeEntry): MoleculeEntry representing the transition state between
             the reactants and the products
-        reaction (dict, or None): optional. If None (default), the "reactants" and
-        "products" lists will serve as the basis for a Reaction object which represents the
-        balanced stoichiometric reaction. Otherwise, this dict will show the number of molecules
-        present in the reaction for each reactant and each product in the reaction.
 
     Returns:
         None
     """
 
-    def __init__(self, reactants, products, transition_state, reaction=None):
+    def __init__(self, reactants, products, transition_state):
         """
 
         """
@@ -51,34 +48,9 @@ class ReactionRateCalculator:
         self.products = products
         self.transition_state = transition_state
 
-        if reaction is None:
-            try:
-                rct_mols = [r.mol_graph.molecule for r in self.reactants]
-                pro_mols = [p.mol_graph.molecule for p in self.products]
-                rct_comps = [r.composition for r in rct_mols]
-                pro_comps = [p.composition for p in pro_mols]
-                self.reaction = Reaction(rct_comps, pro_comps)
-            except ReactionError:
-                # Reaction cannot be balanced
-                self.reaction = None
-        else:
-            self.reaction = reaction
-
-        # Determine rate law
-        if self.reaction is not None:
-            rate_law = {"reactants": dict(), "products": dict()}
-            rct_comps = [r.mol_graph.molecule.composition for r in self.reactants]
-            pro_comps = [p.mol_graph.molecule.composition for p in self.products]
-
-            for ii, comp_r in enumerate(rct_comps):
-                rate_law["reactants"][ii] = abs(self.reaction.get_coeff(comp_r))
-            for jj, comp_p in enumerate(pro_comps):
-                rate_law["products"][jj] = abs(self.reaction.get_coeff(comp_p))
-        else:
-            # Given no information about rate law
-            # Assume rate law is first-order in terms of each reactant/product
-            rate_law = {"reactants": {ii: 1 for ii in range(len(self.reactants))},
-                        "products": {jj: 1 for jj in range(len(self.products))}}
+        # Assume rate law is first-order in terms of each reactant/product
+        rate_law = {"reactants": {ii: 1 for ii in range(len(self.reactants))},
+                    "products": {jj: 1 for jj in range(len(self.products))}}
 
         self.rate_law = rate_law
 
@@ -347,14 +319,14 @@ class BEPRateCalculator(ReactionRateCalculator):
         alpha (float): the reaction coordinate (must between 0 and 1)
     """
 
-    def __init__(self, reactants, products, ea_reference, delta_h_reference, reaction=None,
+    def __init__(self, reactants, products, ea_reference, delta_h_reference,
                  alpha=0.5):
 
         self.ea_reference = ea_reference
         self.delta_h_reference = delta_h_reference
         self.alpha = alpha
 
-        super().__init__(reactants, products, None, reaction=reaction)
+        super().__init__(reactants, products, None)
 
     def calculate_act_energy(self, reverse=False):
         """
@@ -503,7 +475,7 @@ class ExpandedBEPRateCalculator(ReactionRateCalculator):
 
     def __init__(self, reactants, products, delta_ea_reference, delta_ha_reference,
                  delta_sa_reference, delta_e_reference,
-                 delta_h_reference, delta_s_reference, reaction=None, alpha=0.5):
+                 delta_h_reference, delta_s_reference, alpha=0.5):
         """
 
         """
@@ -521,7 +493,7 @@ class ExpandedBEPRateCalculator(ReactionRateCalculator):
         # Reaction coordinate
         self.alpha = alpha
 
-        super().__init__(reactants, products, None, reaction=reaction)
+        super().__init__(reactants, products, None)
 
     def calculate_act_energy(self, reverse=False):
         raise NotImplementedError("Method calculate_act_energy is not valid for "

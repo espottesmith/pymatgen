@@ -4,21 +4,15 @@
 
 import logging
 
-import numpy as np
-
 from monty.io import zopen
 from monty.json import MSONable
 
-from pymatgen.core.structure import Molecule
 from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.analysis.fragmenter import metal_edge_extender
 from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.io.qchem.inputs import QCInput
 
-from pymatgen.io.qchem.utils import (read_table_pattern,
-                                     read_pattern,
-                                     lower_and_check_unique,
-                                     generate_string_start)
+from pymatgen.io.qchem.utils import lower_and_check_unique
 
 # Classes for reading/manipulating/writing input files for use with pyGSM.
 

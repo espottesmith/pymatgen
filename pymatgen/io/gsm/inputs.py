@@ -169,11 +169,11 @@ class GSMIsomerInput(MSONable):
     def __init__(self, molecule=None, bonds_formed=None, bonds_broken=None,
                  angles=None, torsions=None, out_of_planes=None, use_graph=False):
         self.molecule = molecule
-        self.bonds_formed = bonds_formed
-        self.bonds_broken = bonds_broken
-        self.angles = angles
-        self.torsions = torsions
-        self.out_of_planes = out_of_planes
+        self.bonds_formed = bonds_formed or list()
+        self.bonds_broken = bonds_broken or list()
+        self.angles = angles or list()
+        self.torsions = torsions or list()
+        self.out_of_planes = out_of_planes or list()
         self.use_graph = use_graph
 
         # First, check that there are not too many coordinates given
@@ -206,27 +206,27 @@ class GSMIsomerInput(MSONable):
             self.all_coords = all_coords
 
         # Verify that all coordinates are tuples including only valid indices
-        if self.molecule is not None:
-            for coord in all_coords:
-                if isinstance(coord, tuple):
-                    for index in coord:
-                        if isinstance(index, int):
+        for coord in all_coords:
+            if isinstance(coord, tuple):
+                for index in coord:
+                    if isinstance(index, int):
+                        if self.molecule is not None:
                             if index >= len(self.molecule):
                                 raise ValueError("Invalid index given for coordinate {}!".format(coord))
-                        else:
-                            raise ValueError("Non-integer index given for coordinate {}!".format(coord))
-                else:
-                    raise ValueError("Coordinate {} must be a tuple!".format(coord))
+                    else:
+                        raise ValueError("Non-integer index given for coordinate {}!".format(coord))
+            else:
+                raise ValueError("Coordinate {} must be a tuple!".format(coord))
 
         # Verify that coordinates are of appropriate length for their type
         for coord in self.bonds_broken + self.bonds_formed:
-            if len(coord) != 2:
+            if len(set(coord)) != 2:
                 raise ValueError("All bond coordinates should involve 2 indices!")
         for coord in self.angles:
-            if len(coord) != 3:
+            if len(set(coord)) != 3:
                 raise ValueError("All angle coordinates should involve 3 indices!")
         for coord in self.torsions + self.out_of_planes:
-            if len(coord) != 4:
+            if len(set(coord)) != 4:
                 raise ValueError("All angle coordinates should involve 4 indices!")
 
         # If allowed, use graph methods to verify the coordinates
@@ -268,7 +268,7 @@ class GSMIsomerInput(MSONable):
         for atom_1, atom_2, atom_3, atom_4 in self.torsions + self.out_of_planes:
             first_bond = True
             second_bond = True
-            third_bond = False
+            third_bond = True
 
             if atom_2 not in self.molecule_graph.graph[atom_1] and atom_1 not in self.molecule_graph.graph[atom_2]:
                 first_bond = False

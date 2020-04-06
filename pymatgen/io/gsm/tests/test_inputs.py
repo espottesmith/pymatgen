@@ -9,7 +9,9 @@ import unittest
 
 from monty.serialization import loadfn
 
-from pymatgen import Molecule
+from pymatgen.core.structure import Molecule
+from pymatgen.analysis.graphs import MoleculeGraph
+from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.util.testing import PymatgenTest
 from pymatgen.io.gsm.inputs import QCTemplate, GSMIsomerInput
 
@@ -108,16 +110,102 @@ class TestQCTemplate(PymatgenTest):
 class TestGSMIsomerInput(PymatgenTest):
 
     def test_create(self):
-        pass
+        # Test with too many coordinates
+        with self.assertRaises(ValueError):
+            too_many_coords = GSMIsomerInput(bonds_formed=[(0, 1), (1, 2)],
+                                             angles=[(4, 5, 6), (9, 10, 11)],
+                                             torsions=[(3, 4, 7, 8)])
+
+        # Test with non-integer indices
+        with self.assertRaises(ValueError):
+            non_integer = GSMIsomerInput(bonds_broken=[("pi", "three")])
+
+        # Test with wrong number of indices
+        with self.assertRaises(ValueError):
+            wrong_indices = GSMIsomerInput(bonds_formed=[(1, 2, 3)])
+        with self.assertRaises(ValueError):
+            wrong_indices = GSMIsomerInput(bonds_broken=[(1, 2, 3)])
+        with self.assertRaises(ValueError):
+            wrong_indices = GSMIsomerInput(angles=[(1, 3)])
+        with self.assertRaises(ValueError):
+            wrong_indices = GSMIsomerInput(torsions=[(1, 2, 3)])
+        with self.assertRaises(ValueError):
+            wrong_indices = GSMIsomerInput(out_of_planes=[(1, 2, 3, 4, 5)])
+
+        # Test with molecule - indices too high
+        mol = Molecule.from_file(os.path.join(test_dir, "..", "molecules",
+                                              "ethane.mol"))
+        with self.assertRaises(ValueError):
+            too_high = GSMIsomerInput(molecule=mol, bonds_broken=[(7, 9)])
+
+        # Test good
+        good = GSMIsomerInput(molecule=mol, bonds_broken=[(0, 1)])
+        self.assertEqual(good.molecule, mol)
+        self.assertEqual(good.bonds_broken, [(0, 1)])
 
     def test_verify_with_graphs(self):
-        pass
+        ethane = Molecule.from_file(os.path.join(test_dir, "..", "molecules",
+                                              "ethane.mol"))
+
+        # Test bad bond formed
+        with self.assertRaises(ValueError):
+            bad_bond = GSMIsomerInput(molecule=ethane, bonds_formed=[(0, 1)],
+                                      use_graph=True)
+
+        # Test bad bond broken
+        with self.assertRaises(ValueError):
+            bad_bond = GSMIsomerInput(molecule=ethane, bonds_broken=[(1, 2)],
+                                      use_graph=True)
+
+        # Test bad angle
+        with self.assertRaises(ValueError):
+            bad_angle = GSMIsomerInput(molecule=ethane,
+                                       angles=[(0, 1, 2)],
+                                       use_graph=True)
+
+        # Test bad torsion
+        with self.assertRaises(ValueError):
+            bad_torsion = GSMIsomerInput(molecule=ethane,
+                                         torsions=[(0, 1, 2, 3)],
+                                         use_graph=True)
+
+        # Test bad out of plane bend
+        with self.assertRaises(ValueError):
+            bad_out_of_plane = GSMIsomerInput(molecule=ethane,
+                                              out_of_planes=[(0, 1, 2, 3)],
+                                              use_graph=True)
+
+        # Test good
+        good = GSMIsomerInput(molecule=ethane,
+                              bonds_formed=[(0, 7)],
+                              angles=[(1, 0, 4)],
+                              torsions=[(2, 0, 1, 6)],
+                              use_graph=True)
+        mg = MoleculeGraph.with_local_env_strategy(ethane, OpenBabelNN())
+        self.assertEqual(mg, good.molecule_graph)
 
     def test_str(self):
-        pass
+        len_two = GSMIsomerInput(bonds_formed=[(0, 1)],
+                                 bonds_broken=[(2, 3), (5, 8)])
 
-    def test_from_file(self):
-        pass
+        self.assertEqual(str(len_two), "ADD 0 1\nBREAK 2 3\nBREAK 5 8")
+
+        len_three_four = GSMIsomerInput(angles=[(1, 2, 3)],
+                                        torsions=[(4, 5, 8, 9)],
+                                        out_of_planes=[(1, 11, 68, 3)])
+
+        self.assertEqual(str(len_three_four),
+                         "ANGLE 1 2 3\nTORSION 4 5 8 9\nOOP 1 11 68 3")
+
+    def test_to_from_file(self):
+        len_two = GSMIsomerInput(bonds_formed=[(0, 1)],
+                                 bonds_broken=[(2, 3), (5, 8)])
+        len_two.write_file("test")
+
+        check = GSMIsomerInput.from_file("test")
+        self.assertEqual(len_two.bonds_broken, check.bonds_broken)
+        self.assertEqual(len_two.bonds_formed, check.bonds_formed)
+        os.remove("test")
 
 
 if __name__ == "__main__":

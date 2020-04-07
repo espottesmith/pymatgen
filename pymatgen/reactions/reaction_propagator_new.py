@@ -88,13 +88,70 @@ class ReactionPropagator:
             propensities[id] = h * rate
         return propensities
 
+    def update_state(self, state, reaction):
+        """ Update the system based on the reaction chosen
+        Parameters:
+        state (dict) number of molecules of each species
+        reaction object
+        """
+        num_species = len(state)
+        reactant_ids = [r_id for r_id in reaction.reactant_ids]
+        num_reactants = len(reactant_ids)
+        product_ids = [p_id for p_id in reaction.product_ids]
+        num_products = len(product_ids)
+        reactants = reaction.reactants
+        products = reaction.products
+
+        unchecked_r_ind = [i for i in range(len(reactant_ids))]
+        unchecked_p_ind = [j for j in range(len(product_ids))]
+## Loop through state once, to find reactant and product ids
+        for x in state:
+            this_entryid = state[x]["Molecule"].entry_id
+            if this_entryid in reactant_ids:
+                state[x]["Concentration"] = state[x]["Concentration"] - 1
+                unchecked_r_ind.remove[reactant_ids.index(this_entryid)]
+            elif this_entryid in product_ids:
+                state[x]["Concentration"] = state[x]["Concentration"] + 1
+                unchecked_p_ind.remove[product_ids.index(this_entryid)]
+            if (len(unchecked_p_ind) == 0) & len(unchecked_r_ind == 0):
+                continue
+                
+        if len(unchecked_p_ind) > 0:
+            for i, index in enumerate(unchecked_p_ind):
+                state[num_species + i]["Molecule"] = products[index]
+                state[num_species + i]["Concentration"] = 1
+            num_species += len(unchecked_p_ind)
+
+""" Alternative: loop through each reactant, then loop through state to find the id: more straightforward but needs more computation
+        for reactant in reaction.reactants:
+            r_id = reactant.entry_id
+            for x in state:
+                if r_id == state[x]["Molecule"].entry_id:
+                    state[x]["Concentration"] = state[x]["Concentration"] - 1
+                    break
+        for product in reaction.products:
+            p_id = product.entry_id
+            existing_prod = False
+            for y in state:
+                if p_id == state[y]["Molecule"].entry_id:
+                    state[y]["Concentration"] = state[y]["Concentration"] + 1
+                    existing_prod = True
+                    break
+            if not existing_prod:
+                num_species += 1
+                state[num_species]["Molecule"] = product
+                state[num_species]["Concentration"] = 1
+
+"""
+
+        return state
 
     def simulation(self, initial_state, t_end):
         """ Main body code of the KMC simulation. Propagates time and updates species amounts.
-            Need to store reactions, concentrations at each time step
+            Store reactions, time, and time step for each iteration
 
             Parameters
-            state: (array) number of molecules of each species; need to know indexing of molecules
+            state: (dict) number of molecules of each species; need to know indexing of molecules
             t_end: (int) ending time of simulation
 
             Returns
@@ -102,11 +159,14 @@ class ReactionPropagator:
         """
         state = initial_state
         t = 0
+        data = {}
+        data["Time"] = []
+        data["Tau"] = []
+        data["Reactions"] = []
         while t < t_end:
-            current_state = state[-1,:]
             ## Obtain reaction propensities, on which the probability distributions of
             ## time and reaction choice depends.
-            propensities = self.reaction_propensities(self, current_state) ## dict of each reaction's propensity
+            propensities = self.reaction_propensities(self, state) ## dict of each reaction's propensity
             a = 0
             ## Loop to sum up all propensities
             for i in propensities:
@@ -129,8 +189,7 @@ class ReactionPropagator:
                     mu = i
                     break
             reaction_mu = self.reactions[mu]
-            ## Next work on updating state based on choice of reaction
-            ## relate rxn index mu to the actual reaction node, and update state
-
-            new_state = [] ## updated molecule amounts
-            state = np.vstack((state, new_state)) ## Store concentrations at each time step
+            state = update_state(self, state, reaction_mu) ## updated molecule amounts
+            data["Time"] = np.append(data["Time"], t)
+            data["Tau"] = np.append(data["Tau"], tau)
+            data["Reactions"] = np.append(data["Reactions"], reaction_mu)

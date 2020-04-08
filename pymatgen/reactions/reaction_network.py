@@ -297,7 +297,8 @@ class RedoxReaction(Reaction):
         """
         For now, all redox reactions will have the same
         """
-        return 10.0 ** 11
+
+        return {"k_A": 10.0 ** 11, "k_B": 10.0 ** 11}
 
     def as_dict(self) -> dict:
         if self.transition_state is None:
@@ -1353,12 +1354,15 @@ class ReactionNetwork:
             for neighbor, _ in neighbors.items():
                 mapping_entry = self.rxn_node_to_rxn_ind[neighbor]
                 all_included = True
-                for rct_id in mapping_entry[1]:
-                    if rct_id not in mol_ids:
-                        all_included = False
-                for pro_id in mapping_entry[2]:
-                    if pro_id not in mol_ids:
-                        all_included = False
+
+                if mapping_entry[4]:  # If reverse reaction
+                    for pro_id in mapping_entry[2]:
+                        if pro_id not in mol_ids:
+                            all_included = False
+                else:  # Forwards reaction
+                    for rct_id in mapping_entry[1]:
+                        if rct_id not in mol_ids:
+                            all_included = False
                 if all_included:
                     reactions.add(mapping_entry[0])
 

@@ -13,6 +13,7 @@ k_b = 1.38064852e-23
 T = 298.15
 h = 6.62607015e-34
 R = 8.3144598
+N = 6.0221409e+23
 
 class ReactionPropagator:
 
@@ -29,7 +30,7 @@ class ReactionPropagator:
     def __init__(self, reaction_network, initial_state):
         """ Args:
         1) Reaction Network object
-        2) initial_state: (dict) {Molecule ID: {"molecule": MoleculeEntry, "num_mols": (int)}}
+        2) initial_state: (dict) {Molecule ID: {"molecule": MoleculeEntry, "concentration": (int)}}
         """
         self.reaction_network = reaction_network
         ### make a dict, assigning an index for each reaction. Each index is a dict containing reaction object and will later add propensity
@@ -37,7 +38,38 @@ class ReactionPropagator:
         for id, reaction in enumerate(self.reaction_network.reactions):
             self.reactions[id] = reaction
         self.initial_state = initial_state
-        self.state = initial_state
+        self.volume = 1  #L
+        self.state = dict()
+        ## State will have number of molecules, instead of concentration
+        for molecule_id in initial_state:
+            num_mols = molecule_id["concentration"] * self.volume * N
+            self.state[molecule_id] = dict()
+            self.state[molecule_id]["molecule"] = initial_state[molecule_id]["molecule"]
+            self.state[molecule_id]["num_mols"] = initial_state[molecule_id]["concentration"] * V * N
+
+    @property
+    def state(self):
+        return self.state
+
+    def get_propensity(self, reaction, reverse):
+        "Obtain reaction propensity for a single reaction"
+        k = reaction.calculate_rate_constant(self, temperature = 298.0, reverse, kappa = 1.0)
+        num_reactants = len(reaction.reactants)
+        num_mols_list = list()
+        for reactant in reaction.reactants:
+            reactant_num_mols = self.state.get(reactant.entry_id).get("num_mols")
+            num_mols_list.append(reactant_num_mols)
+        if num_reactants == 1:
+            h = num_mols_list[0]
+        elif (num_reactants == 2) and (reactants[0] == reactants[1]):
+            h = num_mols_list[0] * (num_mols_list[0] - 1) / 2
+        elif (num_reactants == 2) and (reactants[0] != reactants[1]):
+            h = num_mols_list[0] * num_mols_list[1]
+        else:
+            raise RuntimeError("Only single and bimolecular reactions supported by this simulation")
+        propensity = h * k
+        return propensity
+
     def reaction_propensities(self):
         """ Obtain reaction propensities, based on reaction kinetics. Propensity = (rate)(# distinct reactant combinations).
             Loop through all reactions, obtain rate constant
@@ -46,16 +78,13 @@ class ReactionPropagator:
         """
         propensities = dict()
         for id, reaction in enumerate(self.reactions):
-            k = reaction.calculate_rate_constant(self, state, temperature=298.0, reverse=False, kappa=1.0)
-            reactants = reaction.reactants
-            num_reactants = len(reactants)
+            k = reaction.calculate_rate_constant(self, temperature=298.0, reverse, kappa=1.0)
+            num_reactants = len(reaction.reactants)
             concentrations = list()
             ## Find matching id, and get the concentration
-            for this_reactant in reactants:
+            for this_reactant in reaction.reactants:
                 reactant_id = this_reactant.entry_id
-                mol_dict = state.get(reactant_id, False)
-                if mol_dict is 0:
-                    raise RunTimeError("This reaction cannot occur, as the reactants aren't present")
+                mol_dict = state.get(reactant_id)
             if num_reactants == 1:
                 h = concentrations[0]
             elif (num_reactants == 2) & (reactants[0] == reactants[1]):
@@ -98,44 +127,43 @@ class ReactionPropagator:
         self.state = self.initial_state
         t = 0
         data = dict()
-        data["Time"] = list()
-        data["Tau"] = list()
-        data["Reactions"] = list()
+        data["time"] = list()
+        data["tau"] = list()
+        data["reactions"] = dict()
+        step_counter = 0
         while t < t_end:
+            step_counter += 1
             ## Obtain reaction propensities, on which the probability distributions of
             ## time and reaction choice depends.
-            propensities = self.reaction_propensities() ## dict of each reaction's propensity
-            a = 0
-            ## Loop to sum up all propensities
-            for i in propensities:
-                a += propensities[i]
+            total_propensity = 0
+            for reaction in self.reaction_network.reactions:
+                total_propensity += self.get_propensity(reaction, reverse = False) + self.get_propensity(reaction, reverse = True)
 
             ## drawing random numbers on uniform (0,1) distrubution
             r1 = np.random.random_sample()
             r2 = np.random.random_sample()
-
+            random_propensity = r2 * total_propensity
             ## Obtaining a time step tau from the probability distrubution
             ## P(t) = a*exp(-at) --> probability that any reaction occurs at time t
             tau = -np.log(r1)/a
             t += tau
             ## Choosing a reaction mu; need a cumulative sum of rxn propensities
             ## Discrete probability distrubution of reaction choice
-
-            ## A check to see if reactants are actually present in current state. If yes, then will proceed with that reaction
-            reactants_present = False
-            while reactants_present is False
-                prop_sum = 0
-                for i in propensities:
-                    prop_sum += propensities[i]
-                    if prop_sum > r2*a:
-                        mu = i
-                        break
-                reaction_chosen = self.reactions[mu]
-                reactants_present = all([reactant_id in state for reactant_id in reaction_chosen.reactant_ids])
-            reaction_mu = reaction_chosen
+            prop_sum = 0
+            for i, reaction in enumerate(self.reaction_network.reactions):
+                prop_sum += self.get_propensity(reaction, reverse = False)
+                if prop_sum > random_propensity:
+                    reaction_mu = self.reactions[i]
+                    reverse = False
+                    break
+                prop_sum += self.get_propensity(reaction, reverse = True)
+                if prop_sum > random_propensity:
+                    reaction_mu = self.reaction_network.reactions[i]
+                    reverse = True
+                    break
             self.state = update_state(self, reaction_mu) ## updated molecule amounts
-            data["Time"].append(t)
-            data["Tau"].append(tau)
-            data["Reactions"].append(reaction_mu)
+            data["time"].append(t)
+            data["tau"].append(tau)
+            data["reactions"][step_counter] = {"reaction_object" : reaction_mu, "reverse": reverse}
 
         return data

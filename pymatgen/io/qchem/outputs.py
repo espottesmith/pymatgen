@@ -20,14 +20,17 @@ from pymatgen.analysis.fragmenter import metal_edge_extender
 import networkx as nx
 
 try:
-    import openbabel as ob
+    from openbabel import openbabel as ob
 
     have_babel = True
 except ImportError:
     ob = None
     have_babel = False
 
-from .utils import read_table_pattern, read_pattern, process_parsed_coords
+from .utils import (read_table_pattern,
+                    read_pattern,
+                    read_table_pattern_with_useful_header_footer,
+                    process_parsed_coords)
 
 __author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath"
 __copyright__ = "Copyright 2018, The Materials Project"
@@ -47,9 +50,9 @@ class QCOutput(MSONable):
             filename (str): Filename to parse
         """
         self.filename = filename
-        self.data = {}
-        self.data["errors"] = []
-        self.data["warnings"] = {}
+        self.data = dict()
+        self.data["errors"] = list()
+        self.data["warnings"] = dict()
         self.text = ""
         with zopen(filename, 'rt') as f:
             self.text = f.read()
@@ -87,20 +90,6 @@ class QCOutput(MSONable):
                     r"Thank you very much for using Q-Chem.\s+Have a nice day."
             },
             terminate_on_match=True).get('key')
-
-        # If the calculation finished, parse the job time.
-        if self.data.get('completion', []):
-            temp_timings = read_pattern(
-                self.text, {
-                    "key":
-                        r"Total job time\:\s*([\d\-\.]+)s\(wall\)\,\s*([\d\-\.]+)s\(cpu\)"
-                }).get('key')
-            if temp_timings is not None:
-                self.data["walltime"] = float(temp_timings[0][0])
-                self.data["cputime"] = float(temp_timings[0][1])
-            else:
-                self.data["walltime"] = None
-                self.data["cputime"] = None
 
         # Check if calculation is unrestricted
         self.data["unrestricted"] = read_pattern(
@@ -254,8 +243,16 @@ class QCOutput(MSONable):
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*opt"
             }).get('key')
-        if self.data.get('optimization', []):
+        if self.data.get('optimization', list()):
             self._read_optimization_data()
+
+        # Check if the calculation is a transition state optimization. If so, parse the relevant output
+        self.data["transition_state"] = read_pattern(
+            self.text, {
+                "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*ts"
+            }).get('key')
+        if self.data.get('transition_state', list()):
+            self._read_transition_state_data()
 
         # Check if the calculation contains a constraint in an $opt section.
         self.data["opt_constraint"] = read_pattern(self.text, {
@@ -301,13 +298,60 @@ class QCOutput(MSONable):
         if self.data.get("single_point_job", []):
             self._read_single_point_data()
 
+        self.data["freezing_string_job"] = read_pattern(
+            self.text, {
+                "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*fsm"
+            },
+            terminate_on_match=True).get("key")
+        if self.data.get("freezing_string_job", []):
+            self._read_string_geometries()
+            self._read_freezing_string_data()
+
+        self.data["growing_string_job"] = read_pattern(
+            self.text, {
+                "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*gsm"
+            },
+            terminate_on_match=True).get("key")
+        if self.data.get("growing_string_job", []):
+            self._read_string_geometries()
+            self._read_growing_string_data()
+
+            self.data["completion"] = read_pattern(
+                self.text, {
+                    "key":
+                        r"A miracle has come to pass!\s+The string has converged!"
+                },
+                terminate_on_match=True).get('key')
+
         self.data["force_job"] = read_pattern(
             self.text, {
                 "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*force"
             },
             terminate_on_match=True).get("key")
-        if self.data.get("force", []):
+        if self.data.get("force_job", []):
             self._read_force_data()
+
+        self.data["scan_job"] = read_pattern(
+            self.text, {
+                "key": r"(?i)\s*job(?:_)*type\s*(?:=)*\s*pes_scan"
+            },
+            terminate_on_match=True).get("key")
+        if self.data.get("scan_job", []):
+            self._read_scan_data()
+
+        # If the calculation finished, parse the job time.
+        if self.data.get('completion', []):
+            temp_timings = read_pattern(
+                self.text, {
+                    "key":
+                        r"Total job time\:\s*([\d\-\.]+)s\(wall\)\,\s*([\d\-\.]+)s\(cpu\)"
+                }).get('key')
+            if temp_timings is not None:
+                self.data["walltime"] = float(temp_timings[0][0])
+                self.data["cputime"] = float(temp_timings[0][1])
+            else:
+                self.data["walltime"] = None
+                self.data["cputime"] = None
 
         # If the calculation did not finish and no errors have been identified yet, check for other errors
         if not self.data.get('completion',
@@ -686,7 +730,7 @@ class QCOutput(MSONable):
         """
         Parses all geometries from an optimization trajectory.
         """
-        geoms = []
+        geoms = list()
         header_pattern = r"\s+Optimization\sCycle:\s+\d+\s+Coordinates \(Angstroms\)\s+ATOM\s+X\s+Y\s+Z"
         table_pattern = r"\s+\d+\s+\w+\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
         footer_pattern = r"\s+Point Group\:\s+[\d\w\*]+\s+Number of degrees of freedom\:\s+\d+"
@@ -712,9 +756,9 @@ class QCOutput(MSONable):
         table_pattern = r"\s+\d+\s+\w+\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
         footer_pattern = r"\s+Z-matrix Print:"
 
-        parsed_optimized_geometry = read_table_pattern(
+        parsed_optimized_geometries = read_table_pattern(
             self.text, header_pattern, table_pattern, footer_pattern)
-        if parsed_optimized_geometry == [] or None:
+        if parsed_optimized_geometries == [] or None:
             self.data["optimized_geometry"] = None
             header_pattern = r"^\s+\*+\s+OPTIMIZATION CONVERGED\s+\*+\s+\*+\s+Z-matrix\s+" \
                              r"Print:\s+\$molecule\s+[\d\-]+\s+[\d\-]+\n"
@@ -726,13 +770,23 @@ class QCOutput(MSONable):
                 self.text, header_pattern, table_pattern, footer_pattern)
         else:
             self.data["optimized_geometry"] = process_parsed_coords(
-                parsed_optimized_geometry[0])
+                parsed_optimized_geometries[0])
+            self.data["optimized_geometries"] = [process_parsed_coords(i)
+                                                 for i in parsed_optimized_geometries]
             if self.data.get('charge') is not None:
                 self.data["molecule_from_optimized_geometry"] = Molecule(
                     species=self.data.get('species'),
                     coords=self.data.get('optimized_geometry'),
                     charge=self.data.get('charge'),
                     spin_multiplicity=self.data.get('multiplicity'))
+                self.data["molecules_from_optimized_geometries"] = list()
+                for geom in self.data["optimized_geometries"]:
+                    mol = Molecule(
+                        species=self.data.get('species'),
+                        coords=geom,
+                        charge=self.data.get('charge'),
+                        spin_multiplicity=self.data.get('multiplicity'))
+                    self.data["molecules_from_optimized_geometries"].append(mol)
 
     def _get_grad_format_length(self, header):
         """
@@ -823,6 +877,43 @@ class QCOutput(MSONable):
             self.data["CDS_gradients"] = None
 
     def _read_optimization_data(self):
+        temp_energy_trajectory = read_pattern(
+            self.text, {
+                "key": r"\sEnergy\sis\s+([\d\-\.]+)"
+            }).get('key')
+        if temp_energy_trajectory is None:
+            self.data["energy_trajectory"] = []
+        else:
+            real_energy_trajectory = np.zeros(len(temp_energy_trajectory))
+            for ii, entry in enumerate(temp_energy_trajectory):
+                real_energy_trajectory[ii] = float(entry[0])
+            self.data["energy_trajectory"] = real_energy_trajectory
+            self._read_geometries()
+            if have_babel:
+                self.data["structure_change"] = check_for_structure_changes(
+                    self.data["initial_molecule"],
+                    self.data["molecule_from_last_geometry"])
+            self._read_gradients()
+            # Then, if no optimized geometry or z-matrix is found, and no errors have been previously
+            # idenfied, check to see if the optimization failed to converge or if Lambda wasn't able
+            # to be determined.
+            if len(self.data.get("errors")) == 0 and self.data.get('optimized_geometry') is None \
+                    and len(self.data.get('optimized_zmat')) == 0:
+                if read_pattern(
+                        self.text, {
+                            "key": r"MAXIMUM OPTIMIZATION CYCLES REACHED"
+                        },
+                        terminate_on_match=True).get('key') == [[]]:
+                    self.data["errors"] += ["out_of_opt_cycles"]
+                elif read_pattern(
+                        self.text, {
+                            "key": r"UNABLE TO DETERMINE Lamda IN FormD"
+                        },
+                        terminate_on_match=True).get('key') == [[]]:
+                    self.data["errors"] += ["unable_to_determine_lamda"]
+
+    # Currently, ts is treated identically to opt; once we run more tests, this will need to change
+    def _read_transition_state_data(self):
         temp_energy_trajectory = read_pattern(
             self.text, {
                 "key": r"\sEnergy\sis\s+([\d\-\.]+)"
@@ -1003,7 +1094,7 @@ class QCOutput(MSONable):
         temp_dict = read_pattern(
             self.text, {
                 "final_energy":
-                    r"\s*SCF\s+energy in the final basis set\s+=\s*([\d\-\.]+)"
+                    r"\s*Total\s+energy in the final basis set\s+=\s*([\d\-\.]+)"
             })
 
         if temp_dict.get('final_energy') is None:
@@ -1013,8 +1104,237 @@ class QCOutput(MSONable):
             # Two lines will match the above; we want final calculation
             self.data['final_energy'] = float(temp_dict.get('final_energy')[-1][0])
 
+    def _read_string_geometries(self):
+        """
+        Parses geometries for FSM calculations (which are formatted differently than for
+        optimization calculations)
+        """
+        geoms = list()
+        header_pattern = r"Standard Nuclear Orientation \(Angstroms\)\s+I\s+Atom\s+X\s+Y\s+Z\s+-+"
+        table_pattern = r"\s*\d+\s+([a-zA-Z]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*"
+        footer_pattern = r"\s*-+"
+
+        parsed_geometries = read_table_pattern(
+            self.text, header_pattern, table_pattern, footer_pattern)
+        for parsed_geometry in parsed_geometries:
+            if parsed_geometry == list() or None:
+                geoms.append(None)
+            else:
+                coords = [e[1:] for e in parsed_geometry]
+                geoms.append(process_parsed_coords(coords))
+
+        self.data["geometries"] = geoms
+        self.data["last_geometry"] = geoms[-1]
+
+        if self.data.get('charge') is not None:
+            self.data["molecule_from_last_geometry"] = Molecule(
+                species=self.data.get('species'),
+                coords=self.data.get('last_geometry'),
+                charge=self.data.get('charge'),
+                spin_multiplicity=self.data.get('multiplicity'))
+
+        self.data["string_initial_reactant_geometry"] = self.data["geometries"][0]
+        # Two reactant geometries should initially be present, so third is product
+        self.data["string_initial_product_geometry"] = self.data["geometries"][2]
+
+        reactant_mol = Molecule(
+            species=self.data.get("species"),
+            coords=self.data.get("geometries")[0],
+            charge=self.data.get("charge"),
+            spin_multiplicity=self.data.get("multiplicity"))
+        reactant_mg = MoleculeGraph.with_local_env_strategy(reactant_mol, OpenBabelNN())
+        self.data["string_initial_reactant_molecules"] = [f.molecule for f in reactant_mg.get_disconnected_fragments()]
+
+        product_mol = Molecule(
+            species=self.data.get("species"),
+            coords=self.data.get("geometries")[2],
+            charge=self.data.get("charge"),
+            spin_multiplicity=self.data.get("multiplicity"))
+        product_mg = MoleculeGraph.with_local_env_strategy(product_mol, OpenBabelNN())
+        self.data["string_initial_product_molecules"] = [f.molecule for f in product_mg.get_disconnected_fragments()]
+
+    def _read_freezing_string_data(self):
+        """
+        Parses information from freezing string method (FSM) calculation to predict the transition
+        state of the reaction.
+        """
+
+        dirname = os.path.dirname(self.filename)
+
+        vfile_parser = QCVFileParser(filename=os.path.join(dirname, "Vfile.txt"), method="fsm")
+        stringfile_parser = QCStringfileParser(filename=os.path.join(dirname, "stringfile.txt"))
+        perpgradfile_parser = QCPerpGradFileParser(filename=os.path.join(dirname,
+                                                                         "perp_grad_file.txt"),
+                                                   method="fsm")
+
+        self.data["string_num_images"] = vfile_parser.data["num_images"]
+        self.data["string_energies"] = vfile_parser.data["image_energies"]
+        self.data["string_relative_energies"] = vfile_parser.data["relative_energies"]
+
+        self.data["string_geometries"] = stringfile_parser.data["geometries"]
+        self.data["string_molecules"] = list()
+        string_mols = stringfile_parser.data["molecules"]
+        for mol in string_mols:
+            mol.set_charge_and_spin(charge=self.data.get("charge"),
+                                    spin_multiplicity=self.data.get("multiplicity"))
+            self.data["string_molecules"].append(mol)
+
+        self.data["string_absolute_distances"] = perpgradfile_parser.data["absolute_distances"]
+        self.data["string_proportional_distances"] = perpgradfile_parser.data["proportional_distances"]
+        self.data["string_gradient_magnitudes"] = perpgradfile_parser.data["gradient_magnitudes"]
+
+        string_max_energy = max(vfile_parser.data["image_energies"])
+        max_index = vfile_parser.data["image_energies"].index(string_max_energy)
+        molecule_max_energy = stringfile_parser.data["molecules"][max_index]
+        self.data["string_max_energy"] = string_max_energy
+        self.data["string_ts_guess"] = molecule_max_energy
+
+    def _read_growing_string_data(self):
+        """
+        Parses information from growing string method (GSM) calculation to predict the transition
+        state of the reaction.
+        """
+
+        dirname = os.path.dirname(self.filename)
+
+        vfile_parser = QCVFileParser(filename=os.path.join(dirname, "Vfile.txt"), method="gsm")
+        perpgradfile_parser = QCPerpGradFileParser(filename=os.path.join(dirname,
+                                                                         "perp_grad_file.txt"), method="gsm")
+
+        self.data["string_num_images"] = vfile_parser.data["num_images"]
+        self.data["string_relative_energies"] = vfile_parser.data["relative_energies"]
+        self.data["string_relative_energies_iterations"] = vfile_parser.data["relative_energies_iterations"]
+
+        self.data["string_gradient_magnitudes"] = perpgradfile_parser.data["gradient_magnitudes"]
+        self.data["string_gradient_magnitudes_iterations"] = perpgradfile_parser.data["gradient_magnitudes_iterations"]
+        self.data["string_total_gradient_magnitude"] = perpgradfile_parser.data["total_gradient_magnitude"]
+        self.data["string_total_gradient_magnitude_iterations"] = perpgradfile_parser.data["total_gradient_magnitude_iterations"]
+
+        header_pattern = r"\s*structure [0-9]+\s*"
+        row_pattern = r"\s*(?P<species>[A-Za-z]+)\s+(?P<x_coord>\-?[0-9]+\.[0-9]+)\s+(?P<y_coord>\-?[0-9]+\.[0-9]+)\s+(?P<z_coord>\-?[0-9]+\.[0-9]+)"
+        footer_pattern = r""
+
+        temp_data = read_table_pattern(self.text,
+                                       header_pattern=header_pattern,
+                                       row_pattern=row_pattern,
+                                       footer_pattern=footer_pattern)
+
+        molecules = list()
+        geometries = list()
+        for image in temp_data:
+            species = list()
+            coords = list()
+            for row in image:
+                species.append(row["species"])
+                coords.append([row["x_coord"],
+                               row["y_coord"],
+                               row["z_coord"]])
+            coords = process_parsed_coords(coords)
+            molecules.append(Molecule(species, coords,
+                                      charge=self.data.get("charge"),
+                                      spin_multiplicity=self.data.get("multiplicity")))
+            geometries.append(coords)
+        self.data["string_molecules"] = molecules
+        self.data["string_geometries"] = geometries
+
+        string_max_energy = max(vfile_parser.data["relative_energies"])
+        max_index = vfile_parser.data["relative_energies"].index(string_max_energy)
+        molecule_max_energy = self.data["string_molecules"][max_index]
+        self.data["string_max_relative_energy"] = string_max_energy
+        self.data["string_ts_guess"] = molecule_max_energy
+
     def _read_force_data(self):
         self._read_gradients()
+
+    def _read_scan_data(self):
+        temp_energy_trajectory = read_pattern(
+            self.text, {
+                "key": r"\sEnergy\sis\s+([\d\-\.]+)"
+            }).get('key')
+        if temp_energy_trajectory is None:
+            self.data["energy_trajectory"] = []
+        else:
+            real_energy_trajectory = np.zeros(len(temp_energy_trajectory))
+            for ii, entry in enumerate(temp_energy_trajectory):
+                real_energy_trajectory[ii] = float(entry[0])
+            self.data["energy_trajectory"] = real_energy_trajectory
+
+        self._read_geometries()
+        self._read_gradients()
+
+        if len(self.data.get("errors")) == 0:
+            if read_pattern(
+                    self.text, {
+                        "key": r"MAXIMUM OPTIMIZATION CYCLES REACHED"
+                    },
+                    terminate_on_match=True).get('key') == [[]]:
+                self.data["errors"] += ["out_of_opt_cycles"]
+            elif read_pattern(
+                    self.text, {
+                        "key": r"UNABLE TO DETERMINE Lamda IN FormD"
+                    },
+                    terminate_on_match=True).get('key') == [[]]:
+                self.data["errors"] += ["unable_to_determine_lamda"]
+
+        header_pattern = r"\s*\-+ Summary of potential scan\: \-+\s*"
+        row_pattern_single = r"\s*([\-\.0-9]+)\s+([\-\.0-9]+)\s*\n"
+        row_pattern_double = r"\s*([\-\.0-9]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+)\s*\n"
+        footer_pattern = r"\s*\-+"
+
+        single_data = read_table_pattern(self.text,
+                                         header_pattern=header_pattern,
+                                         row_pattern=row_pattern_single,
+                                         footer_pattern=footer_pattern)
+
+        self.data["scan_energies"] = list()
+        if len(single_data) == 0:
+            double_data = read_table_pattern(self.text,
+                                             header_pattern=header_pattern,
+                                             row_pattern=row_pattern_double,
+                                             footer_pattern=footer_pattern)
+            if len(double_data) == 0:
+                self.data["scan_energies"] = None
+            else:
+                for line in double_data[0]:
+                    params = tuple([float(line[0]), float(line[1])])
+                    energy = float(line[2])
+                    self.data["scan_energies"].append((params, energy))
+        else:
+            for line in single_data[0]:
+                param = float(line[0])
+                energy = float(line[1])
+                self.data["scan_energies"].append((param, energy))
+
+        constraint_head = r"\s+Constraints and their Current Values\s*\n\s+Value\s+Constraint"
+        # constraint_row = r"\s*(?:(Distance\(Angs\))\:\s+([0-9]+)\s([0-9]+)\s+([\.0-9]+)\s+([\.0-9]+))|(?:(Angle)\:\s+([0-9]+)\s([0-9]+)\s+([0-9]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+))|(?:(Dihedral)\:\s+([0-9]+)\s([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+))"
+        constraint_row = r"\s*(Distance\(Angs\))|(Angle)|(Dihedral)\:(?:([0-9]+)\s+)+([\.0-9]+)\s+([\.0-9]+)"
+        constraint_foot = r"\s*Hessian updated using BFGS update"
+
+        constraint_sets = read_table_pattern(self.text,
+                                             header_pattern=constraint_head,
+                                             row_pattern=constraint_row,
+                                             footer_pattern=constraint_foot)
+
+        self.data["scan_constraint_sets"] = list()
+        for constraint_set in constraint_sets:
+            const = {"stre": list(), "bend": list(), "tors": list()}
+            for row in constraint_set:
+                atoms = tuple([int(a) for a in row[1:-2]])
+                values = tuple([float(v) for v in row[-2:]])
+                if row[0] == "Distance(Angs)":
+                    const["stre"].append((atoms, values))
+                elif row[0] == "Angle":
+                    const["bend"].append((atoms, values))
+                elif row[0] == "Dihedral":
+                    const["tors"].append((atoms, values))
+            self.data["scan_constraint_sets"].append(const)
+
+        self.data["scan_variables"] = dict()
+        if len(self.data["scan_constraint_sets"]) > 0:
+            for var_type, val_list in self.data["scan_constraint_sets"][0]:
+                self.data["scan_variables"][var_type] = list()
+                for val_set in val_list:
+                    self.data["scan_variables"][var_type].append(val_set[:-2])
 
     def _read_pcm_information(self):
         """
@@ -1169,10 +1489,549 @@ class QCOutput(MSONable):
             self.data["errors"] += ["unknown_error"]
 
     def as_dict(self):
-        d = {}
+        d = dict()
         d["data"] = self.data
         d["text"] = self.text
         d["filename"] = self.filename
+        return jsanitize(d, strict=True)
+
+
+class QCVFileParser(MSONable):
+
+    def __init__(self, filename="Vfile.txt", method="fsm"):
+        self.filename = filename
+        self.data = dict()
+        self.text = str()
+
+        with zopen(filename, 'rt') as f:
+            self.text = f.read()
+
+        if method == "fsm":
+            self._parse_fsm()
+        elif method == "gsm":
+            self._parse_gsm()
+        else:
+            raise ValueError("QCVFileParser is only designed for FSM and GSM jobs!")
+
+    def _parse_fsm(self):
+        header_pattern = r"#\s+Energy\s+profile\s*"
+        row_pattern = r"\s*\d+\s+(?P<distance_abs>[0-9\.]+)\s+(?P<distance_prop>[01]\.[0-9]+)\s+(?P<energy_abs>[\-\.0-9]+)\s+(?P<energy_rel>[\-\.0-9]+)\s*"
+        footer_pattern = r""
+
+        temp_data = read_table_pattern(self.text,
+                                       header_pattern=header_pattern,
+                                       row_pattern=row_pattern,
+                                       footer_pattern=footer_pattern)
+
+        self.data["num_images"] = len(temp_data[0])
+        self.data["absolute_distances"] = list()
+        self.data["proportional_distances"] = list()
+        self.data["image_energies"] = list()
+        self.data["relative_energies"] = list()
+        for row in temp_data[0]:
+            self.data["absolute_distances"].append(float(row["distance_abs"]))
+            self.data["proportional_distances"].append(float(row["distance_prop"]))
+            self.data["image_energies"].append(float(row["energy_abs"]))
+            # Relative energy in eV
+            self.data["relative_energies"].append(float(row["energy_rel"]))
+
+    def _parse_gsm(self):
+        header_pattern = r"\s*Energy profile vs Iteration \(eV\)\s*Iteration\s+node 1\s+node 2\s+\.\.\."
+        row_pattern = r"(?:[0-9]+)\s+(?P<node_rel_energies>(?:(?:\-?[0-9]+\.[0-9]+\s*)|(?:\s*--\s*))+)"
+        footer_pattern = r""
+
+        temp_data = read_table_pattern(self.text,
+                                       header_pattern=header_pattern,
+                                       row_pattern=row_pattern,
+                                       footer_pattern=footer_pattern)
+
+        self.data["num_iterations"] = len(temp_data[0])
+        self.data["relative_energies_iterations"] = list()
+        for row in temp_data[0]:
+            words = row["node_rel_energies"].split(" ")
+            rel_energies = list()
+            for word in words:
+                if word in ["", "\n"]:
+                    continue
+                elif word == "--":
+                    rel_energies.append(None)
+                else:
+                    rel_energies.append(float(word))
+            self.data["relative_energies_iterations"].append(rel_energies)
+        self.data["relative_energies"] = self.data["relative_energies_iterations"][-1]
+        self.data["num_images"] = len(self.data["relative_energies"])
+
+    def as_dict(self):
+        d = dict()
+        d["data"] = self.data
+        d["text"] = self.text
+        d["filename"] = os.path.split(self.filename)[-1]
+        return jsanitize(d, strict=True)
+
+
+class QCStringfileParser(MSONable):
+
+    def __init__(self, filename="stringfile.txt"):
+        self.filename = filename
+        self.data = dict()
+        self.text = str()
+
+        with zopen(filename, 'rt') as f:
+            self.text = f.read()
+
+        header_pattern = r"(?P<length>\d+)\s*\n\s*image\s+#\s+\d+\s+Energy\s+=\s+(?P<image_energy>[\-\.0-9]+)"
+
+        hp = re.compile(header_pattern)
+        first_row = hp.match(self.text)
+        length = int(first_row.groupdict()["length"])
+
+        row_pattern = r"\s*([a-zA-Z]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*"
+        footer_pattern = r""
+
+        temp_data = read_table_pattern_with_useful_header_footer(self.text,
+                                                                 header_pattern=header_pattern,
+                                                                 row_pattern=row_pattern,
+                                                                 footer_pattern=footer_pattern,
+                                                                 num_rows=length)
+        headers = temp_data["header"]
+        bodies = temp_data["body"]
+
+        self.data["length"] = int(headers[0]["length"])
+        self.data["num_images"] = len(headers)
+        self.data["image_energies"] = list()
+        for header in headers:
+            self.data["image_energies"].append(float(header["image_energy"]))
+
+        self.data["geometries"] = list()
+        self.data["molecules"] = list()
+        for body in bodies:
+            species = list()
+            geometry = np.zeros(shape=(len(body), 3), dtype=float)
+            for ii, entry in enumerate(body):
+                species += [entry[0]]
+                for jj in range(3):
+                    geometry[ii, jj] = float(entry[jj + 1])
+            self.data["species"] = species
+            self.data["geometries"].append(geometry)
+            self.data["molecules"].append(Molecule(species=species,
+                                                   coords=geometry))
+
+    def as_dict(self):
+        d = dict()
+        d["data"] = self.data
+        d["text"] = self.text
+        d["filename"] = os.path.split(self.filename)[-1]
+        return jsanitize(d, strict=True)
+
+
+class QCPerpGradFileParser(MSONable):
+
+    def __init__(self, filename="perp_grad_file.txt", method="fsm"):
+        self.filename = filename
+        self.data = dict()
+        self.text = str()
+
+        with zopen(filename, 'rt') as f:
+            self.text = f.read()
+
+        if method == "fsm":
+            self._parse_fsm()
+        elif method == "gsm":
+            self._parse_gsm()
+        else:
+            raise ValueError("QCPerpGradFileParser is only designed for FSM and GSM jobs!")
+
+    def _parse_fsm(self):
+        header_pattern = r"\s*#\s*perp_grad\s+magnitudes\s*"
+        row_pattern = r"\s*\d+\s+(?P<distance_abs>[0-9\.]+)\s+(?P<distance_prop>[01]\.[0-9]+)\s+(?P<grad_mag>[\.\-naif0-9]+)\s*"
+        footer_pattern = r""
+
+        temp_data = read_table_pattern(self.text,
+                                       header_pattern=header_pattern,
+                                       row_pattern=row_pattern,
+                                       footer_pattern=footer_pattern)
+
+        self.data["num_images"] = len(temp_data[0])
+        self.data["absolute_distances"] = list()
+        self.data["proportional_distances"] = list()
+        self.data["gradient_magnitudes"] = list()
+        for row in temp_data[0]:
+            if "nan" in row["grad_mag"] or "inf" in row["grad_mag"]:
+                grad_mag = math.inf
+            else:
+                grad_mag = float(row["grad_mag"])
+            self.data["absolute_distances"].append(float(row["distance_abs"]))
+            self.data["proportional_distances"].append(float(row["distance_prop"]))
+            self.data["gradient_magnitudes"].append(grad_mag)
+
+    def _parse_gsm(self):
+        header_pattern = r"\s*Perpendicular gradient vs Iteration\s*Iteration\s+node 1\s+node 2\s+\.\.\.\s+total"
+        row_pattern = r"\n(?P<node_gradients>(?:(?:\-?[0-9]+\.[0-9]+[^\S\r\n]*)|(?:\s*--[^\S\r\n]*))+)"
+        footer_pattern = r""
+
+        temp_data = read_table_pattern(self.text,
+                                       header_pattern=header_pattern,
+                                       row_pattern=row_pattern,
+                                       footer_pattern=footer_pattern)
+
+        self.data["num_iterations"] = len(temp_data[0])
+        self.data["gradient_magnitudes_iterations"] = list()
+        self.data["total_gradient_magnitude_iterations"] = list()
+        for row in temp_data[0]:
+            words = row["node_gradients"].split(" ")
+            gradients = list()
+            for word in words:
+                if word in ["", "\n"]:
+                    continue
+                elif word == "--":
+                    gradients.append(None)
+                else:
+                    gradients.append(float(word))
+            self.data["total_gradient_magnitude_iterations"].append(gradients.pop(-1))
+            self.data["gradient_magnitudes_iterations"].append(gradients)
+
+        self.data["gradient_magnitudes"] = self.data["gradient_magnitudes_iterations"][-1]
+        self.data["total_gradient_magnitude"] = self.data["total_gradient_magnitude_iterations"][-1]
+        self.data["num_images"] = len(self.data["gradient_magnitudes"])
+
+    def as_dict(self):
+        d = dict()
+        d["data"] = self.data
+        d["text"] = self.text
+        d["filename"] = os.path.split(self.filename)[-1]
+        return jsanitize(d, strict=True)
+
+
+class ScratchFileParser(MSONable):
+
+    def __init__(self, filename):
+        self.data = dict()
+        with zopen(filename, 'rt') as f:
+            self.text = f.read()
+
+        if "GRAD" in filename:
+            self._parse_grad()
+        elif "HESS" in filename:
+            self._parse_hess()
+
+    def _parse_grad(self):
+
+        temp_dict = read_pattern(
+            self.text, {
+                "energy": r"\$energy\s+([\-\.0-9]+)",
+            }
+        )
+
+        if temp_dict.get('energy') is None:
+            energy = None
+        else:
+            energy = float(temp_dict.get('energy')[0][0])
+
+        self.data["energy"] = energy
+
+        header_pattern = r"\$gradient"
+        row_pattern = r"\s+([\d\-\+\.Ee]+)\s*([\d\-\+\.Ee]+)\s*([\d\-\+\.Ee]+)"
+        footer_pattern = r"\$end"
+
+        temp_data = read_table_pattern(self.text,
+                                       header_pattern=header_pattern,
+                                       row_pattern=row_pattern,
+                                       footer_pattern=footer_pattern)
+
+        # There should only be one of these, right?
+        gradient = None
+        for ii, gg in enumerate(temp_data):
+            if gg not in [[], None]:
+                gradient = process_parsed_coords(gg)
+
+        self.data["gradient"] = gradient
+
+    def _parse_hess(self):
+
+        temp_dict = read_pattern(
+            self.text, {
+                "hessian": r"\$hessian\s+([A-Za-z]+)",
+                "dimension": r"Dimension\s+([0-9]+)",
+                "element": r"(\-?[0-9]\.[0-9]+(?:[Ee][\+\-])?[0-9]+)"
+            }
+        )
+
+        if temp_dict.get('hessian') is None:
+            hess_approx_exact = None
+        else:
+            hess_approx_exact = temp_dict.get('hessian')[0][0]
+
+        self.data["hess_approx_exact"] = hess_approx_exact
+
+        if temp_dict.get('dimension') is None:
+            raise ValueError("Cannot parse Hessian without knowledge of "
+                             "dimension!")
+        else:
+            hess_dimension = int(temp_dict.get('dimension')[0][0])
+
+        hess_matrix = np.zeros((hess_dimension,
+                               hess_dimension))
+
+        hess_values = [float(e[0]) for e in temp_dict.get('element')]
+        for i in range(hess_dimension):
+            for j in range(i + 1):
+                val = hess_values.pop(0)
+                hess_matrix[i, j] = val
+                hess_matrix[j, i] = val
+
+        self.data["hess_matrix"] = hess_matrix
+
+    def as_dict(self):
+        d = dict()
+        d["data"] = self.data
+        d["text"] = self.text
+        d["filename"] = os.path.split(self.filename)[-1]
+        if "GRAD" in d["filename"]:
+            d["type"] = "gradient"
+        elif "HESS" in d["filename"]:
+            d["type"] = "hessian"
+        return jsanitize(d, strict=True)
+
+
+class BernyLogParser(MSONable):
+
+    def __init__(self, filename="berny.log"):
+        self.filename = filename
+        self.data = dict()
+        self.text = str()
+
+        with zopen(filename, 'rt') as f:
+            self.text = f.read()
+
+        self._parse_internal_coords()
+        self._parse_energy()
+        self._parse_rfo()
+        self._parse_cart_trans()
+        self._parse_convergence()
+        self._parse_update()
+        self._parse_walltime()
+
+    def _parse_internal_coords(self):
+        internal = read_pattern(
+            self.text, {
+                "frags": r"\*\s+Number of fragments:\s+([0-9]+)",
+                "internal": r"\*\s+Number of internal coordinates:\s([0-9]+)",
+                "bonds": r"\*\s+Number of strong bonds:\s([0-9]+)",
+                "wbonds": r"\*\s+Number of weak bonds:\s([0-9]+)",
+                "swbonds": r"\*\s+Number of superweak bonds:\s([0-9]+)",
+                "angles": r"\*\s+Number of strong angles:\s([0-9]+)",
+                "wangles": r"\*\s+Number of weak angles:\s([0-9]+)",
+                "swangles": r"\*\s+Number of superweak angles:\s([0-9]+)",
+                "dihedrals": r"\*\s+Number of strong dihedrals:\s([0-9]+)",
+                "wdihedrals": r"\*\s+Number of weak dihedrals:\s([0-9]+)",
+                "swdihedrals": r"\*\s+Number of superweak dihedrals:\s([0-9]+)"
+            },
+            terminate_on_match=True)
+        for k, v in internal.items():
+            if v is None:
+                internal[k] = None
+            else:
+                internal[k] = int(v[0][0])
+
+        self.data["internals"] = dict()
+        self.data["internals"]["frags"] = internal["frags"]
+        self.data["internals"]["num_coords"] = internal["internal"]
+        self.data["internals"]["bonds_strong"] = internal["bonds"] or 0
+        self.data["internals"]["bonds_weak"] = internal["wbonds"] or 0
+        self.data["internals"]["bonds_superweak"] = internal["swbonds"] or 0
+        self.data["internals"]["angles_strong"] = internal["angles"] or 0
+        self.data["internals"]["angles_weak"] = internal["wangles"] or 0
+        self.data["internals"]["angles_superweak"] = internal["swangles"] or 0
+        self.data["internals"]["dihedrals_strong"] = internal["dihedrals"] or 0
+        self.data["internals"]["dihedrals_weak"] = internal["wdihedrals"] or 0
+        self.data["internals"]["dihedrals_superweak"] = internal["swdihedrals"] or 0
+
+    def _parse_energy(self):
+        energy = read_pattern(
+            self.text, {
+                "key": r"Energy: ([0-9\-\.]+)"
+            }
+        ).get("key")
+
+        self.data["energy_trajectory"] = [float(e[0]) for e in energy]
+        if len(self.data["energy_trajectory"]) > 0:
+            self.data["final_energy"] = self.data["energy_trajectory"][-1]
+        else:
+            self.data["final_energy"] = None
+
+    def _parse_rfo(self):
+        rfo = read_pattern(
+            self.text, {
+                "method": r"(Pure RFO step|Minimization on sphere) was performed:",
+                "trust": r"\*\s+Trust radius: ([0-9\.]+)",
+                "neg_eig": r"\*\s+Number of negative eigenvalues: ([0-9]+)",
+                "low_eig": r"\*\s+Lowest eigenvalue: ([0-9\.\-]+)",
+                "lambda": r"\*\s+lambda: ([0-9\.\-]+)",
+                "quad_step": r"Quadratic Step: RMS: ([0-9\.]+), max: ([0-9\.]+)",
+                "e_change": r"\*\s+Predicted energy change: ([0-9\-\.]+)",
+                "total_step": r"Total step: RMS: ([0-9\.]+), max: ([0-9\.]+)"
+            }
+        )
+
+        if rfo["method"] is None:
+            self.data["pure_rfo"] = None
+        else:
+            self.data["pure_rfo"] = list()
+            for e in rfo["method"]:
+                if e[0] == "Pure RFO step":
+                    self.data["pure_rfo"].append(True)
+                else:
+                    self.data["pure_rfo"].append(False)
+
+        if rfo["trust"] is None:
+            self.data["trust"] = None
+        else:
+            self.data["trust"] = [float(e[0]) for e in rfo["trust"]]
+
+        if rfo["neg_eig"] is None:
+            self.data["num_neg_eigenvals"] = None
+        else:
+            self.data["num_neg_eigenvals"] = [int(e[0]) for e in rfo["neg_eig"]]
+
+        if rfo["low_eig"] is None:
+            self.data["lowest_eigenval"] = None
+        else:
+            self.data["lowest_eigenval"] = [float(e[0]) for e in rfo["low_eig"]]
+
+        if rfo["lambda"] is None:
+            self.data["lambdas"] = None
+        else:
+            self.data["lambdas"] = [float(e[0]) for e in rfo["lambda"]]
+
+        if rfo["quad_step"] is None:
+            self.data["quad_step_rms"] = None
+            self.data["quad_step_max"] = None
+        else:
+            self.data["quad_step_rms"] = [float(e[0]) for e in rfo["quad_step"]]
+            self.data["quad_step_max"] = [float(e[1]) for e in rfo["quad_step"]]
+
+        if rfo["e_change"] is None:
+            self.data["predicted_energy_change"] = None
+        else:
+            self.data["predicted_energy_change"] = [float(e[0]) for e in rfo["e_change"]]
+
+        if rfo["total_step"] is None:
+            self.data["total_step_rms"] = None
+            self.data["total_step_max"] = None
+        else:
+            self.data["total_step_rms"] = [float(e[0]) for e in rfo["total_step"]]
+            self.data["total_step_max"] = [float(e[1]) for e in rfo["total_step"]]
+
+    def _parse_cart_trans(self):
+        cart = read_pattern(
+            self.text, {
+                "convergence": r"(Perfect transformation to cartesians|Transformation did not converge) in ([0-9]+) iterations",
+                "differences": r"\*\s+RMS\(dcart\): ([0-9eE\.\-]+), RMS\(dq\): ([0-9eE\.\-]+)"
+            }
+        )
+
+        if cart["convergence"] is None:
+            self.data["cart_trans_converged"] = None
+            self.data["cart_trans_iterations"] = None
+        else:
+            self.data["cart_trans_converged"] = list()
+            self.data["cart_trans_iterations"] = list()
+            for e in cart["convergence"]:
+                if e[0].startswith("Perfect"):
+                    self.data["cart_trans_converged"].append(True)
+                else:
+                    self.data["cart_trans_converged"].append(False)
+                self.data["cart_trans_iterations"].append(int(e[1]))
+
+        if cart["differences"] is None:
+            self.data["cart_trans_rms_dcart"] = None
+            self.data["cart_trans_rms_dq"] = None
+        else:
+            self.data["cart_trans_rms_dcart"] = [float(e[0]) for e in cart["differences"]]
+            self.data["cart_trans_rms_dq"] = [float(e[1]) for e in cart["differences"]]
+
+    def _parse_convergence(self):
+        converge = read_pattern(
+            self.text, {
+                "gradient_rms": r"\*\s+Gradient RMS: (?:[0-9\.\-e]+) [<>] (?:[0-9\.\-e]+) => (no|OK)",
+                "gradient_max": r"\*\s+Gradient maximum: (?:[0-9\.\-e]+) [<>] (?:[0-9\.\-e]+) => (no|OK)",
+                "step_rms": r"\*\s+Step RMS: (?:[0-9\.\-e]+) [<>] (?:[0-9\.\-e]+) => (no|OK)",
+                "step_max": r"\*\s+Step maximum: (?:[0-9\.\-e]+) [<>] (?:[0-9\.\-e]+) => (no|OK)",
+                "all_matched": r"\*\s+All criteria matched"
+            }
+        )
+
+        if converge["gradient_rms"] is None:
+            self.data["converge_gradient_rms"] = None
+        else:
+            self.data["converge_gradient_rms"] = [True if e[0] == "OK" else False for e in converge["gradient_rms"]]
+
+        if converge["gradient_max"] is None:
+            self.data["converge_gradient_max"] = None
+        else:
+            self.data["converge_gradient_max"] = [True if e[0] == "OK" else False for e in converge["gradient_max"]]
+
+        if converge["step_rms"] is None:
+            self.data["converge_step_rms"] = None
+        else:
+            self.data["converge_step_rms"] = [True if e[0] == "OK" else False for e in converge["step_rms"]]
+            self.data["converge_step_rms"].insert(0, None)
+
+        if converge["step_max"] is None:
+            self.data["converge_step_max"] = None
+        else:
+            self.data["converge_step_max"] = [True if e[0] == "OK" else False for e in converge["step_max"]]
+            self.data["converge_step_max"].insert(0, None)
+
+        if converge["all_matched"] is not None:
+            self.data["converged"] = True
+        else:
+            self.data["converged"] = False
+
+    def _parse_update(self):
+        update = read_pattern(
+            self.text, {
+                "hessian": r"Hessian update information:\n\*\s+Change: RMS: ([0-9\.\-e]+), max: ([0-9\.\-e]+)",
+                "trust": r"Trust update: Fletcher's parameter: ([0-9\-\.inf]+)"
+            }
+        )
+
+        if update["hessian"] is None:
+            self.data["hessian_update_rms"] = None
+            self.data["hessian_update_max"] = None
+        else:
+            self.data["hessian_update_rms"] = [float(e[0]) for e in update["hessian"]]
+            self.data["hessian_update_max"] = [float(e[1]) for e in update["hessian"]]
+
+        if update["trust"] is None:
+            self.data["trust_update_fletcher"] = None
+        else:
+            trusts = list()
+            for entry in update["trust"]:
+                if "inf" in entry[0]:
+                    trusts.append(-np.inf)
+                else:
+                    trusts.append(float(entry[0]))
+            self.data["trust_update_rms"] = trusts
+
+    def _parse_walltime(self):
+        update = read_pattern(
+            self.text, {
+                "key": r"Time of last step:\s+([0-9\.]+)s",
+            }
+        )
+
+        step_times = list()
+        for time in update.get("key", list()):
+            step_times.append(float(time[0]))
+        self.data["opt_step_times"] = step_times
+        self.data["opt_walltime"] = sum(step_times)
+
+    def as_dict(self):
+        d = dict()
+        d["data"] = self.data
+        d["text"] = self.text
+        d["filename"] = os.path.split(self.filename)[-1]
         return jsanitize(d, strict=True)
 
 
@@ -1202,17 +2061,11 @@ def check_for_structure_changes(mol1, mol2):
 
     # Can add logic to check the distances in the future if desired
 
-    initial_mol_graph = MoleculeGraph.with_local_env_strategy(mol1,
-                                                              OpenBabelNN(),
-                                                              reorder=False,
-                                                              extend_structure=False)
-    initial_mol_graph = metal_edge_extender(initial_mol_graph)
+    initial_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[0],
+                                                              OpenBabelNN())
     initial_graph = initial_mol_graph.graph
-    last_mol_graph = MoleculeGraph.with_local_env_strategy(mol2,
-                                                           OpenBabelNN(),
-                                                           reorder=False,
-                                                           extend_structure=False)
-    last_mol_graph = metal_edge_extender(last_mol_graph)
+    last_mol_graph = MoleculeGraph.with_local_env_strategy(mol_list[1],
+                                                           OpenBabelNN())
     last_graph = last_mol_graph.graph
     if initial_mol_graph.isomorphic_to(last_mol_graph):
         return "no_change"

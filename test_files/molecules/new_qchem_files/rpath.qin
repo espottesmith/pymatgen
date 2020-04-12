@@ -1,0 +1,38 @@
+$molecule
+ -1 1
+ O     -0.6476427742      0.0451255314      1.1759171873
+ C     -0.6654528561     -0.2666716788     -0.0616205134
+ O      0.4346164379     -0.5211121279     -0.7333781076
+ O     -1.7780990448     -0.3548391483     -0.6856968353
+ Li     -2.4968064413      0.1498961019      0.9551913255
+ C      1.8207481624     -0.1583613240     -0.0393167322
+ C      2.2240280939      1.2262215839     -0.1247103681
+ H      1.6582560157     -0.5527481178      0.9645954778
+ H      2.4399273726     -0.8503755560     -0.6161559382
+ H      3.0396900039      1.4752155957     -0.8042605300
+ H      2.1736771143      1.8319329392      0.7806261837
+$end
+
+$rem
+   job_type = rpath
+   basis = def2-tzvppd
+   max_scf_cycles = 200
+   gen_scfman = true
+   scf_guess = read
+   geom_opt_hessian = read
+   hess_and_grad = true
+   xc_grid = 3
+   scf_algorithm = diis
+   resp_charges = true
+   symmetry = false
+   sym_ignore = true
+   method = wb97xv
+   solvent_method = smd
+   ideriv = 1
+   rpath_max_cycles = 50
+   thresh = 14
+$end
+
+$smx
+   solvent other
+$end

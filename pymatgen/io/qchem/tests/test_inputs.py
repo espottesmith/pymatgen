@@ -25,7 +25,7 @@ test_dir = os.path.join(os.path.dirname(__file__), "..",
 
 class TestQCInput(PymatgenTest):
 
-    # ef setUpClass(cls):
+    # def setUpClass(cls):
     # add things that show up over and over again
 
     def test_molecule_template(self):
@@ -41,6 +41,61 @@ class TestQCInput(PymatgenTest):
 $end"""
 
         self.assertEqual(molecule_actual, molecule_test)
+
+    #TODO: Include a concerted mechanism A + B <-> C + D
+    def test_multi_molecule_template(self):
+        rct_1 = Molecule.from_file(os.path.join(test_dir, "furan.xyz"))
+        rct_2 = Molecule.from_file(os.path.join(test_dir, "maleimide.xyz"))
+        pro = Molecule.from_file(os.path.join(test_dir, "product.xyz"))
+
+        molecule_test = QCInput.multi_molecule_template({"reactants": [rct_1,
+                                                                       rct_2],
+                                                         "products": [pro]})
+
+        molecule_actual = """$molecule
+ 0 1
+ O      1.3049661530      0.0001120662     -1.1013161785
+ C      1.9451245017      1.0882754149     -0.6104054584
+ C      1.9447751288     -1.0885244760     -0.6109994711
+ C      2.9804352386      0.7161926656      0.1832116759
+ C      2.9802051802     -0.7172072626      0.1828205247
+ H      1.5466371125      2.0431227412     -0.9157442277
+ H      1.5459812840     -2.0430770540     -0.9168592841
+ H      3.6612375626      1.3727409846      0.7052155365
+ H      3.6607966735     -1.3742588778      0.7044659256
+ C     -1.3581114504      1.1539426553      0.2267320320
+ N     -2.0129015892      0.0003639609     -0.1971775810
+ C     -0.1613998470      0.6656394815      0.9962335973
+ O     -1.6962968728      2.2905565961      0.0094374172
+ C     -1.3584873256     -1.1536572296      0.2261076105
+ C     -0.1616167783     -0.6661604521      0.9958732209
+ O     -1.6970429874     -2.2900431755      0.0081979366
+ H     -2.8624510832      0.0006495957     -0.7413709984
+ H      0.5439445441      1.3489018911      1.4498068213
+ H      0.5435049480     -1.3498979743      1.4490765436
+ ****
+ O      0.9843430000      0.0001900000     -1.2700690000
+ C      1.2018430000      1.0638900000     -0.3481690000
+ C      1.2014430000     -1.0640100000     -0.3487690000
+ C      2.5167430000      0.6653900000      0.3045310000
+ C      2.5165430000     -0.6663100000      0.3042310000
+ H      1.1340430000      2.0323900000     -0.8400690000
+ H      1.1334430000     -2.0323100000     -0.8411690000
+ H      3.2304430000      1.3470900000      0.7490310000
+ H      3.2299430000     -1.3485100000      0.7482310000
+ C     -1.2895570000      1.1696900000      0.1660310000
+ N     -1.9957570000      0.0002900000     -0.0785690000
+ C      0.0779430000      0.7711900000      0.7030310000
+ O     -1.6989570000      2.2873900000     -0.0321690000
+ C     -1.2899570000     -1.1693100000      0.1654310000
+ C      0.0776430000     -0.7716100000      0.7025310000
+ O     -1.6996570000     -2.2869100000     -0.0334690000
+ H     -2.9147570000      0.0005900000     -0.5010690000
+ H      0.2563430000      1.2520900000      1.6659310000
+ H      0.2558430000     -1.2531100000      1.6652310000
+$end"""
+
+        self.assertEqual(molecule_test, molecule_actual)
 
     # TODO improve this test maybe add ordered dicts
     def test_rem_template(self):
@@ -98,6 +153,22 @@ $end"""
    solvent water
 $end"""
         self.assertEqual(smx_actual, smx_test)
+
+    def test_scan_template(self):
+        scan_params = {"stre": ["3 6 1.5 1.9 0.01"],
+                       "tors": ["1 2 3 4 -180 180 30"]}
+        scan_test = QCInput.scan_template(scan_params)
+        scan_actual = """$scan
+   stre 3 6 1.5 1.9 0.01
+   tors 1 2 3 4 -180 180 30
+$end"""
+        self.assertEqual(scan_test, scan_actual)
+
+        bad_scan = {"stre": ["1 2 1.0 2.0 0.05",
+                             "3 4 1.5 2.0 0.05"],
+                    "bend": ["7 8 9 90 120 10"]}
+        with self.assertRaises(ValueError):
+            bad_scan_test = QCInput.scan_template(bad_scan)
 
     def test_find_sections(self):
         str_single_job_input = """$molecule
@@ -158,6 +229,61 @@ $end"""
                   [-7.5827400000, 0.5127000000, -0.0000000000]]
         molecule_actual = Molecule(species, coords)
         self.assertEqual(molecule_actual, molecule_test)
+
+    def test_read_multi_molecule(self):
+        str_molecule = """$molecule
+ 0 1
+ O      0.0000000000      0.0000000000      1.1263867186
+ C     -1.0884000000      0.0000000000      0.3199867186
+ C      1.0884000000      0.0000000000      0.3199867186
+ C     -0.7167000000      0.0000000000     -0.9846132814
+ C      0.7167000000      0.0000000000     -0.9846132814
+ H     -2.0431000000      0.0000000000      0.8222867186
+ H      2.0431000000      0.0000000000      0.8222867186
+ H     -1.3735000000      0.0000000000     -1.8423132814
+ H      1.3735000000      0.0000000000     -1.8423132814
+ C      12.0672107182      11.0487906480      10.9136713146
+ N      10.9134107182      11.8284906480      10.9110713146
+ C      11.5793107182      9.6258906480      10.9143713146
+ O      13.2037107182      11.4510906480      10.9134713146
+ C      9.7596107182      11.0487906480      10.9136713146
+ C      10.2475107182      9.6258906480      10.9143713146
+ O      8.6231107182      11.4510906480      10.9134713146
+ H      10.9134107182      12.8373906480      10.9123713146
+ H      12.2628107182      8.7874906480      10.9146713146
+ H      9.5640107182      8.7874906480      10.9146713146
+ ****
+ C      0.0779428173      0.7711898430      0.7030313460
+ C      0.0776428173     -0.7716101570      0.7025313460
+ C      1.2018428173      1.0638898430     -0.3481686540
+ C     -1.2895571827      1.1696898430      0.1660313460
+ C      1.2014428173     -1.0640101570     -0.3487686540
+ C     -1.2899571827     -1.1693101570      0.1654313460
+ O      0.9843428173      0.0001898430     -1.2700686540
+ C      2.5167428173      0.6653898430      0.3045313460
+ N     -1.9957571827      0.0002898430     -0.0785686540
+ O     -1.6989571827      2.2873898430     -0.0321686540
+ C      2.5165428173     -0.6663101570      0.3042313460
+ O     -1.6996571827     -2.2869101570     -0.0334686540
+ H      0.2563428173      1.2520898430      1.6659313460
+ H      0.2558428173     -1.2531101570      1.6652313460
+ H      1.1340428173      2.0323898430     -0.8400686540
+ H      1.1334428173     -2.0323101570     -0.8411686540
+ H      3.2304428173      1.3470898430      0.7490313460
+ H     -2.9147571827      0.0005898430     -0.5010686540
+ H      3.2299428173     -1.3485101570      0.7482313460
+$end"""
+
+        molecule_test = QCInput.read_multi_molecule(str_molecule)
+
+        rct_1 = Molecule.from_file(os.path.join(test_dir, "furan.xyz"))
+        rct_2 = Molecule.from_file(os.path.join(test_dir, "maleimide.xyz"))
+        pro = Molecule.from_file(os.path.join(test_dir, "product.xyz"))
+
+        molecule_actual = {"reactants": [rct_1, rct_2],
+                           "products": [pro]}
+        self.maxDiff = None
+        self.assertEqual(molecule_test, molecule_actual)
 
     def test_read_rem(self):
         str_rem = """Trying to break you!
@@ -594,6 +720,43 @@ $end"""
         smx_actual = {}
         self.assertDictEqual(smx_actual, smx_test)
 
+    def test_read_scan(self):
+        str_scan = """Once more, I'm trying to break you!
+        
+$scan
+   stre 1 2 1.1 1.4 0.03
+   bend 3 4 5 60 90 5
+$end"""
+        scan_test = QCInput.read_scan(str_scan)
+        scan_actual = {"stre": ["1 2 1.1 1.4 0.03"],
+                       "bend": ["3 4 5 60 90 5"],
+                       "tors": []}
+
+        self.assertDictEqual(scan_test, scan_actual)
+
+    def test_read_bad_scan(self):
+        str_scan_1 = """Once more, I"m trying to break you!
+
+$scan
+   boo 1 4 1.2 1.5 0.02
+   tors = 3 6 1.5 1.9 0.01        
+$end
+"""
+        scan_test_1 = QCInput.read_scan(str_scan_1)
+        scan_actual_1 = dict()
+        self.assertDictEqual(scan_test_1, scan_actual_1)
+
+        str_scan_2 = """Once more, I'm trying to break you!
+        
+$scan
+   stre 1 2 1.1 1.4 0.03
+   bend 3 4 5 60 90 5
+   tors 6 7 8 9 -180 180 30
+$end"""
+
+        with self.assertRaises(ValueError):
+            scan_test_2 = QCInput.read_scan(str_scan_2)
+
     def test_read_negative(self):
         str_molecule = """$molecule
  -1 1
@@ -622,6 +785,54 @@ $rem
    scf_algorithm = diis
    method = wb97xd
    geom_opt_max_cycles = 200
+$end
+"""
+        qcinp = QCInput.from_string(str_molecule)
+        self.assertEqual(str_molecule, str(qcinp))
+
+    def test_read_plots(self):
+        str_molecule = """$molecule
+ 0 2
+ O      1.6159947668      0.3522275191      0.3343192028
+ O     -0.5921658045      1.4368355787      1.2632324885
+ C      0.4160355545     -0.4617433561      0.2180766834
+ C     -0.7655230468      0.4776728409      0.1826587618
+ C      2.8437090411     -0.3853724291      0.0935770045
+ C     -1.7918488579      2.2003569978      1.5593659974
+ H      0.4649228147     -1.0347597878     -0.7097270414
+ H      3.6714833661      0.3051154983      0.2509025369
+ H      2.8395611019     -0.7401009356     -0.9372741555
+ H     -2.1017802975      2.7482577804      0.6678359687
+ H     -1.5445030956      2.8894960726      2.3658396091
+ Mg      1.2856817013      1.9249743897      1.4285694502
+$end
+
+$rem
+   job_type = sp
+   basis = def2-tzvppd
+   max_scf_cycles = 200
+   gen_scfman = true
+   xc_grid = 3
+   scf_algorithm = gdm
+   resp_charges = true
+   symmetry = false
+   sym_ignore = true
+   method = wb97xv
+   solvent_method = smd
+   ideriv = 1
+   thresh = 14
+   scf_guess_always = true
+   plots = true
+   make_cube_files = true
+$end
+
+$smx
+   solvent thf
+$end
+
+$plots
+   grid_spacing 0.05
+   total_density 0
 $end
 """
         qcinp = QCInput.from_string(str_molecule)

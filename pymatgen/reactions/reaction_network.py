@@ -1070,7 +1070,6 @@ class ReactionNetwork:
                  graph, reactions, classes, mapping, PR_record, min_cost,
                  num_starts):
         """
-
         :param electron_free_energy: Electron free energy (in eV)
         :param entries_dict: dict of dicts of dicts of lists (d[formula][bonds][charge])
         :param entries_list: list of unique entries in entries_dict

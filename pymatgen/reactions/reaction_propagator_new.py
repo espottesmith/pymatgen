@@ -2,10 +2,11 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-import logging
 import numpy as np
 
+
 __author__ = "Ronald Kam"
+__email__ = "kamronald@berkeley.edu"
 __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "1.0"
 
@@ -16,7 +17,6 @@ R = 8.3144598
 N = 6.0221409e+23
 
 class ReactionPropagator:
-
     """
     Class for stochastic simulation of a given reaction network. Method is described by Gillespie (1976)
     Main functions:

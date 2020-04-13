@@ -1,0 +1,26 @@
+import numpy as np
+import unittest
+from pymatgen.analysis.local_env import OpenBabelNN
+from pymatgen.util.testing import PymatgenTest
+
+__author__ = "Ronald Kam"
+__email__ = "kamronald@berkeley.edu"
+__copyright__ = "Copyright 2020, The Materials Project"
+__version__ = "1.0"
+
+class TestReactionPropagator(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        EC_mg = MoleculeGraph.with_local_env_strategy(
+            Molecule.from_file(os.path.join(test_dir, "EC.xyz")),
+            OpenBabelNN())
+        cls.EC_mg = metal_edge_extender(EC_mg)
+        cls.initial_state = dict()
+        cls.initial_state[mol_id_EC] = dict()
+        cls.inital_state[mol_id_EC]["molecule"] = EC_mg
+        cls.inital_state[mol_id_EC]["concentration"] = 2 #mol/L
+        cls.reaction_network =
+
+
+
+

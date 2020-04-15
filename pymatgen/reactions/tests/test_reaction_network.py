@@ -90,6 +90,7 @@ class TestReactionNetwork(PymatgenTest):
         RN = ReactionNetwork.from_input_entries(self.LiEC_reextended_entries,
                                                 electron_free_energy=-2.15)
         RN.build()
+
         self.assertEqual(len(RN.entries_list),569)
         self.assertEqual(len(RN.graph.nodes),10481)
         self.assertEqual(len(RN.graph.edges),22890)
@@ -203,6 +204,8 @@ class TestReactionNetwork(PymatgenTest):
         orig = ReactionNetwork.from_input_entries(self.LiEC_reextended_entries,
                                                   electron_free_energy=-2.15)
         orig.build()
+
+        # dumpfn(orig, "liec_reextended.json")
 
         rn_dict = orig.as_dict()
 

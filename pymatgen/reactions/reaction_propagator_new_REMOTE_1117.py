@@ -2,20 +2,13 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-<<<<<<< HEAD
-=======
 import logging
 import random
+
 import numpy as np
 import matplotlib.pyplot as plt
 
-<<<<<<< HEAD
-
-__author__ = "Ronald Kam"
-__email__ = "kamronald@berkeley.edu"
-=======
 __author__ = "Ronald Kam, Evan Spotte-Smith"
->>>>>>> 083bf360efab23bf9ebd40d9eacc2cb4299b10c2
 __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 __credit__ = "Xiaowei Xie"
@@ -28,6 +21,7 @@ N = 6.0221409e+23
 
 
 class ReactionPropagator:
+
     """
     Class for stochastic kinetic Monte Carlo simulation, with reactions provided
     by the Reactions present in a ReactionNetwork.
@@ -35,7 +29,7 @@ class ReactionPropagator:
 
     Args:
         reaction_network (ReactionNetwork)
-        initial_state (dict): {Molecule ID (int): concentration (float)}}
+        initial_state (dict): {Molecule ID (int): concentration (int)}}
         volume (float): Volume in Liters (default = 1 nm^3 = 1 * 10^-24 L)
 
     """
@@ -77,6 +71,7 @@ class ReactionPropagator:
 
         Returns:
             propensity (float)
+
         """
 
         rate_constant = reaction.rate_constant()

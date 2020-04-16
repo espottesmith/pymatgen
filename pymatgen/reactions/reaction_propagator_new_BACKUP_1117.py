@@ -6,6 +6,8 @@
 =======
 import logging
 import random
+
+>>>>>>> 083bf360efab23bf9ebd40d9eacc2cb4299b10c2
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -35,7 +37,7 @@ class ReactionPropagator:
 
     Args:
         reaction_network (ReactionNetwork)
-        initial_state (dict): {Molecule ID (int): concentration (float)}}
+        initial_state (dict): {Molecule ID (int): concentration (int)}}
         volume (float): Volume in Liters (default = 1 nm^3 = 1 * 10^-24 L)
 
     """
@@ -77,6 +79,7 @@ class ReactionPropagator:
 
         Returns:
             propensity (float)
+
         """
 
         rate_constant = reaction.rate_constant()

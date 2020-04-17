@@ -8,7 +8,7 @@ from monty.io import zopen
 from pymatgen.io.qchem.inputs import QCInput
 from pymatgen.io.qchem.utils import lower_and_check_unique
 
-# Classes for reading/manipulating/writing QChem output files.
+# Classes for default Q-Chem input files.
 
 __author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath, Evan Spotte-Smith"
 __copyright__ = "Copyright 2018, The Materials Project"

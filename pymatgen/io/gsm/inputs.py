@@ -34,11 +34,6 @@ class QCTemplate(QCInput):
         rem (dict): A dictionary of all the input parameters for the rem section
             of Q-Chem input file.
             Ex: rem = {'method': 'rimp2', 'basis': '6-31*G++' ... }
-        opt (dict of lists): A dictionary of opt sections, where each opt
-            section is a key and the corresponding values are a list of strings.
-            Stings must be formatted as instructed by the QChem manual. The
-            different opt sections are: CONSTRAINT, FIXED, DUMMY, and CONNECT.
-            Ex: opt = {"CONSTRAINT": ["tors 2 3 4 5 25.0", "tors 2 5 7 9 80.0"], "FIXED": ["2 XY"]}
         pcm (dict): A dictionary of values relating to the polarizable continuum
             model (PCM). Note that, if a pcm dict is provided, then a "solvent"
             dict (described below) should also be provided, but a "smx" dict
@@ -55,9 +50,8 @@ class QCTemplate(QCInput):
             solvent sections should be provided.
     """
 
-    def __init__(self, rem, opt=None, pcm=None, solvent=None, smx=None):
+    def __init__(self, rem, pcm=None, solvent=None, smx=None):
         self.rem = lower_and_check_unique(rem)
-        self.opt = opt
         self.pcm = lower_and_check_unique(pcm)
         self.solvent = lower_and_check_unique(solvent)
         self.smx = lower_and_check_unique(smx)
@@ -78,10 +72,6 @@ class QCTemplate(QCInput):
         # rem section
         combined_list.append(self.rem_template(self.rem))
         combined_list.append("")
-        # opt section
-        if self.opt:
-            combined_list.append(self.opt_template(self.opt))
-            combined_list.append("")
         # pcm section
         if self.pcm:
             combined_list.append(self.pcm_template(self.pcm))
@@ -104,12 +94,9 @@ class QCTemplate(QCInput):
         sections = cls.find_sections(string)
         rem = cls.read_rem(string)
         # only rem is necessary everything else is checked
-        opt = None
         pcm = None
         solvent = None
         smx = None
-        if "opt" in sections:
-            opt = cls.read_opt(string)
         if "pcm" in sections:
             pcm = cls.read_pcm(string)
         if "solvent" in sections:
@@ -117,7 +104,7 @@ class QCTemplate(QCInput):
         if "smx" in sections:
             smx = cls.read_smx(string)
 
-        return cls(rem, opt=opt, pcm=pcm, solvent=solvent, smx=smx)
+        return cls(rem, pcm=pcm, solvent=solvent, smx=smx)
 
     @staticmethod
     def from_file(filename):

@@ -1,6 +1,5 @@
 from abc import ABCMeta, abstractproperty, abstractmethod, abstractclassmethod
 from abc import ABC, abstractmethod
-from gunicorn.util import load_class
 
 import logging
 import copy
@@ -9,9 +8,12 @@ import heapq
 
 import numpy as np
 from scipy.constants import h, k, R, N_A, pi
+
 import networkx as nx
 from networkx.readwrite import json_graph
 import networkx.algorithms.isomorphism as iso
+from networkx.algorithms import bipartite
+
 from monty.json import MSONable, MontyDecoder
 
 from pymatgen.analysis.graphs import MoleculeGraph, MolGraphSplitError
@@ -19,11 +21,11 @@ from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.io.babel import BabelMolAdaptor
 from pymatgen import Molecule
 from pymatgen.analysis.fragmenter import metal_edge_extender
-from networkx.algorithms import bipartite
 from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.core.composition import CompositionError
 from pymatgen.reactions.reaction_rates import (ReactionRateCalculator,
                                                ExpandedBEPRateCalculator)
+from pymatgen.util.classes import load_class
 
 
 def categorize(reaction, classes, templates, environment, charge):
@@ -1209,7 +1211,7 @@ class ReactionNetwork:
                               "IntermolecularReaction",
                               "CoordinationBondChangeReaction"}
 
-        reaction_classes = {s: load_class(str(self.__module__)+"."+s) for s in reaction_types}
+        reaction_classes = {s: load_class(str(self.__module__), s) for s in reaction_types}
 
         all_reactions = list()
         classes = dict()
@@ -1425,7 +1427,7 @@ class ReactionNetwork:
 
         reactions = list()
         for reaction in d["reactions"]:
-            rclass = load_class(str(cls.__module__)+"."+ reaction["@class"])
+            rclass = load_class(str(cls.__module__), reaction["@class"])
             reactions.append(rclass.from_dict(reaction))
 
         classes = dict()

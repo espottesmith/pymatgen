@@ -54,12 +54,10 @@ class TestQCTemplate(PymatgenTest):
 
         # Test correct input
         rem["job_type"] = "force"
-        opt = {"FIXED": ["2 XY"]}
         smx = {"solvent": "thf"}
 
-        test = QCTemplate(rem, opt=opt, smx=smx)
+        test = QCTemplate(rem, smx=smx)
         self.assertDictEqual(test.rem, rem)
-        self.assertDictEqual(test.opt, opt)
         self.assertDictEqual(test.smx, smx)
 
     def test_str(self):

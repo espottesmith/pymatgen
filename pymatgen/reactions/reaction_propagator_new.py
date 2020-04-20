@@ -108,7 +108,6 @@ class ReactionPropagator:
 
     def update_state(self, reaction, reverse):
         """ Update the system based on the reaction chosen
-
         Args:
             reaction (Reaction)
             reverse (bool): If True, let the reverse reaction proceed.
@@ -231,6 +230,33 @@ class ReactionPropagator:
             self.data["state"][mol_id].append((t, self._state[mol_id]))
 
         return self.data
+
+    def reaction_choice(self):
+    """For the purposes of testing simulate() function, specifically the reaction choice functionality.
+    """
+        total_propensity = 0
+        for i, reaction in self.reactions.items():
+            if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
+                total_propensity += self.get_propensity(reaction, reverse=False)
+            if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.products]):
+                total_propensity += self.get_propensity(reaction, reverse=True)
+        random_propensity = random.random() * total_propensity
+
+        prop_sum = 0
+        for i, reaction in self.reactions.items():
+            if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
+                prop_sum += self.get_propensity(reaction, reverse=False)
+                if prop_sum > random_propensity:
+                    reaction_mu = reaction
+                    reverse = False
+                    break
+            if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.products]):
+                prop_sum += self.get_propensity(reaction, reverse=True)
+                if prop_sum > random_propensity:
+                    reaction_mu = reaction
+                    reverse = True
+                    break
+        return (reaction_mu, reverse)
 
     def plot_trajectory(self, data=None, name=None, filename=None, num_label=10):
         """

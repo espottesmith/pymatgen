@@ -1,28 +1,30 @@
 import numpy as np
-import unittest
-from pymatgen.analysis.local_env import OpenBabelNN
+from scipy.constants import N_A
 from pymatgen.util.testing import PymatgenTest
-from pymatgen.reactions import ReactionNetwork
+from pymatgen.reactions.reaction_network import ReactionNetwork
 from pymatgen.core import Molecule
-import os
+from pymatgen.entries.mol_entry import MoleculeEntry
+from pymatgen.reactions.reaction_propagator_new import ReactionPropagator
+
+
 
 __author__ = "Ronald Kam, Evan Spotte-Smith"
 __email__ = "kamronald@berkeley.edu"
 __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 
-N = 6.0221409e+23
 
 class TestReactionPropagator(PymatgenTest):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(self):
         """ Create an initial state and reaction network, based on H2O molecule.
         Species include H2, H2O, H, O, O2, OH, H3O
 
         """
-        cls.volume = 10**-24 ## m^3
-        ## 1 molecule each of H2O, H2, O2
-        cls.concentration = 1 / N /cls.volume / 1000 ## mol/L
+        self.volume = 10**-24 ## m^3
+        ## 10 molecules each of H2O, H2, O2
+        self.num_mols = 10
+        self.concentration = 10 / N_A /self.volume / 1000 ## mol/L
 
         ## Make molecule objects
 
@@ -85,16 +87,71 @@ class TestReactionPropagator(PymatgenTest):
         H_1p = MoleculeEntry(H_mol1, -0.2027210483, 0, 1.481,  26.066, None, 20, None)
         H_1 = MoleculeEntry(H_mol_1, -0.6430639079, 0, 1.481,  26.014, None, 21, None)
 
-        cls.mol_entries = [H2O, H2O_1, H2O_1p, H2, H2_1, H2_1p,
+        self.mol_entries = [H2O, H2O_1, H2O_1p, H2, H2_1, H2_1p,
         OH, OH_1, OH_1p, O2, O2_1p, O2_1, H3O, H3O_1, H3O_1p,
         O, O_1, O_1p, H, H_1p, H_1]
 
-        cls.reaction_network = ReactionNetwork.from_input_entries(mol_entries)
+        self.reaction_network = ReactionNetwork.from_input_entries(self.mol_entries)
+        self.reaction_network.build()
         # Only H2O, H2, O2 present initially
-        cls.inital_state = {1: cls.concentration, 4: cls.concentration, 10: cls.concentration}
-        cls.propagator = ReactionPropagator(cls.reaction_network, cls.initial_state, cls.volume)
+        self.initial_state = {1: self.concentration, 4: self.concentration, 10: self.concentration}
+        self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
 
+        self.total_propensity = 0
+        for i, reaction in self.reaction_network.reactions.items():
+            if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
+                self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
+            if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
+                self.total_propensity += self.get_propensity(reaction, reverse=True)
 
     def test_get_propensity(self):
+        ### choose a single molecular reaction with H2O as a reactant
         reaction = self.reaction_network.reactions[0]
-        print(reaction.reactants)
+        desired_propensity = self.num_mols * reaction.rate_constant()
+        actual_propensity = self.propagator.get_propensity(reaction, reverse = 0)
+        self.assertAlmostEqual(actual_propensity, actual_propensity)
+    def test_update_state(self):
+        reaction = self.reaction_network.reactions[0]
+        actual_state = self.propagator.update_state(reaction, reverse = 0)
+        desired_state = self.initial_state
+        desired_state[1] -= 1/ N_A /self.volume / 1000 # remove one H2O
+        self.assertDictsAlmostEqual(actual_state, desired_state, decimal = 7, err_msg = "State update is not consistent with chosen reaction.")
+
+    def test_reaction_choice(self):
+        "Choose reaction from initial state n times, compare frequency of each reaction to the probability of being chosen, based on reaction propensities at initial state."
+        num_samples = 1000
+        reactions_dict = dict()
+        ## Obtain propensity of each reaction, initialize reaction count, and probability of reaction
+        for reaction in self.reaction_network.reactions:
+            forward_reaction = (reaction, 0)
+            reverse_reaction = (reaction, 1)
+            reactions_dict[forward_reaction] = dict()
+            reactions_dict[reverse_reaction] = dict()
+            reactions_dict[forward_reaction]["count"] = 0
+            reactions_dict[reverse_reaction]["count"] = 0
+            reaction_dict[forward_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 0) / self.total_propensity
+            reaction_dict[reverse_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 1) / self.total_propensity
+        for sample in range(num_samples):
+            reaction_chosen = self.propagator.reaction_choice()
+            reactions_dict[reaction_chosen]['count'] += 1
+        expected_frequency = dict()
+        actual_frequency = dict()
+        for reaction in reaction_dict:
+            expected_frequency[reaction] = reactions_dict[reaction]["probability"]
+            actual_frequency = reaction_dict[reaction]["count"] / num_samples
+        self.assertDictsAlmostEqual(expected_frequency, actual_frequency, decimal = 3, err_msg = "Reaction choice frequency is not consistent with initial state")
+
+    def test_time_step(self):
+         num_samples = 1000
+         time_steps = list()
+         for sample in range(num_samples)
+            tau = -np.log(random.random()) / self.total_propensity
+            time_steps.append(tau)
+         average_tau = np.average(time_steps)
+         expected_tau = 1 / self.total_propensity
+         print("Average initial time step is " + average_tau + ", and expected value is " + expected_tau)
+         self.assertAlmostEqual(average_tau, expected_tau, decimal = 7)
+
+
+
+

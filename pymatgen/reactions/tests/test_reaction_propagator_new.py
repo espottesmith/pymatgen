@@ -108,18 +108,18 @@ class TestReactionPropagator(PymatgenTest):
         ### choose a single molecular reaction with H2O as a reactant
         reaction = self.reaction_network.reactions[0]
         desired_propensity = self.num_mols * reaction.rate_constant()
-        actual_propensity = self.propagator.get_propensity(reaction, reverse = 0)
-        self.assertAlmostEqual(actual_propensity, actual_propensity)
+        actual_propensity = self.propagator.get_propensity(reaction, reverse = False)
+        self.assertAlmostEqual(actual_propensity, desired_propensity)
     def test_update_state(self):
         reaction = self.reaction_network.reactions[0]
-        actual_state = self.propagator.update_state(reaction, reverse = 0)
+        actual_state = self.propagator.update_state(reaction, reverse = False)
         desired_state = self.initial_state
         desired_state[1] -= 1/ N_A /self.volume / 1000 # remove one H2O
         self.assertDictsAlmostEqual(actual_state, desired_state, decimal = 7, err_msg = "State update is not consistent with chosen reaction.")
 
     def test_reaction_choice(self):
         "Choose reaction from initial state n times, compare frequency of each reaction to the probability of being chosen, based on reaction propensities at initial state."
-        num_samples = 1000
+        num_samples = 100000
         reactions_dict = dict()
         ## Obtain propensity of each reaction, initialize reaction count, and probability of reaction
         for reaction in self.reaction_network.reactions:
@@ -139,12 +139,12 @@ class TestReactionPropagator(PymatgenTest):
         for reaction in reaction_dict:
             expected_frequency[reaction] = reactions_dict[reaction]["probability"]
             actual_frequency = reaction_dict[reaction]["count"] / num_samples
-        self.assertDictsAlmostEqual(expected_frequency, actual_frequency, decimal = 3, err_msg = "Reaction choice frequency is not consistent with initial state")
+        self.assertDictsAlmostEqual(expected_frequency, actual_frequency, decimal = 4, err_msg = "Reaction choice frequency is not consistent with initial state")
 
     def test_time_step(self):
          num_samples = 1000
          time_steps = list()
-         for sample in range(num_samples)
+         for sample in range(num_samples):
             tau = -np.log(random.random()) / self.total_propensity
             time_steps.append(tau)
          average_tau = np.average(time_steps)

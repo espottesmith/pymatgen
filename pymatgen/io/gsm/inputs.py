@@ -7,6 +7,7 @@ import logging
 from monty.io import zopen
 from monty.json import MSONable
 
+from pymatgen.core.structure import Molecule
 from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.analysis.fragmenter import metal_edge_extender
 from pymatgen.analysis.local_env import OpenBabelNN
@@ -343,3 +344,35 @@ class GSMIsomerInput(MSONable):
     def from_file(filename):
         with zopen(filename, 'rt') as f:
             return GSMIsomerInput.from_string(f.read())
+
+
+def parse_multi_xyz(filename):
+    """
+    Extract multiple molecules from an XYZ file
+
+    Note: This file will fail if not given a valid XYZ file
+
+    TODO: Do some more elegant parsing to ensure that the xyz file is valid
+
+    Args:
+        filename (str): The multi-XYZ file to be parsed.
+
+    Returns:
+        molecules (list of Molecule objects)
+    """
+
+    molecules = list()
+
+    with open(filename) as molfile:
+        text = molfile.readlines()
+
+        linenum = 0
+
+        while linenum < len(text):
+            num_atoms = int(text[linenum].strip())
+            mol = Molecule.from_str("".join(text[linenum:linenum + num_atoms + 2]), "xyz")
+            molecules.append(mol)
+
+            linenum += num_atoms + 2
+
+    return molecules

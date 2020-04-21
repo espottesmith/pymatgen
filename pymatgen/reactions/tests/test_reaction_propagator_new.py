@@ -35,7 +35,6 @@ class TestReactionPropagator(PymatgenTest):
         H2O_mol_1 = H2O_mol
         H2O_mol1.set_charge_and_spin(charge = 1)
         H2O_mol_1.set_charge_and_spin(charge = -1)
-
         H2_mol = Molecule.from_file("H2.xyz")
         H2_mol1 = H2_mol
         H2_mol_1 = H2_mol
@@ -109,7 +108,7 @@ class TestReactionPropagator(PymatgenTest):
 
         self.reaction_network = ReactionNetwork.from_input_entries(self.mol_entries, electron_free_energy=-2.15)
         self.reaction_network.build()
-
+        print("Total number of reactions is " + str(len(self.reaction_network.reactions)))
         # Only H2O, H2, O2 present initially
         self.initial_state = {1: self.concentration, 4: self.concentration, 10: self.concentration}
         self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
@@ -120,6 +119,7 @@ class TestReactionPropagator(PymatgenTest):
                 self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
                 self.total_propensity += self.get_propensity(reaction, reverse=True)
+        print('Total propensity is ' + str(self.total_propensity))
     def test_get_propensity(self):
         ### choose a single molecular reaction with H2O as a reactant
         reaction = self.reaction_network.reactions[0]

@@ -1,4 +1,5 @@
 import numpy as np
+import random
 from scipy.constants import N_A
 from pymatgen.util.testing import PymatgenTest
 from pymatgen.reactions.reaction_network import ReactionNetwork
@@ -103,13 +104,14 @@ class TestReactionPropagator(PymatgenTest):
                 self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
                 self.total_propensity += self.get_propensity(reaction, reverse=True)
-
+        print("Set up complete")
     def test_get_propensity(self):
         ### choose a single molecular reaction with H2O as a reactant
         reaction = self.reaction_network.reactions[0]
+        print(self.reaction_network.reactions)
         desired_propensity = self.num_mols * reaction.rate_constant()
         actual_propensity = self.propagator.get_propensity(reaction, reverse = False)
-        self.assertAlmostEqual(actual_propensity, desired_propensity)
+        self.assertAlmostEqual(actual_propensity, desired_propensity, decimal = 7, err_msg = "Propensity is not expected")
     def test_update_state(self):
         reaction = self.reaction_network.reactions[0]
         actual_state = self.propagator.update_state(reaction, reverse = False)
@@ -129,16 +131,16 @@ class TestReactionPropagator(PymatgenTest):
             reactions_dict[reverse_reaction] = dict()
             reactions_dict[forward_reaction]["count"] = 0
             reactions_dict[reverse_reaction]["count"] = 0
-            reaction_dict[forward_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 0) / self.total_propensity
-            reaction_dict[reverse_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 1) / self.total_propensity
+            reactions_dict[forward_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 0) / self.total_propensity
+            reactions_dict[reverse_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 1) / self.total_propensity
         for sample in range(num_samples):
             reaction_chosen = self.propagator.reaction_choice()
             reactions_dict[reaction_chosen]['count'] += 1
         expected_frequency = dict()
         actual_frequency = dict()
-        for reaction in reaction_dict:
+        for reaction in reactions_dict:
             expected_frequency[reaction] = reactions_dict[reaction]["probability"]
-            actual_frequency = reaction_dict[reaction]["count"] / num_samples
+            actual_frequency = reactions_dict[reaction]["count"] / num_samples
         self.assertDictsAlmostEqual(expected_frequency, actual_frequency, decimal = 4, err_msg = "Reaction choice frequency is not consistent with initial state")
 
     def test_time_step(self):

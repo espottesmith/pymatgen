@@ -2,20 +2,17 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-<<<<<<< HEAD
-=======
 import logging
 import random
 import numpy as np
 import matplotlib.pyplot as plt
 
-<<<<<<< HEAD
 
 __author__ = "Ronald Kam"
 __email__ = "kamronald@berkeley.edu"
-=======
+
 __author__ = "Ronald Kam, Evan Spotte-Smith"
->>>>>>> 083bf360efab23bf9ebd40d9eacc2cb4299b10c2
+
 __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 __credit__ = "Xiaowei Xie"
@@ -232,8 +229,8 @@ class ReactionPropagator:
         return self.data
 
     def reaction_choice(self):
-    """For the purposes of testing simulate() function, specifically the reaction choice functionality.
-    """
+        """For the purposes of testing simulate() function, specifically the reaction choice functionality.
+        """
         total_propensity = 0
         for i, reaction in self.reactions.items():
             if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):

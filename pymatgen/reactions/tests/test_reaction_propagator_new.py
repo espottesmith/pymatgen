@@ -119,7 +119,7 @@ class TestReactionPropagator(PymatgenTest):
                 self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
                 self.total_propensity += self.get_propensity(reaction, reverse=True)
-        print('Total propensity is ' + str(self.total_propensity))
+
     def test_get_propensity(self):
         ### choose a single molecular reaction with H2O as a reactant
         reaction = self.reaction_network.reactions[0]

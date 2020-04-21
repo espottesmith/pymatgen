@@ -67,6 +67,9 @@ def print_RN():
     RN = ReactionNetwork.from_input_entries(LiEC_reextended_entries,
                                             electron_free_energy=-2.15)
     RN.build()
-    print(RN.reactions)
+    print(RN.reactions[0].reactants)
+    print(RN.reactions[0].products)
+    print(RN.reactions[0].rate_constant["k_A"])
+    print(RN.reactions[0].reaction_type["class"])
 
 x = print_RN()

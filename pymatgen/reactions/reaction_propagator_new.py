@@ -49,7 +49,7 @@ class ReactionPropagator:
         self.initial_state = dict()
         ## State will have number of molecules, instead of concentration
         for molecule_id, concentration in initial_state.items():
-            num_mols = concentration * self.volume * N
+            num_mols = concentration * self.volume * N  # volume in m^3
             self.initial_state[molecule_id] = num_mols
             self._state[molecule_id] = num_mols
 

@@ -116,19 +116,20 @@ class TestReactionPropagator(PymatgenTest):
         self.initial_state = {1: self.concentration, 4: self.concentration, 10: self.concentration}
         self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
 
-        self.total_propensity = 0
+        #self.total_propensity = 0
         self.propensity_list = list()
         for reaction in self.reaction_network.reactions:
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
-                self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
+                #self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
                 self.propensity_list.append(self.propagator.get_propensity(reaction, reverse = False))
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
-                self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
+                #self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
                 self.propensity_list.append(self.propagator.get_propensity(reaction, reverse=True))
-        print("Total Propensity is: " + str(self.total_propensity))
-        print(len(self.propensity_list))
-        print("Average Prop = " + str(np.average(self.propensity_list)))
+        #print("Total Propensity is: " + str(self.total_propensity))
+        print(self.propensity_list)
+        #print("Average Prop = " + str(np.average(self.propensity_list)))
         print(self.propagator._state)
+        print(self.initial_state)
 
 
     def test_get_propensity(self):

@@ -45,14 +45,13 @@ class ReactionPropagator:
             self.reactions[id] = reaction
         self.initial_state_conc = initial_state
         self.volume = volume
-        self._state = dict()
+        self.state = dict()
         self.initial_state = dict()
         ## State will have number of molecules, instead of concentration
-        for molecule_id, concentration in initial_state.items():
+        for molecule_id, concentration in self.initial_state_conc.items():
             num_mols = concentration * self.volume * N  # volume in m^3
             self.initial_state[molecule_id] = num_mols
-            self._state[molecule_id] = num_mols
-
+            self.state[molecule_id] = num_mols
         self.data = {"times": list(),
                      "reactions": list(),
                      "state": dict()}
@@ -90,7 +89,6 @@ class ReactionPropagator:
         for reactant in reactants:
             reactant_num_mols = self.state.get(reactant.entry_id, 0)
             num_mols_list.append(reactant_num_mols)
-
         if num_reactants == 1:
             h_prop = num_mols_list[0]
         elif (num_reactants == 2) and (reactants[0].entry_id == reactants[1].entry_id):
@@ -101,7 +99,7 @@ class ReactionPropagator:
             raise RuntimeError("Only single and bimolecular reactions supported by this simulation")
 
         propensity = h_prop * k
-        return propensity
+        return num_mols_list
 
     def update_state(self, reaction, reverse):
         """ Update the system based on the reaction chosen

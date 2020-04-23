@@ -2,7 +2,7 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-import logging
+
 import random
 import numpy as np
 import matplotlib.pyplot as plt
@@ -98,10 +98,10 @@ class ReactionPropagator:
         else:
             raise RuntimeError("Only single and bimolecular reactions supported by this simulation")
         propensity = h_prop * k
-        #return propensity
+        return propensity
         # for testing:
-        return [reaction.reaction_type, reaction.reactants, reaction.products, "propensity = " + str(propensity), "free energy from code = " + str(reaction.free_energy()["free_energy_A"]), "calculated free energy ="  + str(-sum([r.free_energy() for r in reaction.reactants]) +  sum([p.free_energy() for p in reaction.products])),
-                "calculated k = " +  str(k_b * 298.15 / h * np.exp(-1 * (-sum([r.free_energy() for r in reaction.reactants]) +  sum([p.free_energy() for p in reaction.products]) ) * 96487 / (R * 298.15))), "k from RxnCalculator = " +  str(k)  ]
+        #return [reaction.reaction_type, reaction.reactants, reaction.products, reaction.rate_calculator.alpha , reaction.transition_state, "propensity = " + str(propensity), "free energy from code = " + str(reaction.free_energy()["free_energy_A"]), "calculated free energy ="  + str(-sum([r.free_energy() for r in reaction.reactants]) +  sum([p.free_energy() for p in reaction.products])),
+                #"calculated k = " +  str(k_b * 298.15 / h * np.exp(-1 * (-sum([r.free_energy() for r in reaction.reactants]) +  sum([p.free_energy() for p in reaction.products]) ) * 96487 / (R * 298.15))), "k from Rxn class = " +  str(k)  ]
 
     def update_state(self, reaction, reverse):
         """ Update the system based on the reaction chosen
@@ -131,6 +131,7 @@ class ReactionPropagator:
                     self._state[p_id] += 1
                 else:
                     self._state[p_id] = 1
+        return self._state # for testing
 
     def simulate(self, t_end):
         """
@@ -308,7 +309,9 @@ class ReactionPropagator:
         ax.legend(loc='upper center', bbox_to_anchor=(0.45, -0.175),
                   ncol=5, fontsize="small")
 
+
         if filename is None:
             plt.show()
         else:
             fig.savefig(filename, dpi=600)
+        #plt.savefig("Simulation_Run")

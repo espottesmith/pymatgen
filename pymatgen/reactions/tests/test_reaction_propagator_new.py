@@ -110,74 +110,85 @@ class TestReactionPropagator(PymatgenTest):
 
         self.reaction_network = ReactionNetwork.from_input_entries(self.mol_entries, electron_free_energy=-2.15)
         self.reaction_network.build()
-        print("Total number of reactions is " + str(len(self.reaction_network.reactions)) + " and they are: ")
+        #print("Total number of reactions is " + str(len(self.reaction_network.reactions)) + " and they are: ")
 
         # Only H2O, H2, O2 present initially
         self.initial_state = {1: self.concentration, 4: self.concentration, 10: self.concentration}
         self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
 
-        #self.total_propensity = 0
+        self.total_propensity = 0
         self.propensity_list = list()
         for reaction in self.reaction_network.reactions:
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
-                #self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
+                self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
                 self.propensity_list.append(self.propagator.get_propensity(reaction, reverse = False))
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
-                #self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
+                self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
                 self.propensity_list.append(self.propagator.get_propensity(reaction, reverse=True))
-        #print("Total Propensity is: " + str(self.total_propensity))
-        print(self.propensity_list[0])
-        #print("Average Prop = " + str(np.average(self.propensity_list)))
+        print("Total Propensity is: " + str(self.total_propensity))
 
 
     def test_get_propensity(self):
-        ### choose a single molecular reaction with H2O as a reactant
+        ## choose a single molecular reaction with H2O as a reactant: choose intermolecular H2 --> H+ + H-
+        for reaction in self.reaction_network.reactions:
+            if ([r.entry_id for r in reaction.reactants] == [4]) and ([p.entry_id for p in reaction.products] == [21, 20]):
+                chosen_reaction = reaction
         reaction = self.reaction_network.reactions[0]
         desired_propensity = self.num_mols * reaction.rate_constant()["k_A"]
         actual_propensity = self.propagator.get_propensity(reaction, reverse = False)
         self.assertAlmostEqual(actual_propensity, desired_propensity, places = 0, msg = "Propensity is not expected")
 
-    # def test_update_state(self):
-    #     reaction = self.reaction_network.reactions[0]
-    #     actual_state = self.propagator.update_state(reaction, reverse = False)
-    #     desired_state = self.initial_state
-    #     desired_state[1] -= 1/ N_A /self.volume / 1000 # remove one H2O
-    #     self.assertDictsAlmostEqual(actual_state, desired_state, decimal = 7, err_msg = "State update is not consistent with chosen reaction.")
-    #
-    # def test_reaction_choice(self):
-    #     "Choose reaction from initial state n times, compare frequency of each reaction to the probability of being chosen, based on reaction propensities at initial state."
-    #     num_samples = 100000
-    #     reactions_dict = dict()
-    #     ## Obtain propensity of each reaction, initialize reaction count, and probability of reaction
-    #     for reaction in self.reaction_network.reactions:
-    #         forward_reaction = (reaction, 0)
-    #         reverse_reaction = (reaction, 1)
-    #         reactions_dict[forward_reaction] = dict()
-    #         reactions_dict[reverse_reaction] = dict()
-    #         reactions_dict[forward_reaction]["count"] = 0
-    #         reactions_dict[reverse_reaction]["count"] = 0
-    #         reactions_dict[forward_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 0) / self.total_propensity
-    #         reactions_dict[reverse_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 1) / self.total_propensity
-    #     for sample in range(num_samples):
-    #         reaction_chosen = self.propagator.reaction_choice()
-    #         reactions_dict[reaction_chosen]['count'] += 1
-    #     expected_frequency = dict()
-    #     actual_frequency = dict()
-    #     for reaction in reactions_dict:
-    #         expected_frequency[reaction] = reactions_dict[reaction]["probability"]
-    #         actual_frequency = reactions_dict[reaction]["count"] / num_samples
-    #     self.assertDictsAlmostEqual(expected_frequency, actual_frequency, decimal = 4, err_msg = "Reaction choice frequency is not consistent with initial state")
-    #
-    # def test_time_step(self):
-    #     num_samples = 1000
-    #     time_steps = list()
-    #     for sample in range(num_samples):
-    #         tau = -np.log(random.random()) / self.total_propensity
-    #         time_steps.append(tau)
-    #     average_tau = np.average(time_steps)
-    #     expected_tau = 1 / self.total_propensity
-    #     print("Average initial time step is " + str(average_tau) + ", and expected value is " + str(expected_tau))
-    #     self.assertAlmostEqual(average_tau, expected_tau, places = 7)
+    def test_update_state(self):
+        for reaction in self.reaction_network.reactions:
+            if ([r.entry_id for r in reaction.reactants] == [4]) and ([p.entry_id for p in reaction.products] == [21, 20]):
+                chosen_reaction = reaction
+        desired_state = copy.deepcopy(self.propagator._state)
+        desired_state[4] = 9
+        desired_state[21] = 1
+        desired_state[20] = 1
+        actual_state = self.propagator.update_state(chosen_reaction, reverse = False)
+        print("Actual State:")
+        print(actual_state)
+        print("Desired:")
+        print(desired_state)
+        self.assertDictsAlmostEqual(actual_state, desired_state, decimal = 5, err_msg = "State update is not consistent with chosen reaction.")
+
+    def test_reaction_choice(self):
+        "Choose reaction from initial state n times, compare frequency of each reaction to the probability of being chosen, based on reaction propensities at initial state."
+        num_samples = 100000
+        reactions_dict = dict()
+        ## Obtain propensity of each reaction, initialize reaction count, and probability of reaction
+        for reaction in self.reaction_network.reactions:
+            forward_reaction = (reaction, 0)
+            reverse_reaction = (reaction, 1)
+            reactions_dict[forward_reaction] = dict()
+            reactions_dict[reverse_reaction] = dict()
+            reactions_dict[forward_reaction]["count"] = 0
+            reactions_dict[reverse_reaction]["count"] = 0
+            reactions_dict[forward_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 0) / self.total_propensity
+            reactions_dict[reverse_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 1) / self.total_propensity
+        for sample in range(num_samples):
+            reaction_chosen = self.propagator.reaction_choice()
+            reactions_dict[reaction_chosen]["count"] += 1
+        expected_frequency = np.array([])
+        actual_frequency = np.array([])
+        for reaction in reactions_dict:
+            expected_frequency = np.append(expected_frequency, reactions_dict[reaction]["probability"])
+            actual_frequency = np.append(actual_frequency, reactions_dict[reaction]["count"] / num_samples)
+
+        print("Expected frequencies of reaction choice")
+        print(expected_frequency)
+        print("Actual frequencies of reaction choice")
+        print(actual_frequency)
+        self.assertArrayAlmostEqual(expected_frequency, actual_frequency, decimal = 2, err_msg = "Reaction choice frequency is not consistent with initial state")
+
+    def test_simulate(self):
+        t_end = 10**(-12)
+        simulation_data = self.propagator.simulate(t_end)
+        time_record = simulation_data["times"]
+        self.propagator.plot_trajectory(simulation_data, "Simulation Results")
+        self.assertAlmostEqual(time_record[-1], t_end, 10)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -126,10 +126,8 @@ class TestReactionPropagator(PymatgenTest):
                 #self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
                 self.propensity_list.append(self.propagator.get_propensity(reaction, reverse=True))
         #print("Total Propensity is: " + str(self.total_propensity))
-        print(self.propensity_list)
+        print(self.propensity_list[0])
         #print("Average Prop = " + str(np.average(self.propensity_list)))
-        print(self.propagator._state)
-        print(self.initial_state)
 
 
     def test_get_propensity(self):

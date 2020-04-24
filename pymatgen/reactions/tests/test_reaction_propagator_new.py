@@ -7,6 +7,7 @@ from pymatgen.core import Molecule
 from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.reactions.reaction_propagator_new import ReactionPropagator
 import unittest
+import copy
 
 
 
@@ -26,48 +27,49 @@ class TestReactionPropagator(PymatgenTest):
         self.volume = 10**-24 ## m^3
         ## 10 molecules each of H2O, H2, O2
         self.num_mols = 10
-        self.concentration = 10 / N_A /self.volume / 1000 ## mol/L
+        self.concentration = self.num_mols / N_A /self.volume / 1000 ## mol/L
 
         ## Make molecule objects
 
         H2O_mol = Molecule.from_file("H2O.xyz")
-        H2O_mol1 = H2O_mol
-        H2O_mol_1 = H2O_mol
+        H2O_mol1 = copy.deepcopy(H2O_mol)
+        H2O_mol_1 = copy.deepcopy(H2O_mol)
         H2O_mol1.set_charge_and_spin(charge = 1)
         H2O_mol_1.set_charge_and_spin(charge = -1)
+
         H2_mol = Molecule.from_file("H2.xyz")
-        H2_mol1 = H2_mol
-        H2_mol_1 = H2_mol
+        H2_mol1 = copy.deepcopy(H2_mol)
+        H2_mol_1 = copy.deepcopy(H2_mol)
         H2_mol1.set_charge_and_spin(charge = 1)
         H2_mol_1.set_charge_and_spin(charge = -1)
 
         O2_mol = Molecule.from_file("O2.xyz")
-        O2_mol1 = O2_mol
-        O2_mol_1 = O2_mol
+        O2_mol1 = copy.deepcopy(O2_mol)
+        O2_mol_1 = copy.deepcopy(O2_mol)
         O2_mol1.set_charge_and_spin(charge = 1)
         O2_mol_1.set_charge_and_spin(charge = -1)
 
         OH_mol = Molecule.from_file("OH.xyz")
-        OH_mol1 = OH_mol
-        OH_mol_1 = OH_mol
+        OH_mol1 = copy.deepcopy(OH_mol)
+        OH_mol_1 = copy.deepcopy(OH_mol)
         OH_mol1.set_charge_and_spin(charge = 1)
         OH_mol_1.set_charge_and_spin(charge = -1)
 
         H3O_mol = Molecule.from_file("H3O.xyz")
-        H3O_mol1 = H3O_mol
-        H3O_mol_1 = H3O_mol
+        H3O_mol1 = copy.deepcopy(H3O_mol)
+        H3O_mol_1 = copy.deepcopy(H3O_mol)
         H3O_mol1.set_charge_and_spin(charge = 1)
         H3O_mol_1.set_charge_and_spin(charge = -1)
 
         H_mol = Molecule.from_file("H.xyz")
-        H_mol1 = H_mol
-        H_mol_1 = H_mol
+        H_mol1 = copy.deepcopy(H_mol)
+        H_mol_1 = copy.deepcopy(H_mol)
         H_mol1.set_charge_and_spin(charge = 1)
         H_mol_1.set_charge_and_spin(charge = -1)
 
         O_mol = Molecule.from_file("O.xyz")
-        O_mol1 = O_mol
-        O_mol_1 = O_mol
+        O_mol1 = copy.deepcopy(O_mol)
+        O_mol_1 = copy.deepcopy(O_mol)
         O_mol1.set_charge_and_spin(charge = 1)
         O_mol_1.set_charge_and_spin(charge = -1)
 
@@ -84,7 +86,7 @@ class TestReactionPropagator(PymatgenTest):
         ## OH 7-9
         OH = MoleculeEntry(OH_mol, energy = -75.7471080255785, correction = 0, enthalpy = 7.659, entropy = 41.21, parameters= None, entry_id= 7, attribute= None)
         OH_1 = MoleculeEntry(OH_mol_1, energy = -75.909589774742, correction = 0, enthalpy = 7.877, entropy = 41.145, parameters= None, entry_id= 8, attribute= None)
-        OH_1p = MoleculeEntry(OH_mol_1, energy = -75.2707068199185, correction = 0, enthalpy = 6.469, entropy = 41.518, parameters= None, entry_id= 9, attribute= None)
+        OH_1p = MoleculeEntry(OH_mol1, energy = -75.2707068199185, correction = 0, enthalpy = 6.469, entropy = 41.518, parameters= None, entry_id= 9, attribute= None)
         ## O2 10-12
         O2 = MoleculeEntry(O2_mol, energy = -150.291045922131, correction = 0, enthalpy = 4.821, entropy = 46.76, parameters= None, entry_id= 10, attribute= None)
         O2_1p = MoleculeEntry(O2_mol1, energy = -149.995474036502, correction = 0, enthalpy = 5.435, entropy = 46.428, parameters= None, entry_id= 11, attribute= None)
@@ -108,30 +110,48 @@ class TestReactionPropagator(PymatgenTest):
 
         self.reaction_network = ReactionNetwork.from_input_entries(self.mol_entries, electron_free_energy=-2.15)
         self.reaction_network.build()
-        print("Total number of reactions is " + str(len(self.reaction_network.reactions)))
+        #print("Total number of reactions is " + str(len(self.reaction_network.reactions)) + " and they are: ")
+
         # Only H2O, H2, O2 present initially
         self.initial_state = {1: self.concentration, 4: self.concentration, 10: self.concentration}
         self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
 
         self.total_propensity = 0
+        self.propensity_list = list()
         for reaction in self.reaction_network.reactions:
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
                 self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
+                self.propensity_list.append(self.propagator.get_propensity(reaction, reverse = False))
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
-                self.total_propensity += self.get_propensity(reaction, reverse=True)
+                self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
+                self.propensity_list.append(self.propagator.get_propensity(reaction, reverse=True))
+        print("Total Propensity is: " + str(self.total_propensity))
+
 
     def test_get_propensity(self):
-        ### choose a single molecular reaction with H2O as a reactant
+        ## choose a single molecular reaction with H2O as a reactant: choose intermolecular H2 --> H+ + H-
+        for reaction in self.reaction_network.reactions:
+            if ([r.entry_id for r in reaction.reactants] == [4]) and ([p.entry_id for p in reaction.products] == [21, 20]):
+                chosen_reaction = reaction
         reaction = self.reaction_network.reactions[0]
-        desired_propensity = self.num_mols * reaction.rate_constant()
+        desired_propensity = self.num_mols * reaction.rate_constant()["k_A"]
         actual_propensity = self.propagator.get_propensity(reaction, reverse = False)
-        self.assertAlmostEqual(actual_propensity, desired_propensity, decimal = 7, err_msg = "Propensity is not expected")
+        self.assertAlmostEqual(actual_propensity, desired_propensity, places = 0, msg = "Propensity is not expected")
+
     def test_update_state(self):
-        reaction = self.reaction_network.reactions[0]
-        actual_state = self.propagator.update_state(reaction, reverse = False)
-        desired_state = self.initial_state
-        desired_state[1] -= 1/ N_A /self.volume / 1000 # remove one H2O
-        self.assertDictsAlmostEqual(actual_state, desired_state, decimal = 7, err_msg = "State update is not consistent with chosen reaction.")
+        for reaction in self.reaction_network.reactions:
+            if ([r.entry_id for r in reaction.reactants] == [4]) and ([p.entry_id for p in reaction.products] == [21, 20]):
+                chosen_reaction = reaction
+        desired_state = copy.deepcopy(self.propagator._state)
+        desired_state[4] = 9
+        desired_state[21] = 1
+        desired_state[20] = 1
+        actual_state = self.propagator.update_state(chosen_reaction, reverse = False)
+        print("Actual State:")
+        print(actual_state)
+        print("Desired:")
+        print(desired_state)
+        self.assertDictsAlmostEqual(actual_state, desired_state, decimal = 5, err_msg = "State update is not consistent with chosen reaction.")
 
     def test_reaction_choice(self):
         "Choose reaction from initial state n times, compare frequency of each reaction to the probability of being chosen, based on reaction propensities at initial state."
@@ -149,24 +169,26 @@ class TestReactionPropagator(PymatgenTest):
             reactions_dict[reverse_reaction]["probability"] = self.propagator.get_propensity(reaction, reverse = 1) / self.total_propensity
         for sample in range(num_samples):
             reaction_chosen = self.propagator.reaction_choice()
-            reactions_dict[reaction_chosen]['count'] += 1
-        expected_frequency = dict()
-        actual_frequency = dict()
+            reactions_dict[reaction_chosen]["count"] += 1
+        expected_frequency = np.array([])
+        actual_frequency = np.array([])
         for reaction in reactions_dict:
-            expected_frequency[reaction] = reactions_dict[reaction]["probability"]
-            actual_frequency = reactions_dict[reaction]["count"] / num_samples
-        self.assertDictsAlmostEqual(expected_frequency, actual_frequency, decimal = 4, err_msg = "Reaction choice frequency is not consistent with initial state")
+            expected_frequency = np.append(expected_frequency, reactions_dict[reaction]["probability"])
+            actual_frequency = np.append(actual_frequency, reactions_dict[reaction]["count"] / num_samples)
 
-    def test_time_step(self):
-         num_samples = 1000
-         time_steps = list()
-         for sample in range(num_samples):
-            tau = -np.log(random.random()) / self.total_propensity
-            time_steps.append(tau)
-         average_tau = np.average(time_steps)
-         expected_tau = 1 / self.total_propensity
-         print("Average initial time step is " + average_tau + ", and expected value is " + expected_tau)
-         self.assertAlmostEqual(average_tau, expected_tau, decimal = 7)
+        print("Expected frequencies of reaction choice")
+        print(expected_frequency)
+        print("Actual frequencies of reaction choice")
+        print(actual_frequency)
+        self.assertArrayAlmostEqual(expected_frequency, actual_frequency, decimal = 2, err_msg = "Reaction choice frequency is not consistent with initial state")
+
+    def test_simulate(self):
+        t_end = 10**(-12)
+        simulation_data = self.propagator.simulate(t_end)
+        time_record = simulation_data["times"]
+        self.propagator.plot_trajectory(simulation_data, "Simulation Results")
+        self.assertAlmostEqual(time_record[-1], t_end, 10)
+
 
 if __name__ == "__main__":
     unittest.main()

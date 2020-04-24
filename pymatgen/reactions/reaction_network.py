@@ -87,10 +87,7 @@ class Reaction(MSONable, metaclass=ABCMeta):
         self.transition_state = transition_state
         if self.transition_state is None:
             # Provide no reference initially
-            self.rate_calculator = ExpandedBEPRateCalculator(reactants, products,
-                                                             0.0, 0.0, 0.0,
-                                                             0.0, 0.0, 0.0,
-                                                             alpha=-1.0)
+            self.rate_calculator = None
         else:
             self.rate_calculator = ReactionRateCalculator(reactants, products,
                                                           self.transition_state)
@@ -443,26 +440,23 @@ class IntramolSingleBondChangeReaction(Reaction):
             return {"k_A": self.rate_calculator.calculate_rate_constant(),
                     "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
         elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
-            # No reference is set
-            # Use barrierless reaction
-            if self.rate_calculator.alpha == -1:
-                rate_constant = dict()
-                free_energy = self.free_energy()
+            return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+        else:
+            rate_constant = dict()
+            free_energy = self.free_energy()
 
-                if free_energy["free_energy_A"] < 0:
-                    rate_constant["k_A"] = k * 298.15 / h
-                else:
-                    rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
-
-                if free_energy["free_energy_B"] < 0:
-                    rate_constant["k_B"] = k * 298.15 / h
-                else:
-                    rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
-
-                return rate_constant
+            if free_energy["free_energy_A"] < 0:
+                rate_constant["k_A"] = k * 298.15 / h
             else:
-                return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                        "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+                rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+
+            if free_energy["free_energy_B"] < 0:
+                rate_constant["k_B"] = k * 298.15 / h
+            else:
+                rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+
+            return rate_constant
 
     def as_dict(self) -> dict:
         if self.transition_state is None:
@@ -609,26 +603,23 @@ class IntermolecularReaction(Reaction):
             return {"k_A": self.rate_calculator.calculate_rate_constant(),
                     "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
         elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
-            # No reference is set
-            # Use barrierless reaction
-            if self.rate_calculator.alpha == -1:
-                rate_constant = dict()
-                free_energy = self.free_energy()
+            return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+        else:
+            rate_constant = dict()
+            free_energy = self.free_energy()
 
-                if free_energy["free_energy_A"] < 0:
-                    rate_constant["k_A"] = k * 298.15 / h
-                else:
-                    rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
-
-                if free_energy["free_energy_B"] < 0:
-                    rate_constant["k_B"] = k * 298.15 / h
-                else:
-                    rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
-
-                return rate_constant
+            if free_energy["free_energy_A"] < 0:
+                rate_constant["k_A"] = k * 298.15 / h
             else:
-                return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                        "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+                rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+
+            if free_energy["free_energy_B"] < 0:
+                rate_constant["k_B"] = k * 298.15 / h
+            else:
+                rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+
+            return rate_constant
 
     def as_dict(self) -> dict:
         if self.transition_state is None:
@@ -809,26 +800,23 @@ class CoordinationBondChangeReaction(Reaction):
             return {"k_A": self.rate_calculator.calculate_rate_constant(),
                     "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
         elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
-            # No reference is set
-            # Use barrierless reaction
-            if self.rate_calculator.alpha == -1:
-                rate_constant = dict()
-                free_energy = self.free_energy()
+            return {"k_A": self.rate_calculator.calculate_rate_constant(),
+                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+        else:
+            rate_constant = dict()
+            free_energy = self.free_energy()
 
-                if free_energy["free_energy_A"] < 0:
-                    rate_constant["k_A"] = k * 298.15 / h
-                else:
-                    rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
-
-                if free_energy["free_energy_B"] < 0:
-                    rate_constant["k_B"] = k * 298.15 / h
-                else:
-                    rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
-
-                return rate_constant
+            if free_energy["free_energy_A"] < 0:
+                rate_constant["k_A"] = k * 298.15 / h
             else:
-                return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                        "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+                rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+
+            if free_energy["free_energy_B"] < 0:
+                rate_constant["k_B"] = k * 298.15 / h
+            else:
+                rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+
+            return rate_constant
 
     def as_dict(self) -> dict:
         if self.transition_state is None:

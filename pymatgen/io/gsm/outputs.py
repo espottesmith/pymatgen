@@ -499,6 +499,8 @@ class GSMOptimizedStringParser(MSONable):
             self.data["geometries"].append(np.array(geom))
             self.data["molecules"].append(Molecule(species, geom))
 
+        self.data["num_nodes"] = len(self.data["geometries"])
+
     def _parse_energies(self):
         for l, line in enumerate(self.lines):
             if line.startswith("energy"):
@@ -506,7 +508,7 @@ class GSMOptimizedStringParser(MSONable):
                 break
 
         self.data["energies"] = list()
-        for i in range(self.data["num_atoms"]):
+        for i in range(self.data["num_nodes"]):
             self.data["energies"].append(float(self.lines[line_num + i + 1]))
 
     def _parse_forces(self):
@@ -516,7 +518,7 @@ class GSMOptimizedStringParser(MSONable):
                 break
 
         self.data["forces"] = list()
-        for i in range(self.data["num_atoms"]):
+        for i in range(self.data["num_nodes"]):
             self.data["forces"].append(float(self.lines[line_num + i + 1]))
 
     def _parse_max_steps(self):
@@ -526,7 +528,7 @@ class GSMOptimizedStringParser(MSONable):
                 break
 
         self.data["max_steps"] = list()
-        for i in range(self.data["num_atoms"]):
+        for i in range(self.data["num_nodes"]):
             self.data["max_steps"].append(float(self.lines[line_num + i + 1]))
 
     def as_dict(self):

@@ -369,10 +369,13 @@ def parse_multi_xyz(filename):
         linenum = 0
 
         while linenum < len(text):
-            num_atoms = int(text[linenum].strip())
-            mol = Molecule.from_str("".join(text[linenum:linenum + num_atoms + 2]), "xyz")
-            molecules.append(mol)
+            try:
+                num_atoms = int(text[linenum].strip())
+                mol = Molecule.from_str("".join(text[linenum:linenum + num_atoms + 2]), "xyz")
+                molecules.append(mol)
 
-            linenum += num_atoms + 2
+                linenum += num_atoms + 2
+            except ValueError:
+                break
 
     return molecules

@@ -2,13 +2,16 @@
 # Copyright (c) Pymatgen Development Team.
 # Distributed under the terms of the MIT License.
 
-import logging
-import random
 
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 
+__author__ = "Ronald Kam"
+__email__ = "kamronald@berkeley.edu"
+
 __author__ = "Ronald Kam, Evan Spotte-Smith"
+
 __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 __credit__ = "Xiaowei Xie"
@@ -21,7 +24,6 @@ N = 6.0221409e+23
 
 
 class ReactionPropagator:
-
     """
     Class for stochastic kinetic Monte Carlo simulation, with reactions provided
     by the Reactions present in a ReactionNetwork.
@@ -29,11 +31,10 @@ class ReactionPropagator:
 
     Args:
         reaction_network (ReactionNetwork)
-        initial_state (dict): {Molecule ID (int): concentration (int)}}
+        initial_state (dict): {Molecule ID (int): concentration (float)}}
         volume (float): Volume in Liters (default = 1 nm^3 = 1 * 10^-24 L)
 
     """
-
     def __init__(self, reaction_network, initial_state, volume=1.0*10**-24):
         self.reaction_network = reaction_network
         ## make a dict, assigning an index for each reaction. Each index is a dict containing reaction object and will later add propensity
@@ -45,11 +46,10 @@ class ReactionPropagator:
         self._state = dict()
         self.initial_state = dict()
         ## State will have number of molecules, instead of concentration
-        for molecule_id, concentration in initial_state.items():
-            num_mols = concentration * self.volume * N
+        for molecule_id, concentration in self.initial_state_conc.items():
+            num_mols = concentration * self.volume * N  *1000# volume in m^3
             self.initial_state[molecule_id] = num_mols
             self._state[molecule_id] = num_mols
-
         self.data = {"times": list(),
                      "reactions": list(),
                      "state": dict()}
@@ -71,7 +71,6 @@ class ReactionPropagator:
 
         Returns:
             propensity (float)
-
         """
 
         rate_constant = reaction.rate_constant()
@@ -85,10 +84,11 @@ class ReactionPropagator:
             reactants = reaction.reactants
 
         num_mols_list = list()
+        entry_ids = list() # for testing
         for reactant in reactants:
             reactant_num_mols = self.state.get(reactant.entry_id, 0)
             num_mols_list.append(reactant_num_mols)
-
+            entry_ids.append(reactant.entry_id)
         if num_reactants == 1:
             h_prop = num_mols_list[0]
         elif (num_reactants == 2) and (reactants[0].entry_id == reactants[1].entry_id):
@@ -97,13 +97,14 @@ class ReactionPropagator:
             h_prop = num_mols_list[0] * num_mols_list[1]
         else:
             raise RuntimeError("Only single and bimolecular reactions supported by this simulation")
-
         propensity = h_prop * k
         return propensity
+        # for testing:
+        #return [reaction.reaction_type, reaction.reactants, reaction.products, reaction.rate_calculator.alpha , reaction.transition_state, "propensity = " + str(propensity), "free energy from code = " + str(reaction.free_energy()["free_energy_A"]), "calculated free energy ="  + str(-sum([r.free_energy() for r in reaction.reactants]) +  sum([p.free_energy() for p in reaction.products])),
+                #"calculated k = " +  str(k_b * 298.15 / h * np.exp(-1 * (-sum([r.free_energy() for r in reaction.reactants]) +  sum([p.free_energy() for p in reaction.products]) ) * 96487 / (R * 298.15))), "k from Rxn class = " +  str(k)  ]
 
     def update_state(self, reaction, reverse):
         """ Update the system based on the reaction chosen
-
         Args:
             reaction (Reaction)
             reverse (bool): If True, let the reverse reaction proceed.
@@ -130,6 +131,7 @@ class ReactionPropagator:
                     self._state[p_id] += 1
                 else:
                     self._state[p_id] = 1
+        return self._state # for testing
 
     def simulate(self, t_end):
         """
@@ -227,6 +229,33 @@ class ReactionPropagator:
 
         return self.data
 
+    def reaction_choice(self):
+        """For the purposes of testing simulate() function, specifically the reaction choice functionality.
+        """
+        total_propensity = 0
+        for i, reaction in self.reactions.items():
+            if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
+                total_propensity += self.get_propensity(reaction, reverse=False)
+            if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.products]):
+                total_propensity += self.get_propensity(reaction, reverse=True)
+        random_propensity = random.random() * total_propensity
+
+        prop_sum = 0
+        for i, reaction in self.reactions.items():
+            if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
+                prop_sum += self.get_propensity(reaction, reverse=False)
+                if prop_sum > random_propensity:
+                    reaction_mu = reaction
+                    reverse = False
+                    break
+            if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.products]):
+                prop_sum += self.get_propensity(reaction, reverse=True)
+                if prop_sum > random_propensity:
+                    reaction_mu = reaction
+                    reverse = True
+                    break
+        return (reaction_mu, reverse)
+
     def plot_trajectory(self, data=None, name=None, filename=None, num_label=10):
         """
         Plot KMC simulation data
@@ -280,7 +309,9 @@ class ReactionPropagator:
         ax.legend(loc='upper center', bbox_to_anchor=(0.45, -0.175),
                   ncol=5, fontsize="small")
 
+
         if filename is None:
             plt.show()
         else:
             fig.savefig(filename, dpi=600)
+        #plt.savefig("Simulation_Run")

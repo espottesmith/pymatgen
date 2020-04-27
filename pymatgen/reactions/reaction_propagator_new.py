@@ -47,7 +47,7 @@ class ReactionPropagator:
         self.initial_state = dict()
         ## State will have number of molecules, instead of concentration
         for molecule_id, concentration in self.initial_state_conc.items():
-            num_mols = concentration * self.volume * N  *1000# volume in m^3
+            num_mols = int(concentration * self.volume * N  *1000)# volume in m^3
             self.initial_state[molecule_id] = num_mols
             self._state[molecule_id] = num_mols
         self.data = {"times": list(),
@@ -306,12 +306,15 @@ class ReactionPropagator:
         ax.set(title=title,
                xlabel="Time (s)",
                ylabel="# Molecules")
-        ax.legend(loc='upper center', bbox_to_anchor=(0.45, -0.175),
-                  ncol=5, fontsize="small")
+
+        ax.legend(loc='upper right', bbox_to_anchor=(1, 1),
+                    ncol=5, fontsize="small")
+        # ax.legend(loc='best', bbox_to_anchor=(0.45, -0.175),
+        #           ncol=5, fontsize="small")
 
 
-        if filename is None:
-            plt.show()
-        else:
-            fig.savefig(filename, dpi=600)
-        #plt.savefig("Simulation_Run")
+        # if filename is None:
+        #     plt.show()
+        # else:
+        #     fig.savefig(filename, dpi=600)
+        plt.savefig("Simulation_Run")

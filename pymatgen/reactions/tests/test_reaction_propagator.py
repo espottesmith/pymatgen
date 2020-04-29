@@ -122,7 +122,7 @@ class TestReactionPropagator(PymatgenTest):
             print(self.propagator.get_propensity(reaction, reverse=False))
             print(self.propagator.get_propensity(reaction, reverse=True))
 
-        print("Total Propensity is: " + str(self.total_propensity))
+        print("Total Propensity is: ", self.total_propensity)
 
     def tearDown(self) -> None:
         del self.volume

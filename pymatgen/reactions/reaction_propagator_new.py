@@ -199,7 +199,7 @@ class ReactionPropagator:
             self.data["reactions"].append({"reaction": reaction_mu, "reverse": reverse})
 
             t += tau
-            print(t)
+            #print(t)
             if reverse:
                 for reactant in reaction_mu.products:
                     self.data["state"][reactant.entry_id].append((t,

@@ -10,7 +10,7 @@ from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.reactions.reaction_propagator_new import ReactionPropagator
 from monty.serialization import dumpfn, loadfn
 import os
-import copy
+
 
 __author__ = "Ronald Kam, Evan Spotte-Smith"
 __email__ = "kamronald@berkeley.edu"
@@ -18,7 +18,7 @@ __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 
 class Simulation_Li_Limited:
-    def __init__(self, li_conc = 1.0, ec_conc = 3.5706, emc_conc = 7.0555, volume = 10**-24, t_end = 10**-10):
+    def __init__(self, li_conc = 1.0, ec_conc = 3.5706, emc_conc = 7.0555, volume = 10**-24, t_end = 1):
         """ Create an initial state and reaction network, in a Li system of ~ 3200 molecules.
         Typical electrolyte composition is 1M LiPF6, 3:7 wt% EC:EMC
 
@@ -48,9 +48,8 @@ class Simulation_Li_Limited:
         ref_h2o = Molecule.from_file("ref_h2o.xyz")
         ref_h2o = MoleculeGraph.with_local_env_strategy(ref_h2o, OpenBabelNN())
 
-        self.mol_entries_limited = list()
         ## Put entries in a list to make ReactionNetwork
-        self.entries = loadfn("mol_entries_limited.json")
+        self.entries = loadfn("mol_entries_limited_two.json")
         for ii, entry in enumerate(self.entries):
             # mol = entry["molecule"]
             # E = float(entry["energy"])
@@ -75,12 +74,14 @@ class Simulation_Li_Limited:
                 print("HF: ", ii)
                 hf_id = ii
             entry.entry_id = ii
+
         self.reaction_network = ReactionNetwork.from_input_entries(self.entries, electron_free_energy = -2.15)
         self.reaction_network.build()
         print("Total number of reactions is: ", len(self.reaction_network.reactions))
+        dumpfn(self.reaction_network, "rxn_network_mol_entries_limited_two")
         self.initial_state = {li_id: self.li_conc, ec_id: self.ec_conc, emc_id: self.emc_conc, h2o_id: self.h2o_conc}
 
-        #print(self.initial_state)
+        print(self.initial_state)
 
         self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
 
@@ -94,17 +95,26 @@ class Simulation_Li_Limited:
                 self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
                 self.propensity_list.append(self.propagator.get_propensity(reaction, reverse=True))
 
-        print("Total Propensity is: ", self.total_propensity)
+        print("Total Initial Propensity is: ", self.total_propensity)
         print("So the expected time step is: ", 1/self.total_propensity)
         print("Average Propensity is: ", np.average(self.propensity_list))
         print("Initial state is: ", self.propagator.state)
 
+        self.simulation_data = self.propagator.simulate(self.t_end)
+        self.propagator.plot_trajectory(self.simulation_data, "Simulation Results")
+        print("Final state is: ", self.propagator.state)
+
+    def time_analysis(self):
+        time_dict = dict()
+        time_dict["t_avg"] = np.average(self.simulation_data["times"])
+        time_dict["t_std"] = np.std(self.simulation_data["times"])
+        time_dict["steps"] = len(self.simulation_data["times"])
+        return time_dict
 
 li_conc = 1.0
 ec_conc = 3.57
 emc_conc = 7.0555
 volume = 10**-24
-t_end = 10**-10
+t_end = 10**-15
 this_simulation = Simulation_Li_Limited(li_conc, ec_conc, emc_conc, volume, t_end)
-
-
+print(this_simulation.time_analysis())

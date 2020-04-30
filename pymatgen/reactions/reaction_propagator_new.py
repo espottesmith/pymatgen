@@ -7,11 +7,9 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 
-__author__ = "Ronald Kam"
-__email__ = "kamronald@berkeley.edu"
 
 __author__ = "Ronald Kam, Evan Spotte-Smith"
-
+__email__ = "kamronald@berkeley.edu"
 __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 __credit__ = "Xiaowei Xie"

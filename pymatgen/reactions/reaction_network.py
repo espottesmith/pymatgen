@@ -167,12 +167,17 @@ class Reaction(MSONable, metaclass=ABCMeta):
         else:
             ts = self.transition_state.as_dict()
 
+        if self.rate_calculator is None:
+            rc = None
+        else:
+            rc = self.rate_calculator.as_dict()
+
         d = {"@module": self.__class__.__module__,
              "@class": self.__class__.__name__,
              "reactants": [r.as_dict() for r in self.reactants],
              "products": [p.as_dict() for p in self.products],
              "transition_state": ts,
-             "rate_calculator": self.rate_calculator.as_dict(),
+             "rate_calculator": rc,
              "parameters": self.parameters}
 
         return d
@@ -183,7 +188,10 @@ class Reaction(MSONable, metaclass=ABCMeta):
         products = [MoleculeEntry.from_dict(p) for p in d["products"]]
         if d["transition_state"] is None:
             ts = None
-            rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
+            if d["rate_calculator"] is None:
+                rate_calculator = None
+            else:
+                rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
         else:
             ts = MoleculeEntry.from_dict(d["transition_state"])
             rate_calculator = ReactionRateCalculator.from_dict(d["rate_calculator"])
@@ -305,6 +313,11 @@ class RedoxReaction(Reaction):
         else:
             ts = self.transition_state.as_dict()
 
+        if self.rate_calculator is None:
+            rc = None
+        else:
+            rc = self.rate_calculator.as_dict()
+
         d = {"@module": self.__class__.__module__,
              "@class": self.__class__.__name__,
              "reactants": [r.as_dict() for r in self.reactants],
@@ -313,7 +326,7 @@ class RedoxReaction(Reaction):
              "product": self.product.as_dict(),
              "electron_free_energy": self.electron_free_energy,
              "transition_state": ts,
-             "rate_calculator": self.rate_calculator.as_dict(),
+             "rate_calculator": rc,
              "parameters": self.parameters}
 
         return d
@@ -324,7 +337,10 @@ class RedoxReaction(Reaction):
         products = [MoleculeEntry.from_dict(p) for p in d["products"]]
         if d["transition_state"] is None:
             ts = None
-            rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
+            if d["rate_calculator"] is None:
+                rate_calculator = None
+            else:
+                rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
         else:
             ts = MoleculeEntry.from_dict(d["transition_state"])
             rate_calculator = ReactionRateCalculator.from_dict(d["rate_calculator"])
@@ -464,6 +480,11 @@ class IntramolSingleBondChangeReaction(Reaction):
         else:
             ts = self.transition_state.as_dict()
 
+        if self.rate_calculator is None:
+            rc = None
+        else:
+            rc = self.rate_calculator.as_dict()
+
         d = {"@module": self.__class__.__module__,
              "@class": self.__class__.__name__,
              "reactants": [r.as_dict() for r in self.reactants],
@@ -471,7 +492,7 @@ class IntramolSingleBondChangeReaction(Reaction):
              "reactant": self.reactant.as_dict(),
              "product": self.product.as_dict(),
              "transition_state": ts,
-             "rate_calculator": self.rate_calculator.as_dict(),
+             "rate_calculator": rc,
              "parameters": self.parameters}
 
         return d
@@ -482,7 +503,10 @@ class IntramolSingleBondChangeReaction(Reaction):
         products = [MoleculeEntry.from_dict(p) for p in d["products"]]
         if d["transition_state"] is None:
             ts = None
-            rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
+            if d["rate_calculator"] is None:
+                rate_calculator = None
+            else:
+                rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
         else:
             ts = MoleculeEntry.from_dict(d["transition_state"])
             rate_calculator = ReactionRateCalculator.from_dict(d["rate_calculator"])
@@ -627,6 +651,11 @@ class IntermolecularReaction(Reaction):
         else:
             ts = self.transition_state.as_dict()
 
+        if self.rate_calculator is None:
+            rc = None
+        else:
+            rc = self.rate_calculator.as_dict()
+
         d = {"@module": self.__class__.__module__,
              "@class": self.__class__.__name__,
              "reactants": [r.as_dict() for r in self.reactants],
@@ -635,7 +664,7 @@ class IntermolecularReaction(Reaction):
              "product0": self.product0.as_dict(),
              "product1": self.product1.as_dict(),
              "transition_state": ts,
-             "rate_calculator": self.rate_calculator.as_dict(),
+             "rate_calculator": rc,
              "parameters": self.parameters}
 
         return d
@@ -646,7 +675,10 @@ class IntermolecularReaction(Reaction):
         products = [MoleculeEntry.from_dict(p) for p in d["products"]]
         if d["transition_state"] is None:
             ts = None
-            rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
+            if d["rate_calculator"] is None:
+                rate_calculator = None
+            else:
+                rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
         else:
             ts = MoleculeEntry.from_dict(d["transition_state"])
             rate_calculator = ReactionRateCalculator.from_dict(d["rate_calculator"])
@@ -824,6 +856,11 @@ class CoordinationBondChangeReaction(Reaction):
         else:
             ts = self.transition_state.as_dict()
 
+        if self.rate_calculator is None:
+            rc = None
+        else:
+            rc = self.rate_calculator.as_dict()
+
         d = {"@module": self.__class__.__module__,
              "@class": self.__class__.__name__,
              "reactants": [r.as_dict() for r in self.reactants],
@@ -832,7 +869,7 @@ class CoordinationBondChangeReaction(Reaction):
              "product0": self.product0.as_dict(),
              "product1": self.product1.as_dict(),
              "transition_state": ts,
-             "rate_calculator": self.rate_calculator.as_dict(),
+             "rate_calculator": rc,
              "parameters": self.parameters}
 
         return d
@@ -843,7 +880,10 @@ class CoordinationBondChangeReaction(Reaction):
         products = [MoleculeEntry.from_dict(p) for p in d["products"]]
         if d["transition_state"] is None:
             ts = None
-            rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
+            if d["rate_calculator"] is None:
+                rate_calculator = None
+            else:
+                rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
         else:
             ts = MoleculeEntry.from_dict(d["transition_state"])
             rate_calculator = ReactionRateCalculator.from_dict(d["rate_calculator"])
@@ -1052,7 +1092,7 @@ def graph_rep_1_1(reaction) -> nx.DiGraph:
     return graph
 
 
-class ReactionNetwork:
+class ReactionNetwork(MSONable):
     """
         Class to build a reaction network from molecules and reactions.
     """
@@ -1279,6 +1319,7 @@ class ReactionNetwork:
         """
 
         # Iterate by reaction class
+        classes = set()
         for rtype, bigclasses in self.classes.items():
             for bigclass, smallclasses in bigclasses.items():
                 for smallclass, reactions in smallclasses.items():
@@ -1293,12 +1334,15 @@ class ReactionNetwork:
                                 rct_ids = [r.entry_id for r in reaction.reactants]
                                 ts_pro_ids = [p.entry_id for p in ts_set["products"]]
                                 pro_ids = [p.entry_id for p in reaction.products]
-                                if sorted(rct_ids) == sorted(ts_rct_ids) and sorted(pro_ids) == sorted(ts_pro_ids):
+                                if (sorted(rct_ids) == sorted(ts_rct_ids) and sorted(pro_ids) == sorted(ts_pro_ids)) or \
+                                        (sorted(rct_ids) == sorted(ts_pro_ids) and sorted(pro_ids) == sorted(ts_rct_ids)):
                                     reaction.update_calculator(transition_state=ts_set["ts"])
                                     if ind is not None:
                                         # Make sure labeling is correct
                                         if self.reactions[ind].parameters["ind"] == ind:
                                             self.reactions[ind].update_calculator(transition_state=ts_set["ts"])
+
+                                        classes.add("{}_{}_{}".format(rtype, bigclass, smallclass))
 
                                     # Supply reference reaction data
                                     if reference_ts is None:
@@ -1324,6 +1368,11 @@ class ReactionNetwork:
                                 if ind is not None:
                                     if self.reactions[ind].parameters["ind"] == ind:
                                         self.reactions[ind].update_calculator(reference=reference_ts)
+
+        for c in classes:
+            print(c)
+
+        print(len(classes))
 
     def get_reactions_by_entries(self, entries):
         """

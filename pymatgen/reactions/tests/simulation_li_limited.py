@@ -5,8 +5,10 @@ from pymatgen.analysis.local_env import OpenBabelNN
 from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.reactions.reaction_propagator_new import ReactionPropagator
 from monty.serialization import dumpfn, loadfn
+from pymatgen.reactions.reaction_network import ReactionNetwork
 import time
 import matplotlib.pyplot as plt
+import pickle
 
 
 
@@ -31,14 +33,12 @@ class Simulation_Li_Limited:
         self.volume = volume ## m^3
         self.li_conc = li_conc # mol/L
         self.file_name = file_name
-        # 3:7 EC:EMC by wt
-        # find these values later
         self.ec_conc = ec_conc
         self.emc_conc = emc_conc
         self.t_end = t_end
         # Impurities
         self.h2o_conc = 1.665*10**-4 # 1-5 ppm
-        self.hf_conc = 2.70*10**-3 # 30-60 ppm
+        #self.hf_conc = 2.70*10**-3 # 30-60 ppm
 
         # ref_ec = Molecule.from_file("ref_ec.xyz")
         # ref_ec = MoleculeGraph.with_local_env_strategy(ref_ec, OpenBabelNN())
@@ -47,68 +47,46 @@ class Simulation_Li_Limited:
         # ref_h2o = Molecule.from_file("ref_h2o.xyz")
         # ref_h2o = MoleculeGraph.with_local_env_strategy(ref_h2o, OpenBabelNN())
 
-        ## Put entries in a list to make ReactionNetwork
+        # Put entries in a list to make ReactionNetwork
         # self.entries = loadfn("mol_entries_limited_two.json")
+        #
         # for ii, entry in enumerate(self.entries):
-        #     # mol = entry["molecule"]
-        #     # E = float(entry["energy"])
-        #     # H = float(entry["enthalpy"])
-        #     # S = float(entry["entropy"])
-        #     #mol_entry = MoleculeEntry(molecule = mol, energy = E, enthalpy = H, entropy = S, entry_id = ii)
-        #     #self.mol_entries_limited.append(mol_entry)
-        #     # Just to find the mol ID of H2O, Li+, EMC, EC; can delete later
-        #     if entry.mol_graph.isomorphic_to(ref_ec):
-        #         print("EC: ", ii)
-        #         ec_id = ii
-        #     elif entry.mol_graph.isomorphic_to(ref_h2o):
-        #         print("H2O: ", ii)
-        #         h2o_id = ii
-        #     elif entry.mol_graph.isomorphic_to(ref_emc):
-        #         print("EMC: ", ii)
-        #         emc_id = ii
-        #     elif entry.molecule.composition.alphabetical_formula == "Li1":
-        #         print("Li: ", ii)
-        #         li_id = ii
-        #     elif entry.molecule.composition.alphabetical_formula == "F1 H1":
-        #         print("HF: ", ii)
-        #         hf_id = ii
         #     entry.entry_id = ii
+        # pickle_out = open("pickle_mol_entries_limited_two_IDs", "wb")
+        # pickle.dump(self.entries, pickle_out)
+        # pickle_out.close()
 
-        #self.reaction_network = ReactionNetwork.from_input_entries(self.entries, electron_free_energy = -2.15)
-        #self.reaction_network.build()
+        # time_start = time.time()
+        # self.reaction_network = ReactionNetwork.from_input_entries(self.entries, electron_free_energy = -2.15)
+        # self.reaction_network.build()
+        # time_end = time.time()
+        #print("Time to generate rxn network: ", time_end-time_start)
+        # pickle_out = open("pickle_rxnnetwork_Li-limited", "wb")
+        # pickle.dump(self.reaction_network, pickle_out)
+        # pickle_out.close()
+
+        pickle_in = open("pickle_rxnnetwork_Li-limited", "rb")
+        self.reaction_network = pickle.load(pickle_in)
+
         li_id = 2335
-        ec_id = 2616
-        emc_id = 1878
-        h2o_id = 3307
-        start_time = time.time()
-        self.reaction_network = loadfn("rxn_network_mol_entries_limited_two.json")
-        print("Total number of reactions is: ", len(self.reaction_network.reactions))
+        ec_id = 2606
+        emc_id = 1877
+        h2o_id = 3306
+        # start_time = time.time()
+        # self.reaction_network = loadfn("rxn_network_mol_entries_limited_two.json")
+        # end_time = time.time()
+        #print("Time to load reaction network: ", end_time - start_time)
         self.initial_state = {li_id: self.li_conc, ec_id: self.ec_conc, emc_id: self.emc_conc, h2o_id: self.h2o_conc}
-
-        print(self.initial_state)
-
         self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
 
-        # self.total_propensity = 0
-        # self.propensity_list = list()
-        # for reaction in self.reaction_network.reactions:
-        #     if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
-        #         self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
-        #         self.propensity_list.append(self.propagator.get_propensity(reaction, reverse=False))
-        #     if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
-        #         self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
-        #         self.propensity_list.append(self.propagator.get_propensity(reaction, reverse=True))
-        #
-        # print("Total Initial Propensity is: ", self.total_propensity)
-        # print("So the expected time step is: ", 1/self.total_propensity)
-        # print("Average Propensity is: ", np.average(self.propensity_list))
         print("Initial state is: ", self.propagator.state)
-
+        time_start = time.time()
         self.simulation_data = self.propagator.simulate(self.t_end)
+        time_end = time.time()
+        print("Total simulation time is: ", time_end - time_start)
         self.propagator.plot_trajectory(self.simulation_data,"Simulation Results", self.file_name)
         print("Final state is: ", self.propagator.state)
-        end_time = time.time()
-        self.runtime = end_time-start_time
+
 
     def time_analysis(self):
         time_dict = dict()
@@ -119,48 +97,54 @@ class Simulation_Li_Limited:
         return time_dict
 
 li_conc = 1.0
+# 3:7 EC:EMC
 ec_conc = 3.57
 emc_conc = 7.0555
 volume = 10**-24
-times = [10**-13, 10**-12, 10**-11, 10**-10, 10**-9]
-runtime_data = dict()
-runtime_data["runtime"] = list()
-runtime_data["t_avg"] = list()
-runtime_data["t_std"] = list()
-runtime_data["steps"] = list()
+t_end = 10**-9
+this_simulation = Simulation_Li_Limited("Simulation_Run_t_1e-9", li_conc, ec_conc, emc_conc, volume, t_end)
+time_data = this_simulation.time_analysis()
+print(time_data)
 
-for t_end in times:
-    this_filename = "Simulation_Run_" + str(t_end)
-    this_simulation = Simulation_Li_Limited(this_filename, li_conc, ec_conc, emc_conc, volume, t_end)
-    time_data = this_simulation.time_analysis()
-    runtime_data["t_avg"].append(time_data["t_avg"])
-    runtime_data["t_std"].append(time_data["t_std"])
-    runtime_data["steps"].append(time_data["steps"])
-    runtime_data["runtime"].append(this_simulation.runtime)
-
-plt.figure()
-plt.subplot(411)
-plt.plot(times, runtime_data["t_avg"])
-plt.title("Average Time Steps")
-plt.ylabel("Time (s)")
-plt.xlabel("t_end (s)")
-
-plt.subplot(412)
-plt.plot(times, runtime_data["t_std"])
-plt.title("Std Dev Time Steps")
-plt.ylabel("Time (s)")
-plt.xlabel("t_end (s)")
-
-plt.subplot(413)
-plt.plot(times, runtime_data["steps"])
-plt.title("Number of Time Steps")
-plt.ylabel("Time steps")
-plt.xlabel("t_end (s)")
-
-plt.subplot(414)
-plt.plot(times, runtime_data["runtime"])
-plt.title("Simulation Runtime Analysis")
-plt.ylabel("Runtime (s)")
-plt.xlabel("t_end (s)")
-
-plt.savefig("Simulation_Time_Analysis_t-9")
+# times = [10**-13, 10**-12, 10**-11, 10**-10, 10**-9]
+# runtime_data = dict()
+# runtime_data["runtime"] = list()
+# runtime_data["t_avg"] = list()
+# runtime_data["t_std"] = list()
+# runtime_data["steps"] = list()
+#
+# for t_end in times:
+#     this_filename = "Simulation_Run_" + str(t_end)
+#     this_simulation = Simulation_Li_Limited(this_filename, li_conc, ec_conc, emc_conc, volume, t_end)
+#     time_data = this_simulation.time_analysis()
+#     runtime_data["t_avg"].append(time_data["t_avg"])
+#     runtime_data["t_std"].append(time_data["t_std"])
+#     runtime_data["steps"].append(time_data["steps"])
+#     runtime_data["runtime"].append(this_simulation.runtime)
+#
+# plt.figure()
+# plt.subplot(411)
+# plt.plot(times, runtime_data["t_avg"])
+# plt.title("Average Time Steps")
+# plt.ylabel("Time (s)")
+# plt.xlabel("t_end (s)")
+#
+# plt.subplot(412)
+# plt.plot(times, runtime_data["t_std"])
+# plt.title("Std Dev Time Steps")
+# plt.ylabel("Time (s)")
+# plt.xlabel("t_end (s)")
+#
+# plt.subplot(413)
+# plt.plot(times, runtime_data["steps"])
+# plt.title("Number of Time Steps")
+# plt.ylabel("Time steps")
+# plt.xlabel("t_end (s)")
+#
+# plt.subplot(414)
+# plt.plot(times, runtime_data["runtime"])
+# plt.title("Simulation Runtime Analysis")
+# plt.ylabel("Runtime (s)")
+# plt.xlabel("t_end (s)")
+#
+# plt.savefig("Simulation_Time_Analysis_t-9")

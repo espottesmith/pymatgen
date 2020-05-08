@@ -87,6 +87,9 @@ class Simulation_Li_Limited:
         self.propagator.plot_trajectory(self.simulation_data,"Simulation Results", self.file_name)
         print("Final state is: ", self.propagator.state)
 
+        pickle_out = open("pickle_simdata_" + self.file_name, "wb")
+        pickle.dump(self.simulation_data, pickle_out)
+        pickle_out.close()
 
     def time_analysis(self):
         time_dict = dict()
@@ -101,8 +104,8 @@ li_conc = 1.0
 ec_conc = 3.57
 emc_conc = 7.0555
 volume = 10**-24
-t_end = 10**-9
-this_simulation = Simulation_Li_Limited("Simulation_Run_t_1e-9", li_conc, ec_conc, emc_conc, volume, t_end)
+t_end = 10**-11
+this_simulation = Simulation_Li_Limited("li_limited_t_1e-11_c", li_conc, ec_conc, emc_conc, volume, t_end)
 time_data = this_simulation.time_analysis()
 print(time_data)
 

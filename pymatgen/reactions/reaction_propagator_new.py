@@ -159,16 +159,14 @@ class ReactionPropagator:
 
             ## Obtain reaction propensities, on which the probability distributions of
             ## time and reaction choice depends.
-            time_start = time.time()
             total_propensity = 0
             for i, reaction in self.reactions.items():
                 if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
                     total_propensity += self.get_propensity(reaction, reverse=False)
                 if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.products]):
                     total_propensity += self.get_propensity(reaction, reverse=True)
-            time_end = time.time()
-            print("Time tot-prop: ", time_end - time_start)
-            print("tot-pro = ", total_propensity)
+
+            #print("tot-pro = ", total_propensity)
             ## drawing random numbers on uniform (0,1) distrubution
             r1 = random.random()
             r2 = random.random()
@@ -179,7 +177,7 @@ class ReactionPropagator:
             ## Choosing a reaction mu; need a cumulative sum of rxn propensities
             ## Discrete probability distrubution of reaction choice
             random_propensity = r2 * total_propensity
-            time_start = time.time()
+
             prop_sum = 0
             for i, reaction in self.reactions.items():
                 if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
@@ -196,10 +194,9 @@ class ReactionPropagator:
                         break
 
             self.update_state(reaction_mu, reverse)
-            time_end = time.time()
-            print("Time to choose rxn and update state is: ", time_end - time_start)
+
             self.data["times"].append(tau)
-            #self.data["reactions"].append({"reaction": reaction_mu, "reverse": reverse})
+            self.data["reactions"].append({"reaction": reaction_mu, "reverse": reverse})
 
             t += tau
             #print(t)
@@ -226,7 +223,6 @@ class ReactionPropagator:
                     else:
                         self.data["state"][product.entry_id].append((t,
                                                                      self._state[product.entry_id]))
-
 
         for mol_id in self.data["state"]:
             self.data["state"][mol_id].append((t, self._state[mol_id]))
@@ -292,7 +288,7 @@ class ReactionPropagator:
         ids_sorted = sorted([(k, v) for k, v in data["state"].items()],
                             key=lambda x: x[1][-1][-1])
         ids_sorted = [i[0] for i in ids_sorted][::-1]
-        print("top 10 species ids: ", ids_sorted)
+        print("top 15 species ids: ", ids_sorted[0:15])
         # Only label most prominent products
         for mol_id in data["state"]:
             ts = np.array([e[0] for e in data["state"][mol_id]])
@@ -300,9 +296,8 @@ class ReactionPropagator:
             if mol_id in ids_sorted[0:num_label]:
                 for entry in self.reaction_network.entries_list:
                     if mol_id == entry.entry_id:
-                        this_composition = self.reaction_network.entries_list[
-                            mol_id].molecule.composition.alphabetical_formula
-                        this_charge = self.reaction_network.entries_list[mol_id].molecule.charge
+                        this_composition = entry.molecule.composition.alphabetical_formula
+                        this_charge = entry.molecule.charge
                         this_label = this_composition + " " + str(this_charge)
                         break
 
@@ -319,7 +314,7 @@ class ReactionPropagator:
                ylabel="# Molecules")
 
         ax.legend(loc='upper right', bbox_to_anchor=(1, 1),
-                    ncol=3, fontsize="small")
+                    ncol=2, fontsize="small")
         # ax.legend(loc='best', bbox_to_anchor=(0.45, -0.175),
         #           ncol=5, fontsize="small")
 

@@ -123,6 +123,7 @@ class TestReactionPropagator(PymatgenTest):
             print(self.propagator.get_propensity(reaction, reverse=True))
 
         print("Total Propensity is: ", self.total_propensity)
+        print("Number of reactions is: ", len(self.reaction_network.reactions))
 
     def tearDown(self) -> None:
         del self.volume
@@ -192,7 +193,7 @@ class TestReactionPropagator(PymatgenTest):
     #     self.assertArrayAlmostEqual(expected_frequency, actual_frequency, decimal = 2, err_msg = "Reaction choice frequency is not consistent with initial state")
 
     def test_simulate(self):
-        t_end = 10 ** (-10)
+        t_end = 10 ** (-9)
         simulation_data = self.propagator.simulate(t_end)
         time_record = simulation_data["times"]
         self.propagator.plot_trajectory(simulation_data, "Simulation Results")
@@ -200,8 +201,6 @@ class TestReactionPropagator(PymatgenTest):
         expected_tau = 1/self.total_propensity
         tau_list = np.diff(time_record)
         self.assertAlmostEqual(np.average(tau_list), expected_tau)
-
-
 
 if __name__ == "__main__":
     unittest.main()

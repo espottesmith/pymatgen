@@ -6,6 +6,7 @@
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
 
 __author__ = "Ronald Kam, Evan Spotte-Smith"
@@ -45,7 +46,7 @@ class ReactionPropagator:
         self.initial_state = dict()
         ## State will have number of molecules, instead of concentration
         for molecule_id, concentration in self.initial_state_conc.items():
-            num_mols = concentration * self.volume * N  *1000# volume in m^3
+            num_mols = int(concentration * self.volume * N  *1000)# volume in m^3
             self.initial_state[molecule_id] = num_mols
             self._state[molecule_id] = num_mols
         self.data = {"times": list(),
@@ -165,6 +166,7 @@ class ReactionPropagator:
                 if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.products]):
                     total_propensity += self.get_propensity(reaction, reverse=True)
 
+            #print("tot-pro = ", total_propensity)
             ## drawing random numbers on uniform (0,1) distrubution
             r1 = random.random()
             r2 = random.random()
@@ -197,7 +199,7 @@ class ReactionPropagator:
             self.data["reactions"].append({"reaction": reaction_mu, "reverse": reverse})
 
             t += tau
-            print(t)
+            #print(t)
             if reverse:
                 for reactant in reaction_mu.products:
                     self.data["state"][reactant.entry_id].append((t,
@@ -286,16 +288,22 @@ class ReactionPropagator:
         ids_sorted = sorted([(k, v) for k, v in data["state"].items()],
                             key=lambda x: x[1][-1][-1])
         ids_sorted = [i[0] for i in ids_sorted][::-1]
-
+        print("top 15 species ids: ", ids_sorted[0:15])
         # Only label most prominent products
         for mol_id in data["state"]:
             ts = np.array([e[0] for e in data["state"][mol_id]])
             nums = np.array([e[1] for e in data["state"][mol_id]])
             if mol_id in ids_sorted[0:num_label]:
-                ax.plot(ts, nums, label=mol_id)
+                for entry in self.reaction_network.entries_list:
+                    if mol_id == entry.entry_id:
+                        this_composition = entry.molecule.composition.alphabetical_formula
+                        this_charge = entry.molecule.charge
+                        this_label = this_composition + " " + str(this_charge)
+                        break
+
+                ax.plot(ts, nums, label = this_label)
             else:
                 ax.plot(ts, nums)
-
         if name is None:
             title = "KMC simulation, total time {}".format(data["times"][-1])
         else:
@@ -304,12 +312,15 @@ class ReactionPropagator:
         ax.set(title=title,
                xlabel="Time (s)",
                ylabel="# Molecules")
-        ax.legend(loc='upper center', bbox_to_anchor=(0.45, -0.175),
-                  ncol=5, fontsize="small")
+
+        ax.legend(loc='upper right', bbox_to_anchor=(1, 1),
+                    ncol=2, fontsize="small")
+        # ax.legend(loc='best', bbox_to_anchor=(0.45, -0.175),
+        #           ncol=5, fontsize="small")
 
 
-        if filename is None:
-            plt.show()
-        else:
-            fig.savefig(filename, dpi=600)
-        #plt.savefig("Simulation_Run")
+        # if filename is None:
+        #     plt.show()
+        # else:
+        #     fig.savefig(filename, dpi=600)
+        plt.savefig(filename)

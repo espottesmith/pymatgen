@@ -301,11 +301,20 @@ class RedoxReaction(Reaction):
         return {"energy_A": energy_A, "energy_B": energy_B}
 
     def rate_constant(self):
-        """
-        For now, all redox reactions will have the same
-        """
+        rate_constant = dict()
+        free_energy = self.free_energy()
 
-        return {"k_A": 10.0 ** 11, "k_B": 10.0 ** 11}
+        if free_energy["free_energy_A"] < 0:
+            rate_constant["k_A"] = k * 298.15 / h
+        else:
+            rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+
+        if free_energy["free_energy_B"] < 0:
+            rate_constant["k_B"] = k * 298.15 / h
+        else:
+            rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+
+        return rate_constant
 
     def as_dict(self) -> dict:
         if self.transition_state is None:
@@ -1242,11 +1251,10 @@ class ReactionNetwork(MSONable):
         reaction_classes = {s: load_class(str(self.__module__), s) for s in reaction_types}
 
         all_reactions = list()
-        classes = dict()
         # Generate reactions separately by reaction type
         for rtype, rclass in reaction_classes.items():
             reactions, classdict = rclass.generate(self.entries)
-            self.classes[rtype] = classes
+            self.classes[rtype] = classdict
             all_reactions.append(reactions)
 
         # Compile reactions

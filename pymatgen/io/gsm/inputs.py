@@ -267,19 +267,27 @@ class GSMIsomerInput(MSONable):
 
         if self.bonds_formed is not None:
             for atom_1, atom_2 in self.bonds_formed:
-                combined.append("ADD {} {}".format(atom_1, atom_2))
+                combined.append("ADD {} {}".format(atom_1 + 1, atom_2 + 1))
         if self.bonds_broken is not None:
             for atom_1, atom_2 in self.bonds_broken:
-                combined.append("BREAK {} {}".format(atom_1, atom_2))
+                combined.append("BREAK {} {}".format(atom_1 + 1, atom_2 + 1))
         if self.angles is not None:
             for atom_1, atom_2, atom_3 in self.angles:
-                combined.append("ANGLE {} {} {}".format(atom_1, atom_2, atom_3))
+                combined.append("ANGLE {} {} {}".format(atom_1 + 1,
+                                                        atom_2 + 1,
+                                                        atom_3 + 1))
         if self.torsions is not None:
             for atom_1, atom_2, atom_3, atom_4 in self.torsions:
-                combined.append("TORSION {} {} {} {}".format(atom_1, atom_2, atom_3, atom_4))
+                combined.append("TORSION {} {} {} {}".format(atom_1 + 1,
+                                                             atom_2 + 1,
+                                                             atom_3 + 1,
+                                                             atom_4 + 1))
         if self.out_of_planes is not None:
             for atom_1, atom_2, atom_3, atom_4 in self.out_of_planes:
-                combined.append("OOP {} {} {} {}".format(atom_1, atom_2, atom_3, atom_4))
+                combined.append("OOP {} {} {} {}".format(atom_1 + 1,
+                                                         atom_2 + 1,
+                                                         atom_3 + 1,
+                                                         atom_4 + 1))
 
         return "\n".join(combined)
 
@@ -324,17 +332,19 @@ class GSMIsomerInput(MSONable):
             if tokens[0] == "NEW":
                 continue
             elif tokens[0] == "ADD":
-                bonds_formed.append((int(tokens[1]), int(tokens[2])))
+                bonds_formed.append((int(tokens[1]) - 1, int(tokens[2]) - 1))
             elif tokens[0] == "BREAK":
-                bonds_broken.append((int(tokens[1]), int(tokens[2])))
+                bonds_broken.append((int(tokens[1]) - 1, int(tokens[2]) - 1))
             elif tokens[0] == "ANGLE":
-                angles.append((int(tokens[1]), int(tokens[2]), int(tokens[3])))
+                angles.append((int(tokens[1]) - 1,
+                               int(tokens[2]) - 1,
+                               int(tokens[3]) - 1))
             elif tokens[0] == "TORSION":
-                torsions.append((int(tokens[1]), int(tokens[2]), int(tokens[3]),
-                                 int(tokens[4])))
+                torsions.append((int(tokens[1]) - 1, int(tokens[2]) - 1,
+                                 int(tokens[3]) - 1, int(tokens[4]) - 1))
             elif tokens[0] == "OOP":
-                out_of_planes.append((int(tokens[1]), int(tokens[2]),
-                                      int(tokens[3]), int(tokens[4])))
+                out_of_planes.append((int(tokens[1]) - 1, int(tokens[2]) - 1,
+                                      int(tokens[3]) - 1, int(tokens[4]) - 1))
 
         return cls(bonds_formed=bonds_formed, bonds_broken=bonds_broken,
                    angles=angles, torsions=torsions,

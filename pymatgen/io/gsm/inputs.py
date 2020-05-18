@@ -189,7 +189,6 @@ class GSMIsomerInput(MSONable):
 
         # Verify that all coordinates are tuples including only valid indices
         for coord in all_coords:
-            if isinstance(coord, tuple):
                 for index in coord:
                     if isinstance(index, int):
                         if self.molecule is not None:
@@ -197,8 +196,6 @@ class GSMIsomerInput(MSONable):
                                 raise ValueError("Invalid index given for coordinate {}!".format(coord))
                     else:
                         raise ValueError("Non-integer index given for coordinate {}!".format(coord))
-            else:
-                raise ValueError("Coordinate {} must be a tuple!".format(coord))
 
         # Verify that coordinates are of appropriate length for their type
         for coord in self.bonds_broken + self.bonds_formed:

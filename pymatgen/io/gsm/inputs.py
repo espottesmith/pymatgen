@@ -88,7 +88,7 @@ class QCTemplate(QCInput):
         # Finally, add beginning of molecule section
         combined_list.append("$molecule")
 
-        return '\n'.join(combined_list)
+        return '\n'.join(combined_list) + "\n"
 
     @classmethod
     def from_string(cls, string):

@@ -118,13 +118,17 @@ class TestReactionPropagator(PymatgenTest):
 
         self.total_propensity = 0
         self.propensity_list = list()
-        for reaction in self.reaction_network.reactions:
+        for ind, reaction in enumerate(self.reaction_network.reactions):
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
-                self.total_propensity += self.propagator.get_propensity(reaction, reverse=False)
-                self.propensity_list.append(self.propagator.get_propensity(reaction, reverse = False))
+                rxn_ind = 2 * ind
+                self.total_propensity += self.propagator.get_propensity(reaction, rxn_ind, reverse=False)
+                self.propensity_list.append(self.propagator.get_propensity(reaction, rxn_ind, reverse = False))
+            else:
+                self.propensity_list.append(0)
             if all([self.propagator.state.get(r.entry_id, 0) > 0 for r in reaction.products]):
-                self.total_propensity += self.propagator.get_propensity(reaction, reverse=True)
-                self.propensity_list.append(self.propagator.get_propensity(reaction, reverse=True))
+                rxn_ind = 2 * ind + 1
+                self.total_propensity += self.propagator.get_propensity(reaction, rxn_ind, reverse=True)
+                self.propensity_list.append(self.propagator.get_propensity(reaction,rxn_ind, reverse=True))
         print("Total Propensity is: " + str(self.total_propensity))
 
 

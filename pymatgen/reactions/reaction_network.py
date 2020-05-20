@@ -1295,7 +1295,7 @@ class ReactionNetwork(MSONable):
                 for layer2, class2 in class1.items():
                     for rxn in class2:
                         # Reactions identical - link by index
-                        if reaction.reactant_ids == rxn.reacant_ids and reaction.product_ids == rxn.product_ids:
+                        if reaction.reactant_ids == rxn.reactant_ids and reaction.product_ids == rxn.product_ids:
                             rxn.parameters["ind"] = reaction.parameters["ind"]
 
         return self.graph

@@ -104,8 +104,8 @@ li_conc = 1.0
 ec_conc = 3.57
 emc_conc = 7.0555
 volume = 10**-24
-t_end = 10**-12
-this_simulation = Simulation_Li_Limited("li_limited_t_1e-12_c", li_conc, ec_conc, emc_conc, volume, t_end)
+t_end = 10**-5
+this_simulation = Simulation_Li_Limited("li_limited_t_1e-5_a", li_conc, ec_conc, emc_conc, volume, t_end)
 time_data = this_simulation.time_analysis()
 print(time_data)
 

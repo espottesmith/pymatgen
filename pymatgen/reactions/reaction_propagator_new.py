@@ -276,7 +276,11 @@ class ReactionPropagator:
             reactions_to_change = set(reactions_to_change)
 
             for rxn_ind in reactions_to_change:
-                this_h = self.get_propensity(self.reactions[math.floor(rxn_ind / 2)], reverse)
+                if rxn_ind % 2:
+                    this_reverse = True
+                else:
+                    this_reverse = False
+                this_h = self.get_propensity(self.reactions[math.floor(rxn_ind / 2)], this_reverse)
                 self.coord_array[rxn_ind] = this_h
 
             self.propensity_array = np.multiply(self.rate_constants, self.coord_array)

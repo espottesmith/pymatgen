@@ -37,21 +37,64 @@ class ReactionPropagator:
     def __init__(self, reaction_network, initial_state, volume=1.0*10**-24):
         self.reaction_network = reaction_network
         ## make a dict, assigning an index for each reaction. Each index is a dict containing reaction object and will later add propensity
-        self.reactions = dict()
-        self.rate_constants = np.zeros(2*len(self.reaction_network.reactions))
-        for id, reaction in enumerate(self.reaction_network.reactions):
-            self.reactions[id] = reaction
-            self.rate_constants[2*id] = reaction.rate_constant()["k_A"]
-            self.rate_constants[2* id+1] = reaction.rate_constant()["k_B"]
+        self.num_rxns = len(self.reaction_network.reactions)
         self.initial_state_conc = initial_state
         self.volume = volume
         self._state = dict()
         self.initial_state = dict()
         ## State will have number of molecules, instead of concentration
         for molecule_id, concentration in self.initial_state_conc.items():
-            num_mols = int(concentration * self.volume * N  *1000)# volume in m^3
+            num_mols = int(concentration * self.volume * N  *1000) # volume in m^3
             self.initial_state[molecule_id] = num_mols
             self._state[molecule_id] = num_mols
+        """Initial loop through all reactions in network: make arrays for initial propensity calculation. 
+        The rate constant array [k1f k1r k2f k2r ... ], other arrays indexed in same fashion.
+        Also create a "mapping" of each species to its respective reaction it is involved in, for future convenience"""
+        self.reactions = dict()
+        self.rate_constants = np.zeros(2*self.num_rxns)
+        self.coord_array = np.zeros(2*self.num_rxns)
+        self.rxn_ind = np.arange(2 * self.num_rxns)
+        self.species_rxn_mapping = dict() ## associating reaction index to each molecule
+        for id, reaction in enumerate(self.reaction_network.reactions):
+            self.reactions[id] = reaction
+            self.rate_constants[2*id] = reaction.rate_constant()["k_A"]
+            self.rate_constants[2* id+1] = reaction.rate_constant()["k_B"]
+            num_reactants_for = list()
+            num_reactants_rev = list()
+            for reactant in reaction.reactants:
+                num_reactants_for.append(self.initial_state.get(reactant.entry_id, 0))
+                if reactant.entry_id not in self.species_rxn_mapping:
+                    self.species_rxn_mapping[reactant.entry_id] = [2*id]
+                else:
+                    self.species_rxn_mapping[reactant.entry_id].append(2*id)
+            for product in reaction.products:
+                num_reactants_rev.append(self.initial_state.get(product.entry_id, 0))
+                if product.entry_id not in self.species_rxn_mapping:
+                    self.species_rxn_mapping[product.entry_id] = [2 * id + 1]
+                else:
+                    self.species_rxn_mapping[product.entry_id].append(2 * id + 1)
+
+            ## Obtain coordination value for forward reaction
+            if len(reaction.reactants) == 1:
+                self.coord_array[2*id] = num_reactants_for[0]
+            elif (len(reaction.reactants) == 2) and (reaction.reactants[0] == reaction.reactants[1]):
+                self.coord_array[2*id] = num_reactants_for[0] * (num_reactants_for[0] - 1)
+            elif (len(reaction.reactants) == 2) and (reaction.reactants[0] != reaction.reactants[1]):
+                self.coord_array[2 * id] = num_reactants_for[0] * num_reactants_for[1]
+            else:
+                raise RuntimeError("Only single and bimolecular reactions supported by this simulation")
+            # For reverse reaction
+            if len(reaction.products) == 1:
+                self.coord_array[2*id+1] = num_reactants_rev[0]
+            elif (len(reaction.products) == 2) and (reaction.products[0] == reaction.products[1]):
+                self.coord_array[2*id+1] = num_reactants_rev[0] * (num_reactants_rev[0] - 1)
+            elif (len(reaction.products) == 2) and (reaction.products[0] != reaction.products[1]):
+                self.coord_array[2 * id+1] = num_reactants_rev[0] * num_reactants_rev[1]
+            else:
+                raise RuntimeError("Only single and bimolecular reactions supported by this simulation")
+        self.propensity_array = np.multiply(self.rate_constants, self.coord_array)
+        self.total_propensity = np.sum(self.propensity_array)
+        print("Initial total propensity = ", self.total_propensity)
         self.data = {"times": list(),
                      "reactions": list(),
                      "state": dict()}
@@ -60,7 +103,7 @@ class ReactionPropagator:
     def state(self):
         return self._state
 
-    def get_propensity(self, reaction, reaction_ind, reverse):
+    def get_propensity(self, reaction, reverse):
         """
         Calculate the propensity for a particular reaction, based on the
         number of molecules for the reactants and the reaction rate constant.
@@ -99,9 +142,9 @@ class ReactionPropagator:
             h_prop = num_mols_list[0] * num_mols_list[1]
         else:
             raise RuntimeError("Only single and bimolecular reactions supported by this simulation")
-        propensity = h_prop * self.rate_constants[reaction_ind]
+        #propensity = h_prop * self.rate_constants[reaction_ind]
         #propensity = h_prop * k
-        return propensity
+        return h_prop
         # for testing:
         #return [reaction.reaction_type, reaction.reactants, reaction.products, reaction.rate_calculator.alpha , reaction.transition_state, "propensity = " + str(propensity), "free energy from code = " + str(reaction.free_energy()["free_energy_A"]), "calculated free energy ="  + str(-sum([r.free_energy() for r in reaction.reactants]) +  sum([p.free_energy() for p in reaction.products])),
                 #"calculated k = " +  str(k_b * 298.15 / h * np.exp(-1 * (-sum([r.free_energy() for r in reaction.reactants]) +  sum([p.free_energy() for p in reaction.products]) ) * 96487 / (R * 298.15))), "k from Rxn class = " +  str(k)  ]
@@ -163,45 +206,39 @@ class ReactionPropagator:
 
             ## Obtain reaction propensities, on which the probability distributions of
             ## time and reaction choice depends.
-            time_start = time.time()
-            total_propensity = 0
-            propensity_array = np.array([])
-            rxn_ind_array = np.array([])
-            #propensity_list = list()
-            for i, reaction in self.reactions.items():
-                if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
-                    rxn_ind = 2*i
-                    for_propensity = self.get_propensity(reaction, rxn_ind, reverse=False)
-                    propensity_array = np.append(propensity_array, for_propensity)
-                    rxn_ind_array = np.append(rxn_ind_array, rxn_ind)
-                    #propensity_list.append(for_propensity)
-                    total_propensity += for_propensity
-                # else:
-                #     propensity_array = np.append(propensity_array, 0)
-                if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.products]):
-                    rxn_ind = 2*i + 1
-                    rev_propensity = self.get_propensity(reaction, rxn_ind, reverse=True)
-                    propensity_array = np.append(propensity_array, rev_propensity)
-                    rxn_ind_array = np.append(rxn_ind_array, rxn_ind)
-                    #propensity_list.append(rev_propensity)
-                    total_propensity += rev_propensity
-                # else:
-                #     propensity_array = np.append(propensity_array, 0)
 
-            time_end = time.time()
-            print("Prop calc time = ", time_end - time_start)
-            print("tot-pro = ", total_propensity)
+            #propensity_list = list()
+            # for i, reaction in self.reactions.items():
+            #     if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.reactants]):
+            #         rxn_ind = 2*i
+            #         for_propensity = self.get_propensity(reaction, rxn_ind, reverse=False)
+            #         propensity_array = np.append(propensity_array, for_propensity)
+            #         rxn_ind_array = np.append(rxn_ind_array, rxn_ind)
+            #         #propensity_list.append(for_propensity)
+            #         total_propensity += for_propensity
+            #     # else:
+            #     #     propensity_array = np.append(propensity_array, 0)
+            #     if all([self._state.get(r.entry_id, 0) > 0 for r in reaction.products]):
+            #         rxn_ind = 2*i + 1
+            #         rev_propensity = self.get_propensity(reaction, rxn_ind, reverse=True)
+            #         propensity_array = np.append(propensity_array, rev_propensity)
+            #         rxn_ind_array = np.append(rxn_ind_array, rxn_ind)
+            #         #propensity_list.append(rev_propensity)
+            #         total_propensity += rev_propensity
+            #     # else:
+            #     #     propensity_array = np.append(propensity_array, 0)
+
             ## drawing random numbers on uniform (0,1) distrubution
             r1 = random.random()
             r2 = random.random()
             ## Obtaining a time step tau from the probability distrubution
             ## P(t) = a*exp(-at) --> probability that any reaction occurs at time t
-            tau = -np.log(r1) / total_propensity
+            tau = -np.log(r1) / self.total_propensity
 
             ## Choosing a reaction mu; need a cumulative sum of rxn propensities
             ## Discrete probability distrubution of reaction choice
             time_start = time.time()
-            random_propensity = r2 * total_propensity
+            random_propensity = r2 * self.total_propensity
 
             # prop_sum = 0
             # for i, reaction in self.reactions.items():
@@ -219,8 +256,7 @@ class ReactionPropagator:
             #             reaction_mu = reaction
             #             reverse = True
             #             break
-
-            reaction_choice_ind = rxn_ind_array[np.where(np.cumsum(propensity_array) > random_propensity)[0][0]]
+            reaction_choice_ind = self.rxn_ind[np.where(np.cumsum(self.propensity_array) >=  random_propensity)[0][0]]
             reaction_mu = self.reactions[math.floor(reaction_choice_ind / 2 )]
 
             if reaction_choice_ind % 2:
@@ -231,6 +267,23 @@ class ReactionPropagator:
             print("Time to choose reaction = ", time_end - time_start)
 
             self.update_state(reaction_mu, reverse)
+            time_start = time.time()
+            reactions_to_change = list()
+            for reactant in reaction_mu.reactants:
+                reactions_to_change.extend(self.species_rxn_mapping[reactant.entry_id])
+            for product in reaction_mu.products:
+                reactions_to_change.extend(self.species_rxn_mapping[product.entry_id])
+            reactions_to_change = set(reactions_to_change)
+
+            for rxn_ind in reactions_to_change:
+                this_h = self.get_propensity(self.reactions[math.floor(rxn_ind / 2)], reverse)
+                self.coord_array[rxn_ind] = this_h
+
+            self.propensity_array = np.multiply(self.rate_constants, self.coord_array)
+            self.total_propensity = np.sum(self.propensity_array)
+            time_end = time.time()
+            print("Total prop = ", self.total_propensity)
+            print("Time to calculate total propensity = ", time_end - time_start)
 
             self.data["times"].append(tau)
             self.data["reactions"].append({"reaction": reaction_mu, "reverse": reverse})

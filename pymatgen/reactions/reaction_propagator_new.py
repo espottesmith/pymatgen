@@ -194,7 +194,7 @@ class ReactionPropagator:
         self._state = self.initial_state
         t = 0.0
         self.data = {"times": list(),
-                     "reactions": list(),
+                     "reaction_ids": list(),
                      "state": dict()}
 
         for mol_id in self._state.keys():
@@ -237,7 +237,7 @@ class ReactionPropagator:
 
             ## Choosing a reaction mu; need a cumulative sum of rxn propensities
             ## Discrete probability distrubution of reaction choice
-            time_start = time.time()
+            #time_start = time.time()
             random_propensity = r2 * self.total_propensity
 
             # prop_sum = 0
@@ -263,11 +263,11 @@ class ReactionPropagator:
                 reverse = True
             else:
                 reverse = False
-            time_end = time.time()
-            print("Time to choose reaction = ", time_end - time_start)
+            #time_end = time.time()
+            #print("Time to choose reaction = ", time_end - time_start)
 
             self.update_state(reaction_mu, reverse)
-            time_start = time.time()
+            #time_start = time.time()
             reactions_to_change = list()
             for reactant in reaction_mu.reactants:
                 reactions_to_change.extend(self.species_rxn_mapping[reactant.entry_id])
@@ -285,15 +285,16 @@ class ReactionPropagator:
 
             self.propensity_array = np.multiply(self.rate_constants, self.coord_array)
             self.total_propensity = np.sum(self.propensity_array)
-            time_end = time.time()
-            print("Total prop = ", self.total_propensity)
-            print("Time to calculate total propensity = ", time_end - time_start)
+            #time_end = time.time()
+            #print("Total prop = ", self.total_propensity)
+            #print("Time to calculate total propensity = ", time_end - time_start)
 
             self.data["times"].append(tau)
-            self.data["reactions"].append({"reaction": reaction_mu, "reverse": reverse})
+            #self.data["reaction_ids"].append({"reaction": reaction_mu, "reverse": reverse})
+            self.data["reaction_ids"].append(reaction_choice_ind)
 
             t += tau
-            print(t)
+            #print(t)
             if reverse:
                 for reactant in reaction_mu.products:
                     self.data["state"][reactant.entry_id].append((t,
@@ -393,6 +394,7 @@ class ReactionPropagator:
                         this_composition = entry.molecule.composition.alphabetical_formula
                         this_charge = entry.molecule.charge
                         this_label = this_composition + " " + str(this_charge)
+                        #this_label = entry.entry_id
                         break
 
                 ax.plot(ts, nums, label = this_label)
@@ -418,3 +420,67 @@ class ReactionPropagator:
         # else:
         #     fig.savefig(filename, dpi=600)
         plt.savefig(filename)
+
+    def reaction_analysis(self, data = None):
+        if data == None:
+            data = self.data
+        reaction_analysis_results = dict()
+        reaction_analysis_results["endo_rxns"] = dict()
+        rxn_count = np.zeros(2*self.num_rxns)
+        endothermic_rxns_count = 0
+        fired_reaction_ids = set(self.data["reaction_ids"])
+        for ind in fired_reaction_ids:
+            this_count = data["reaction_ids"].count(ind)
+            rxn_count[ind] = this_count
+            this_rxn = self.reactions[math.floor(ind/2)]
+            if ind % 2: # reverse rxn
+                if this_rxn.free_energy()["free_energy_B"] > 0: # endothermic reaction
+                    endothermic_rxns_count += this_count
+            else:
+                if this_rxn.free_energy()["free_energy_A"] > 0: # endothermic reaction
+                    endothermic_rxns_count += this_count
+        reaction_analysis_results["endo_rxns"]["endo_count"] = endothermic_rxns_count
+        sorted_rxn_ids = sorted(self.rxn_ind, key = lambda k: rxn_count[k], reverse = True)
+        bar_rxns_labels = list()
+        bar_rxns_count = list()
+        bar_rxns_x = list()
+        for i in range(15): # analysis on most frequent reactions
+            this_rxn_id = sorted_rxn_ids[i]
+            bar_rxns_x.append(str(this_rxn_id))
+            this_reaction = self.reactions[math.floor(this_rxn_id / 2 )]
+            reaction_analysis_results[this_rxn_id] = dict()
+            reaction_analysis_results[this_rxn_id]["count"] = rxn_count[this_rxn_id]
+            reaction_analysis_results[this_rxn_id]["reactants"] = list()
+            reaction_analysis_results[this_rxn_id]["products"] = list()
+            this_label = str()
+            if this_rxn_id % 2: # reverse rxn
+                reaction_analysis_results[this_rxn_id]["reaction_type"] = this_reaction.reaction_type()["rxn_type_B"]
+                this_label += this_reaction.reaction_type()["rxn_type_B"]
+                for reactant in this_reaction.products:
+                    reaction_analysis_results[this_rxn_id]["reactants"].append((reactant.molecule.composition.alphabetical_formula , reactant.entry_id))
+                    this_label += " " + reactant.molecule.composition.alphabetical_formula
+                for product in this_reaction.reactants:
+                    reaction_analysis_results[this_rxn_id]["products"].append((product.molecule.composition.alphabetical_formula , product.entry_id))
+                    this_label += " " + product.molecule.composition.alphabetical_formula
+                reaction_analysis_results[this_rxn_id]["rate constant"] = this_reaction.rate_constant()["k_B"]
+            else: # forward rxn
+                reaction_analysis_results[this_rxn_id]["reaction_type"] = this_reaction.reaction_type()["rxn_type_A"]
+                this_label += this_reaction.reaction_type()["rxn_type_A"]
+                for reactant in this_reaction.reactants:
+                    reaction_analysis_results[this_rxn_id]["reactants"].append((reactant.molecule.composition.alphabetical_formula, reactant.entry_id))
+                    this_label += " " + reactant.molecule.composition.alphabetical_formula
+                for product in this_reaction.products:
+                    reaction_analysis_results[this_rxn_id]["products"].append((product.molecule.composition.alphabetical_formula , product.entry_id))
+                    this_label += " " + product.molecule.composition.alphabetical_formula
+                reaction_analysis_results[this_rxn_id]["rate constant"] = this_reaction.rate_constant()["k_A"]
+            bar_rxns_labels.append(this_label)
+            bar_rxns_count.append(reaction_analysis_results[this_rxn_id]["count"])
+        fig = plt.figure()
+        plt.bar(bar_rxns_x[:10], bar_rxns_count[:10])
+
+        plt.savefig("li_limited_top_rxns")
+        return reaction_analysis_results
+
+
+
+

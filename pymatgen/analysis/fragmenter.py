@@ -90,7 +90,7 @@ class Fragmenter(MSONable):
             edges = {(e[0], e[1]): None for e in edges}
             self.mol_graph = MoleculeGraph.with_edges(molecule, edges)
 
-        if ("Li" in molecule.composition or "Mg" in molecule.composition) and use_metal_edge_extender:
+        if ("Li" in molecule.composition or "Mg" in molecule.composition or "Ca" in molecule.composition or "Zn" in molecule.composition) and use_metal_edge_extender:
             self.mol_graph = metal_edge_extender(self.mol_graph)
 
         self.prev_unique_frag_dict = prev_unique_frag_dict or {}

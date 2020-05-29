@@ -40,7 +40,7 @@ class ReactionPropagator:
         self.initial_state = dict()
         ## State will have number of molecules, instead of concentration
         for molecule_id, concentration in self.initial_state_conc.items():
-            num_mols = int(concentration * self.volume * N_A  *1000) # volume in m^3
+            num_mols = int(concentration * self.volume * N  * 1000)# volume in m^3
             self.initial_state[molecule_id] = num_mols
             self._state[molecule_id] = num_mols
         """Initial loop through all reactions in network: make arrays for initial propensity calculation. 
@@ -416,7 +416,7 @@ class ReactionPropagator:
         print("top 15 species ids: ", ids_sorted[0:15])
         # Only label most prominent products
         colors = plt.cm.get_cmap('hsv', num_label)
-        id = 0
+        this_id = 0
         for mol_id in data["state"]:
             ts = np.array([e[0] for e in data["state"][mol_id]])
             nums = np.array([e[1] for e in data["state"][mol_id]])
@@ -426,8 +426,8 @@ class ReactionPropagator:
                         this_composition = entry.molecule.composition.alphabetical_formula
                         this_charge = entry.molecule.charge
                         this_label = this_composition + " " + str(this_charge)
-                        this_color = colors(id)
-                        id +=1
+                        this_color = colors(this_id)
+                        this_id +=1
                         #this_label = entry.entry_id
                         break
 
@@ -449,9 +449,10 @@ class ReactionPropagator:
         #           ncol=5, fontsize="small")
 
 
-        # if filename is None:
-        #     plt.show()
-        # else:
+        if filename is None:
+            plt.show()
+        else:
+            plt.savefig(filename)
         #     fig.savefig(filename, dpi=600)
         if filename == None:
             plt.savefig("SimulationRun")

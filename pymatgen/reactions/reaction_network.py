@@ -91,8 +91,8 @@ class Reaction(MSONable, metaclass=ABCMeta):
         else:
             self.rate_calculator = ReactionRateCalculator(reactants, products,
                                                           self.transition_state)
-        self.reactant_ids = list({e.entry_id for e in self.reactants})
-        self.product_ids = list({e.entry_id for e in self.products})
+        self.reactant_ids = [e.entry_id for e in self.reactants]
+        self.product_ids = [e.entry_id for e in self.products]
         self.parameters = parameters or dict()
 
     def update_calculator(self, transition_state=None, reference=None):
@@ -217,7 +217,7 @@ class RedoxReaction(Reaction):
         isomorphic molecule graphs
 
     Args:
-       reactant([MolecularEntry]): list of single molecular entry
+       reactant([MoleculeEntry]): list of single molecular entry
        product([MoleculeEntry]): list of single molecular entry
        transition_state (MoleculeEntry): MoleculeEntry representing the
            transition state of the reaction.
@@ -425,8 +425,8 @@ class IntramolSingleBondChangeReaction(Reaction):
         return reactions, classes
 
     def reaction_type(self):
-        val0 = self.reactant.charge
-        val1 = self.product.charge
+        val0 = len(self.reactant.mol_graph.graph.edges())
+        val1 = len(self.product.mol_graph.graph.edges())
         if val1 < val0:
             rxn_type_A = "Intramolecular single bond breakage"
             rxn_type_B = "Intramolecular single bond formation"

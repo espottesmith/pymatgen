@@ -303,14 +303,16 @@ class RedoxReaction(Reaction):
     def rate_constant(self):
         rate_constant = dict()
         free_energy = self.free_energy()
-
+        ea = 10000  # [J/mol] activation barrier for exothermic reactions
         if free_energy["free_energy_A"] < 0:
-            rate_constant["k_A"] = k * 298.15 / h
+            #rate_constant["k_A"] = k * 298.15 / h
+            rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * ea / (R * 298.15) )
         else:
             rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
 
         if free_energy["free_energy_B"] < 0:
-            rate_constant["k_B"] = k * 298.15 / h
+            #rate_constant["k_B"] = k * 298.15 / h
+            rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * ea / (R * 298.15))
         else:
             rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
 

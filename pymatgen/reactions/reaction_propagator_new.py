@@ -6,6 +6,7 @@ import math
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.constants import h, k, R, N_A, pi
 import time
 
 
@@ -15,11 +16,6 @@ __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 __credit__ = "Xiaowei Xie"
 
-k_b = 1.38064852e-23
-T = 298.15
-h = 6.62607015e-34
-R = 8.3144598
-N = 6.0221409e+23
 
 
 class ReactionPropagator:
@@ -44,7 +40,7 @@ class ReactionPropagator:
         self.initial_state = dict()
         ## State will have number of molecules, instead of concentration
         for molecule_id, concentration in self.initial_state_conc.items():
-            num_mols = int(concentration * self.volume * N  *1000) # volume in m^3
+            num_mols = int(concentration * self.volume * N_A  *1000) # volume in m^3
             self.initial_state[molecule_id] = num_mols
             self._state[molecule_id] = num_mols
         """Initial loop through all reactions in network: make arrays for initial propensity calculation. 
@@ -103,10 +99,10 @@ class ReactionPropagator:
     def state(self):
         return self._state
 
-    def get_propensity(self, reaction, reverse):
+    def get_coordination(self, reaction, reverse):
         """
-        Calculate the propensity for a particular reaction, based on the
-        number of molecules for the reactants and the reaction rate constant.
+        Calculate the coordination number for a particular reaction, based on the reaction type
+        number of molecules for the reactants.
 
         Args:
             reaction (Reaction)
@@ -178,6 +174,40 @@ class ReactionPropagator:
                 else:
                     self._state[p_id] = 1
         return self._state # for testing
+
+    def alter_rxn_by_product(self, product_id, k_factor_change, reaction_classes = None):
+        """Alter the rate constant of a reaction, based on the product(s) formed. For example, decreasing the rate
+        constant for reactions that form undesired/unstable products. The change of k is directly proportional
+        to the probability of reaction firing.
+
+        Args:
+            product (molecule entry id):
+            k_magnitude_change (float): factor of change desired to be made to rate constant
+            reaction_classes (list): type of reactions to consider
+
+        Returns:
+            altered self.rate_constants
+        """
+        # search for rxns that form product
+        # change the corresponding rate constants based on the factor of change
+        new_k = k * 298.15 / h * k_factor_change
+        rxn_update = self.species_rxn_mapping[product_id]
+        # Create the list of rxn ind to update k for
+        for ind in rxn_update:
+            this_rxn = self.reactions[math.floor(ind / 2)]
+            if reaction_classes is None:
+                if ind % 2:
+                    self.rate_constants[ind - 1] = new_k
+                else:
+                    self.rate_constants[ind + 1] = new_k
+            else:
+                for rxn_class in reaction_classes:
+                    if this_rxn.rate_type["class"] == rxn_class:
+                        if ind % 2:
+                            self.rate_constants[ind - 1] = new_k
+                        else:
+                            self.rate_constants[ind + 1] = new_k
+        return self.rate_constants
 
     def simulate(self, t_end):
         """
@@ -280,21 +310,21 @@ class ReactionPropagator:
                     this_reverse = True
                 else:
                     this_reverse = False
-                this_h = self.get_propensity(self.reactions[math.floor(rxn_ind / 2)], this_reverse)
+                this_h = self.get_coordination(self.reactions[math.floor(rxn_ind / 2)], this_reverse)
                 self.coord_array[rxn_ind] = this_h
 
             self.propensity_array = np.multiply(self.rate_constants, self.coord_array)
             self.total_propensity = np.sum(self.propensity_array)
             #time_end = time.time()
-            #print("Total prop = ", self.total_propensity)
+            # print("Total prop = ", self.total_propensity)
             #print("Time to calculate total propensity = ", time_end - time_start)
 
             self.data["times"].append(tau)
-            #self.data["reaction_ids"].append({"reaction": reaction_mu, "reverse": reverse})
+            # self.data["reaction_ids"].append({"reaction": reaction_mu, "reverse": reverse})
             self.data["reaction_ids"].append(reaction_choice_ind)
 
             t += tau
-            #print(t)
+            # print(t)
             if reverse:
                 for reactant in reaction_mu.products:
                     self.data["state"][reactant.entry_id].append((t,
@@ -385,6 +415,8 @@ class ReactionPropagator:
         ids_sorted = [i[0] for i in ids_sorted][::-1]
         print("top 15 species ids: ", ids_sorted[0:15])
         # Only label most prominent products
+        colors = plt.cm.get_cmap('hsv', num_label)
+        id = 0
         for mol_id in data["state"]:
             ts = np.array([e[0] for e in data["state"][mol_id]])
             nums = np.array([e[1] for e in data["state"][mol_id]])
@@ -394,10 +426,12 @@ class ReactionPropagator:
                         this_composition = entry.molecule.composition.alphabetical_formula
                         this_charge = entry.molecule.charge
                         this_label = this_composition + " " + str(this_charge)
+                        this_color = colors(id)
+                        id +=1
                         #this_label = entry.entry_id
                         break
 
-                ax.plot(ts, nums, label = this_label)
+                ax.plot(ts, nums, label = this_label, color = this_color)
             else:
                 ax.plot(ts, nums)
         if name is None:
@@ -419,7 +453,10 @@ class ReactionPropagator:
         #     plt.show()
         # else:
         #     fig.savefig(filename, dpi=600)
-        plt.savefig(filename)
+        if filename == None:
+            plt.savefig("SimulationRun")
+        else:
+            plt.savefig(filename)
 
     def reaction_analysis(self, data = None):
         if data == None:
@@ -475,9 +512,11 @@ class ReactionPropagator:
                 reaction_analysis_results[this_rxn_id]["rate constant"] = this_reaction.rate_constant()["k_A"]
             bar_rxns_labels.append(this_label)
             bar_rxns_count.append(reaction_analysis_results[this_rxn_id]["count"])
-        fig = plt.figure()
+        plt.figure()
         plt.bar(bar_rxns_x[:10], bar_rxns_count[:10])
-
+        plt.xlabel("Reaction Index")
+        plt.ylabel("Reaction Occurrence")
+        plt.title("Top Reactions, total " + str(len(self.data["times"])) + " reactions")
         plt.savefig("li_limited_top_rxns")
         return reaction_analysis_results
 

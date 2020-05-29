@@ -80,6 +80,10 @@ class Simulation_Li_Limited:
 
         self.initial_state = {li_id: self.li_conc, ec_id: self.ec_conc, emc_id: self.emc_conc, h2o_id: self.h2o_conc}
         self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
+        #
+        prd_to_change = [1357, 5061] # want to eliminate CH3, C2H5 formation
+        for id in prd_to_change:
+            self.propagator.alter_rxn_by_product(id, 1/10000)
 
         print("Initial state is: ", self.propagator.state)
         time_start = time.time()
@@ -110,8 +114,8 @@ li_conc = 1.0
 ec_conc = 3.57
 emc_conc = 7.0555
 volume = 10**-24
-t_end = 10**-12
-this_simulation = Simulation_Li_Limited("li_limited_t_1e-12", li_conc, ec_conc, emc_conc, volume, t_end)
+t_end = 10**-10
+this_simulation = Simulation_Li_Limited("li_limited_t_1e-10_ea_10000_noCH3_C2H5", li_conc, ec_conc, emc_conc, volume, t_end)
 time_data = this_simulation.time_analysis()
 print("Time analysis")
 print(time_data)

@@ -83,7 +83,7 @@ class Simulation_Li_Limited:
         #
         prd_to_change = [1357, 5061] # want to eliminate CH3, C2H5 formation
         for id in prd_to_change:
-            self.propagator.alter_rxn_by_product(id, 1/10000)
+            self.propagator.alter_rxn_by_product(id, 0)
 
         print("Initial state is: ", self.propagator.state)
         time_start = time.time()

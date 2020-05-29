@@ -96,7 +96,7 @@ class PymatgenTest(unittest.TestCase):
                 if not pass_test:
                     return False
             elif isinstance(v, (int, float)):
-                pass_test = PymatgenTest.assertAlmostEqual(v, v2)
+                pass_test = nptu.assert_almost_equal(v, v2)
                 if not pass_test:
                     return False
             else:

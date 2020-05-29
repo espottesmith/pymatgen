@@ -72,12 +72,18 @@ class Simulation_Li_Limited:
         ec_id = 2606
         emc_id = 1877
         h2o_id = 3306
+
         # start_time = time.time()
         # self.reaction_network = loadfn("rxn_network_mol_entries_limited_two.json")
         # end_time = time.time()
         #print("Time to load reaction network: ", end_time - start_time)
+
         self.initial_state = {li_id: self.li_conc, ec_id: self.ec_conc, emc_id: self.emc_conc, h2o_id: self.h2o_conc}
         self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
+        #
+        prd_to_change = [1357, 5061] # want to eliminate CH3, C2H5 formation
+        for id in prd_to_change:
+            self.propagator.alter_rxn_by_product(id, 0)
 
         print("Initial state is: ", self.propagator.state)
         time_start = time.time()
@@ -86,10 +92,14 @@ class Simulation_Li_Limited:
         print("Total simulation time is: ", time_end - time_start)
         self.propagator.plot_trajectory(self.simulation_data,"Simulation Results", self.file_name)
         print("Final state is: ", self.propagator.state)
+        self.rxn_analysis = self.propagator.reaction_analysis()
+        print("Reaction Analysis")
+        for analysis_key in self.rxn_analysis:
+            print(self.rxn_analysis[analysis_key])
 
-        pickle_out = open("pickle_simdata_" + self.file_name, "wb")
-        pickle.dump(self.simulation_data, pickle_out)
-        pickle_out.close()
+        #pickle_out = open("pickle_simdata_" + self.file_name, "wb")
+        #pickle.dump(self.simulation_data, pickle_out)
+        #pickle_out.close()
 
     def time_analysis(self):
         time_dict = dict()
@@ -104,9 +114,10 @@ li_conc = 1.0
 ec_conc = 3.57
 emc_conc = 7.0555
 volume = 10**-24
-t_end = 10**-11
-this_simulation = Simulation_Li_Limited("li_limited_t_1e-11_f", li_conc, ec_conc, emc_conc, volume, t_end)
+t_end = 10**-10
+this_simulation = Simulation_Li_Limited("li_limited_t_1e-10_ea_10000_noCH3_C2H5", li_conc, ec_conc, emc_conc, volume, t_end)
 time_data = this_simulation.time_analysis()
+print("Time analysis")
 print(time_data)
 
 # times = [10**-13, 10**-12, 10**-11, 10**-10, 10**-9]

@@ -1,28 +1,19 @@
-from abc import ABCMeta, abstractproperty, abstractmethod, abstractclassmethod
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 
-import logging
 import copy
 import itertools
-import heapq
 
 import numpy as np
-from scipy.constants import h, k, R, N_A, pi
+from scipy.constants import h, k, R
 
 import networkx as nx
 from networkx.readwrite import json_graph
 import networkx.algorithms.isomorphism as iso
-from networkx.algorithms import bipartite
 
-from monty.json import MSONable, MontyDecoder
+from monty.json import MSONable
 
-from pymatgen.analysis.graphs import MoleculeGraph, MolGraphSplitError
-from pymatgen.analysis.local_env import OpenBabelNN
-from pymatgen.io.babel import BabelMolAdaptor
-from pymatgen import Molecule
-from pymatgen.analysis.fragmenter import metal_edge_extender
+from pymatgen.analysis.graphs import MolGraphSplitError
 from pymatgen.entries.mol_entry import MoleculeEntry
-from pymatgen.core.composition import CompositionError
 from pymatgen.reactions.reaction_rates import (ReactionRateCalculator,
                                                ExpandedBEPRateCalculator)
 from pymatgen.util.classes import load_class
@@ -33,14 +24,14 @@ def categorize(reaction, classes, templates, environment, charge):
     Given reactants, products, and a local bonding environment, place a
         reaction into a reaction class.
 
-    Note: This is not designed for redox reactions
+    Note: This is not currently designed for redox reactions
 
     Args:
         reaction: Reaction object
         classes: dict of dicts representing families of reactions
+        templates: list of nx.Graph objects that define other classes
         environment: a nx.Graph object representing a submolecule that
             defines the type of reaction
-        templates: list of nx.Graph objects that define other classes
         charge: int representing the charge of the reaction
     Returns:
         classes: nested dict containing categorized reactions
@@ -70,6 +61,202 @@ def categorize(reaction, classes, templates, environment, charge):
     return classes, templates
 
 
+def get_node_names_1_2(reaction):
+    """
+    Give standard naming for reaction nodes.
+    Reaction must be of type 1 reactant -> 2 products.
+
+    Args:
+        reaction: any Reaction class object, ex. IntermolecularReaction
+    Returns:
+        names: list of str
+    """
+
+    entry = reaction.reactant
+    entry0 = reaction.product0
+    entry1 = reaction.product1
+
+    if entry0.parameters["ind"] <= entry1.parameters["ind"]:
+        two_mol_name = str(entry0.parameters["ind"]) + "+" + str(entry1.parameters["ind"])
+    else:
+        two_mol_name = str(entry1.parameters["ind"]) + "+" + str(entry0.parameters["ind"])
+
+    two_mol_name0 = str(entry0.parameters["ind"]) + "+PR_" + str(entry1.parameters["ind"])
+    two_mol_name1 = str(entry1.parameters["ind"]) + "+PR_" + str(entry0.parameters["ind"])
+    node_name_A = str(entry.parameters["ind"]) + "," + two_mol_name
+    node_name_B0 = two_mol_name0 + "," + str(entry.parameters["ind"])
+    node_name_B1 = two_mol_name1 + "," + str(entry.parameters["ind"])
+
+    return {"node_name_A": node_name_A, "node_name_B0": node_name_B0,
+            "node_name_B1": node_name_B1}
+
+
+def get_node_names_1_1(reaction):
+    """
+    Give standard naming for reaction nodes.
+    Reaction must be of type 1 reactant -> 1 product
+
+    Args:
+        reaction: any Reaction class object, ex. IntramolecularSingleBondChangeReaction
+    Returns:
+        names: list of str
+    """
+    entry0 = reaction.reactant
+    entry1 = reaction.product
+    node_name_A = str(entry0.parameters["ind"]) + "," + str(entry1.parameters["ind"])
+    node_name_B = str(entry1.parameters["ind"]) + "," + str(entry0.parameters["ind"])
+
+    return {"node_name_A": node_name_A, "node_name_B": node_name_B}
+
+
+def graph_rep_1_2(reaction) -> nx.DiGraph:
+    """
+    A method to convert a reaction type object into graph representation.
+    Reaction must be of type 1 reactant -> 2 products
+
+    Args:
+       reaction (any of the Reaction class object, ex. IntermolecularReaction)
+
+    Returns:
+        graph: nx.DiGraph representing the connections between the reactants,
+            products, and this reaction.
+    """
+
+    entry = reaction.reactant
+    entry0 = reaction.product0
+    entry1 = reaction.product1
+    graph = nx.DiGraph()
+
+    if entry0.parameters["ind"] <= entry1.parameters["ind"]:
+        two_mol_name_entry_ids = str(entry0.entry_id) + "+" + str(entry1.entry_id)
+    else:
+        two_mol_name_entry_ids = str(entry1.entry_id) + "+" + str(entry0.entry_id)
+
+    names = get_node_names_1_2(reaction)
+    node_name_A = names['node_name_A']
+    node_name_B0 = names['node_name_B0']
+    node_name_B1 = names['node_name_B1']
+
+    two_mol_entry_ids0 = str(entry0.entry_id) + "+PR_" + str(entry1.entry_id)
+    two_mol_entry_ids1 = str(entry1.entry_id) + "+PR_" + str(entry0.entry_id)
+    entry_ids_name_A = str(entry.entry_id) + "," + two_mol_name_entry_ids
+    entry_ids_name_B0 = two_mol_entry_ids0 + "," + str(entry.entry_id)
+    entry_ids_name_B1 = two_mol_entry_ids1 + "," + str(entry.entry_id)
+
+    rxn_type_A = reaction.reaction_type()["rxn_type_A"]
+    rxn_type_B = reaction.reaction_type()["rxn_type_B"]
+    energy_A = reaction.energy()["energy_A"]
+    energy_B = reaction.energy()["energy_B"]
+    free_energy_A = reaction.free_energy()["free_energy_A"]
+    free_energy_B = reaction.free_energy()["free_energy_B"]
+
+    graph.add_node(node_name_A, rxn_type=rxn_type_A, bipartite=1, energy=energy_A, free_energy=free_energy_A,
+                   entry_ids=entry_ids_name_A)
+
+    graph.add_edge(entry.parameters["ind"],
+                   node_name_A,
+                   softplus=ReactionNetwork.softplus(free_energy_A),
+                   exponent=ReactionNetwork.exponent(free_energy_A),
+                   weight=1.0
+                   )
+
+    graph.add_edge(node_name_A,
+                   entry0.parameters["ind"],
+                   softplus=0.0,
+                   exponent=0.0,
+                   weight=1.0
+                   )
+    graph.add_edge(node_name_A,
+                   entry1.parameters["ind"],
+                   softplus=0.0,
+                   exponent=0.0,
+                   weight=1.0
+                   )
+
+    graph.add_node(node_name_B0, rxn_type=rxn_type_B, bipartite=1, energy=energy_B, free_energy=free_energy_B,
+                   entry_ids=entry_ids_name_B0)
+    graph.add_node(node_name_B1, rxn_type=rxn_type_B, bipartite=1, energy=energy_B, free_energy=free_energy_B,
+                   entry_ids=entry_ids_name_B1)
+
+    graph.add_edge(node_name_B0,
+                   entry.parameters["ind"],
+                   softplus=0.0,
+                   exponent=0.0,
+                   weight=1.0
+                   )
+    graph.add_edge(node_name_B1,
+                   entry.parameters["ind"],
+                   softplus=0.0,
+                   exponent=0.0,
+                   weight=1.0
+                   )
+
+    graph.add_edge(entry0.parameters["ind"],
+                   node_name_B0,
+                   softplus=ReactionNetwork.softplus(free_energy_B),
+                   exponent=ReactionNetwork.exponent(free_energy_B),
+                   weight=1.0
+                   )
+    graph.add_edge(entry1.parameters["ind"],
+                   node_name_B1,
+                   softplus=ReactionNetwork.softplus(free_energy_B),
+                   exponent=ReactionNetwork.exponent(free_energy_B),
+                   weight=1.0)
+    return graph
+
+
+def graph_rep_1_1(reaction) -> nx.DiGraph:
+
+    """
+    A method to convert a reaction type object into graph representation. Reaction much be of type 1 reactant -> 1
+    product
+
+    Args:
+       reaction (any of the reaction class object, ex. RedoxReaction, IntramolSingleBondChangeReaction):
+    """
+
+    entry0 = reaction.reactant
+    entry1 = reaction.product
+    graph = nx.DiGraph()
+    node_name_A = get_node_names_1_1(reaction)["node_name_A"]
+    node_name_B = get_node_names_1_1(reaction)["node_name_B"]
+    rxn_type_A = reaction.reaction_type()["rxn_type_A"]
+    rxn_type_B = reaction.reaction_type()["rxn_type_B"]
+    energy_A = reaction.energy()["energy_A"]
+    energy_B = reaction.energy()["energy_B"]
+    free_energy_A = reaction.free_energy()["free_energy_A"]
+    free_energy_B = reaction.free_energy()["free_energy_B"]
+    entry_ids_A = str(entry0.entry_id) + "," + str(entry1.entry_id)
+    entry_ids_B = str(entry1.entry_id) + "," + str(entry0.entry_id)
+
+    graph.add_node(node_name_A, rxn_type=rxn_type_A, bipartite=1, energy=energy_A, free_energy=free_energy_A,
+                   entry_ids=entry_ids_A)
+    graph.add_edge(entry0.parameters["ind"],
+                   node_name_A,
+                   softplus=ReactionNetwork.softplus(free_energy_A),
+                   exponent=ReactionNetwork.exponent(free_energy_A),
+                   weight=1.0)
+    graph.add_edge(node_name_A,
+                   entry1.parameters["ind"],
+                   softplus=0.0,
+                   exponent=0.0,
+                   weight=1.0)
+    graph.add_node(node_name_B, rxn_type=rxn_type_B, bipartite=1,energy_B=energy_B,free_energy=free_energy_B,
+                   entry_ids=entry_ids_B)
+    graph.add_edge(entry1.parameters["ind"],
+                   node_name_B,
+                   softplus=ReactionNetwork.softplus(free_energy_B),
+                   exponent=ReactionNetwork.exponent(free_energy_B),
+                   weight=1.0)
+    graph.add_edge(node_name_B,
+                   entry0.parameters["ind"],
+                   softplus=0.0,
+                   exponent=0.0,
+                   weight=1.0)
+
+    return graph
+
+
 class Reaction(MSONable, metaclass=ABCMeta):
     """
        Abstract class defining reactions.
@@ -93,6 +280,7 @@ class Reaction(MSONable, metaclass=ABCMeta):
                                                           self.transition_state)
         self.reactant_ids = [e.entry_id for e in self.reactants]
         self.product_ids = [e.entry_id for e in self.products]
+        self.entry_ids = self.reactant_ids + self.product_ids
         self.parameters = parameters or dict()
 
     def update_calculator(self, transition_state=None, reference=None):
@@ -154,11 +342,11 @@ class Reaction(MSONable, metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def free_energy(self):
+    def free_energy(self, temperature=298.15):
         pass
 
     @abstractmethod
-    def rate_constant(self):
+    def rate_constant(self, temperature=298.15):
         pass
 
     def as_dict(self) -> dict:
@@ -196,10 +384,8 @@ class Reaction(MSONable, metaclass=ABCMeta):
             ts = MoleculeEntry.from_dict(d["transition_state"])
             rate_calculator = ReactionRateCalculator.from_dict(d["rate_calculator"])
 
-        parameters = d["parameters"]
-
         reaction = cls(reactants, products, transition_state=ts,
-                       parameters=parameters)
+                       parameters=d["parameters"])
         reaction.rate_calculator = rate_calculator
         return reaction
 
@@ -226,7 +412,9 @@ class RedoxReaction(Reaction):
     def __init__(self, reactant, product, transition_state=None, parameters=None):
         if len(reactant) != 1 or len(product) != 1:
             raise RuntimeError("One electron redox requires two lists that each contain one entry!")
+        self.reactants = reactant
         self.reactant = reactant[0]
+        self.products = product
         self.product = product[0]
         self.electron_free_energy = None
         super().__init__([self.reactant], [self.product],
@@ -270,12 +458,12 @@ class RedoxReaction(Reaction):
         reaction_type = {"class": "RedoxReaction", "rxn_type_A": rxn_type_A, "rxn_type_B": rxn_type_B}
         return reaction_type
 
-    def free_energy(self):
+    def free_energy(self, temperature=298.15):
         entry0 = self.reactant
         entry1 = self.product
         if entry1.free_energy() is not None and entry0.free_energy() is not None:
-            free_energy_A = entry1.free_energy() - entry0.free_energy()
-            free_energy_B = entry0.free_energy() - entry1.free_energy()
+            free_energy_A = entry1.free_energy(temp=temperature) - entry0.free_energy(temp=temperature)
+            free_energy_B = entry0.free_energy(temp=temperature) - entry1.free_energy(temp=temperature)
 
             if self.reaction_type()["rxn_type_A"] == "One electron reduction":
                 free_energy_A += -self.electron_free_energy
@@ -300,21 +488,21 @@ class RedoxReaction(Reaction):
 
         return {"energy_A": energy_A, "energy_B": energy_B}
 
-    def rate_constant(self):
+    def rate_constant(self, temperature=298.15):
         rate_constant = dict()
-        free_energy = self.free_energy()
+        free_energy = self.free_energy(temperature=temperature)
         ea = 10000  # [J/mol] activation barrier for exothermic reactions
         if free_energy["free_energy_A"] < 0:
             #rate_constant["k_A"] = k * 298.15 / h
-            rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * ea / (R * 298.15) )
+            rate_constant["k_A"] = k * temperature / h * np.exp(-1 * ea / (R * temperature) )
         else:
-            rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+            rate_constant["k_A"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * temperature))
 
         if free_energy["free_energy_B"] < 0:
             #rate_constant["k_B"] = k * 298.15 / h
-            rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * ea / (R * 298.15))
+            rate_constant["k_B"] = k * temperature / h * np.exp(-1 * ea / (R * temperature))
         else:
-            rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+            rate_constant["k_B"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * temperature))
 
         return rate_constant
 
@@ -437,12 +625,12 @@ class IntramolSingleBondChangeReaction(Reaction):
         reaction_type = {"class": "IntramolSingleBondChangeReaction", "rxn_type_A": rxn_type_A, "rxn_type_B": rxn_type_B}
         return reaction_type
 
-    def free_energy(self):
+    def free_energy(self, temperature=298.15):
         entry0 = self.reactant
         entry1 = self.product
         if entry1.free_energy() is not None and entry0.free_energy() is not None:
-            free_energy_A = entry1.free_energy() - entry0.free_energy()
-            free_energy_B = entry0.free_energy() - entry1.free_energy()
+            free_energy_A = entry1.free_energy(temp=temperature) - entry0.free_energy(temp=temperature)
+            free_energy_B = entry0.free_energy(temp=temperature) - entry1.free_energy(temp=temperature)
         else:
             free_energy_A = None
             free_energy_B = None
@@ -462,26 +650,28 @@ class IntramolSingleBondChangeReaction(Reaction):
 
         return {"energy_A": energy_A, "energy_B": energy_B}
 
-    def rate_constant(self):
+    def rate_constant(self, temperature=298.15):
         if isinstance(self.rate_calculator, ReactionRateCalculator):
-            return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+            return {"k_A": self.rate_calculator.calculate_rate_constant(temperature=temperature),
+                    "k_B": self.rate_calculator.calculate_rate_constant(temperature=temperature,
+                                                                        reverse=True)}
         elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
-            return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+            return {"k_A": self.rate_calculator.calculate_rate_constant(temperature=temperature),
+                    "k_B": self.rate_calculator.calculate_rate_constant(temperature=temperature,
+                                                                        reverse=True)}
         else:
             rate_constant = dict()
-            free_energy = self.free_energy()
+            free_energy = self.free_energy(temperature=temperature)
 
             if free_energy["free_energy_A"] < 0:
-                rate_constant["k_A"] = k * 298.15 / h
+                rate_constant["k_A"] = k * temperature / h
             else:
-                rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+                rate_constant["k_A"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * temperature))
 
             if free_energy["free_energy_B"] < 0:
-                rate_constant["k_B"] = k * 298.15 / h
+                rate_constant["k_B"] = k * temperature / h
             else:
-                rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+                rate_constant["k_B"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * temperature))
 
             return rate_constant
 
@@ -603,14 +793,14 @@ class IntermolecularReaction(Reaction):
         reaction_type = {"class": "IntermolecularReaction", "rxn_type_A": rxn_type_A, "rxn_type_B": rxn_type_B}
         return reaction_type
 
-    def free_energy(self):
+    def free_energy(self, temperature=298.15):
         entry = self.reactant
         entry0 = self.product0
         entry1 = self.product1
 
         if entry1.free_energy() is not None and entry0.free_energy() is not None and entry.free_energy() is not None:
-            free_energy_A = entry0.free_energy() + entry1.free_energy() - entry.free_energy()
-            free_energy_B = entry.free_energy() - entry0.free_energy() - entry1.free_energy()
+            free_energy_A = entry0.free_energy(temp=temperature) + entry1.free_energy(temp=temperature) - entry.free_energy(temp=temperature)
+            free_energy_B = entry.free_energy(temp=temperature) - entry0.free_energy(temp=temperature) - entry1.free_energy(temp=temperature)
 
         else:
             free_energy_A = None
@@ -633,26 +823,28 @@ class IntermolecularReaction(Reaction):
 
         return {"energy_A": energy_A, "energy_B": energy_B}
 
-    def rate_constant(self):
+    def rate_constant(self, temperature=298.15):
         if isinstance(self.rate_calculator, ReactionRateCalculator):
-            return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+            return {"k_A": self.rate_calculator.calculate_rate_constant(temperature=temperature),
+                    "k_B": self.rate_calculator.calculate_rate_constant(temperature=temperature,
+                                                                        reverse=True)}
         elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
-            return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+            return {"k_A": self.rate_calculator.calculate_rate_constant(temperature=temperature),
+                    "k_B": self.rate_calculator.calculate_rate_constant(temperature=temperature,
+                                                                        reverse=True)}
         else:
             rate_constant = dict()
-            free_energy = self.free_energy()
+            free_energy = self.free_energy(temperature=temperature)
 
             if free_energy["free_energy_A"] < 0:
-                rate_constant["k_A"] = k * 298.15 / h
+                rate_constant["k_A"] = k * temperature / h
             else:
-                rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+                rate_constant["k_A"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * temperature))
 
             if free_energy["free_energy_B"] < 0:
-                rate_constant["k_B"] = k * 298.15 / h
+                rate_constant["k_B"] = k * temperature / h
             else:
-                rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+                rate_constant["k_B"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * temperature))
 
             return rate_constant
 
@@ -808,14 +1000,14 @@ class CoordinationBondChangeReaction(Reaction):
         reaction_type = {"class": "CoordinationBondChangeReaction", "rxn_type_A": rxn_type_A, "rxn_type_B": rxn_type_B}
         return reaction_type
 
-    def free_energy(self):
+    def free_energy(self, temperature=298.15):
         entry = self.reactant
         entry0 = self.product0
         entry1 = self.product1
 
         if entry1.free_energy() is not None and entry0.free_energy() is not None and entry.free_energy() is not None:
-            free_energy_A = entry0.free_energy() + entry1.free_energy() - entry.free_energy()
-            free_energy_B = entry.free_energy() - entry0.free_energy() - entry1.free_energy()
+            free_energy_A = entry0.free_energy(temp=temperature) + entry1.free_energy(temp=temperature) - entry.free_energy(temp=temperature)
+            free_energy_B = entry.free_energy(temp=temperature) - entry0.free_energy(temp=temperature) - entry1.free_energy(temp=temperature)
 
         else:
             free_energy_A = None
@@ -838,26 +1030,28 @@ class CoordinationBondChangeReaction(Reaction):
 
         return {"energy_A": energy_A, "energy_B": energy_B}
 
-    def rate_constant(self):
+    def rate_constant(self, temperature=298.15):
         if isinstance(self.rate_calculator, ReactionRateCalculator):
-            return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+            return {"k_A": self.rate_calculator.calculate_rate_constant(temperature=temperature),
+                    "k_B": self.rate_calculator.calculate_rate_constant(temperature=temperature,
+                                                                        reverse=True)}
         elif isinstance(self.rate_calculator, ExpandedBEPRateCalculator):
-            return {"k_A": self.rate_calculator.calculate_rate_constant(),
-                    "k_B": self.rate_calculator.calculate_rate_constant(reverse=True)}
+            return {"k_A": self.rate_calculator.calculate_rate_constant(temperature=temperature),
+                    "k_B": self.rate_calculator.calculate_rate_constant(temperature=temperature,
+                                                                        reverse=True)}
         else:
             rate_constant = dict()
             free_energy = self.free_energy()
 
             if free_energy["free_energy_A"] < 0:
-                rate_constant["k_A"] = k * 298.15 / h
+                rate_constant["k_A"] = k * temperature / h
             else:
-                rate_constant["k_A"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * 298.15))
+                rate_constant["k_A"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 / (R * temperature))
 
             if free_energy["free_energy_B"] < 0:
-                rate_constant["k_B"] = k * 298.15 / h
+                rate_constant["k_B"] = k * temperature / h
             else:
-                rate_constant["k_B"] = k * 298.15 / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * 298.15))
+                rate_constant["k_B"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 / (R * temperature))
 
             return rate_constant
 
@@ -907,212 +1101,18 @@ class CoordinationBondChangeReaction(Reaction):
         return reaction
 
 
-def get_node_names_1_2(reaction):
-    """
-    Give standard naming for reaction nodes.
-    Reaction must be of type 1 reactant -> 2 products.
-
-    Args:
-        reaction: any Reaction class object, ex. IntermolecularReaction
-    Returns:
-        names: list of str
-    """
-
-    entry = reaction.reactant
-    entry0 = reaction.product0
-    entry1 = reaction.product1
-
-    if entry0.parameters["ind"] <= entry1.parameters["ind"]:
-        two_mol_name = str(entry0.parameters["ind"]) + "+" + str(entry1.parameters["ind"])
-    else:
-        two_mol_name = str(entry1.parameters["ind"]) + "+" + str(entry0.parameters["ind"])
-
-    two_mol_name0 = str(entry0.parameters["ind"]) + "+PR_" + str(entry1.parameters["ind"])
-    two_mol_name1 = str(entry1.parameters["ind"]) + "+PR_" + str(entry0.parameters["ind"])
-    node_name_A = str(entry.parameters["ind"]) + "," + two_mol_name
-    node_name_B0 = two_mol_name0 + "," + str(entry.parameters["ind"])
-    node_name_B1 = two_mol_name1 + "," + str(entry.parameters["ind"])
-
-    return {"node_name_A": node_name_A, "node_name_B0": node_name_B0,
-            "node_name_B1": node_name_B1}
-
-
-def get_node_names_1_1(reaction):
-    """
-    Give standard naming for reaction nodes.
-    Reaction must be of type 1 reactant -> 1 product
-
-    Args:
-        reaction: any Reaction class object, ex. IntramolecularSingleBondChangeReaction
-    Returns:
-        names: list of str
-    """
-    entry0 = reaction.reactant
-    entry1 = reaction.product
-    node_name_A = str(entry0.parameters["ind"]) + "," + str(entry1.parameters["ind"])
-    node_name_B = str(entry1.parameters["ind"]) + "," + str(entry0.parameters["ind"])
-
-    return {"node_name_A": node_name_A, "node_name_B": node_name_B}
-
-
-def graph_rep_1_2(reaction) -> nx.DiGraph:
-    """
-    A method to convert a reaction type object into graph representation.
-    Reaction must be of type 1 reactant -> 2 products
-
-    Args:
-       reaction (any of the Reaction class object, ex. IntermolecularReaction)
-
-    Returns:
-        graph: nx.DiGraph representing the connections between the reactants,
-            products, and this reaction.
-    """
-
-    entry = reaction.reactant
-    entry0 = reaction.product0
-    entry1 = reaction.product1
-    graph = nx.DiGraph()
-
-    if entry0.parameters["ind"] <= entry1.parameters["ind"]:
-        two_mol_name_entry_ids = str(entry0.entry_id) + "+" + str(entry1.entry_id)
-    else:
-        two_mol_name_entry_ids = str(entry1.entry_id) + "+" + str(entry0.entry_id)
-
-    names = get_node_names_1_2(reaction)
-    node_name_A = names['node_name_A']
-    node_name_B0 = names['node_name_B0']
-    node_name_B1 = names['node_name_B1']
-
-    two_mol_entry_ids0 = str(entry0.entry_id) + "+PR_" + str(entry1.entry_id)
-    two_mol_entry_ids1 = str(entry1.entry_id) + "+PR_" + str(entry0.entry_id)
-    entry_ids_name_A = str(entry.entry_id) + "," + two_mol_name_entry_ids
-    entry_ids_name_B0 = two_mol_entry_ids0 + "," + str(entry.entry_id)
-    entry_ids_name_B1 = two_mol_entry_ids1 + "," + str(entry.entry_id)
-
-    rxn_type_A = reaction.reaction_type()["rxn_type_A"]
-    rxn_type_B = reaction.reaction_type()["rxn_type_B"]
-    energy_A = reaction.energy()["energy_A"]
-    energy_B = reaction.energy()["energy_B"]
-    free_energy_A = reaction.free_energy()["free_energy_A"]
-    free_energy_B = reaction.free_energy()["free_energy_B"]
-
-    graph.add_node(node_name_A, rxn_type=rxn_type_A, bipartite=1, energy=energy_A, free_energy=free_energy_A,
-                   entry_ids=entry_ids_name_A)
-
-    graph.add_edge(entry.parameters["ind"],
-                   node_name_A,
-                   softplus=ReactionNetwork.softplus(free_energy_A),
-                   exponent=ReactionNetwork.exponent(free_energy_A),
-                   weight=1.0
-                   )
-
-    graph.add_edge(node_name_A,
-                   entry0.parameters["ind"],
-                   softplus=0.0,
-                   exponent=0.0,
-                   weight=1.0
-                   )
-    graph.add_edge(node_name_A,
-                   entry1.parameters["ind"],
-                   softplus=0.0,
-                   exponent=0.0,
-                   weight=1.0
-                   )
-
-    graph.add_node(node_name_B0, rxn_type=rxn_type_B, bipartite=1, energy=energy_B, free_energy=free_energy_B,
-                   entry_ids=entry_ids_name_B0)
-    graph.add_node(node_name_B1, rxn_type=rxn_type_B, bipartite=1, energy=energy_B, free_energy=free_energy_B,
-                   entry_ids=entry_ids_name_B1)
-
-    graph.add_edge(node_name_B0,
-                   entry.parameters["ind"],
-                   softplus=0.0,
-                   exponent=0.0,
-                   weight=1.0
-                   )
-    graph.add_edge(node_name_B1,
-                   entry.parameters["ind"],
-                   softplus=0.0,
-                   exponent=0.0,
-                   weight=1.0
-                   )
-
-    graph.add_edge(entry0.parameters["ind"],
-                   node_name_B0,
-                   softplus=ReactionNetwork.softplus(free_energy_B),
-                   exponent=ReactionNetwork.exponent(free_energy_B),
-                   weight=1.0
-                   )
-    graph.add_edge(entry1.parameters["ind"],
-                   node_name_B1,
-                   softplus=ReactionNetwork.softplus(free_energy_B),
-                   exponent=ReactionNetwork.exponent(free_energy_B),
-                   weight=1.0)
-    return graph
-
-
-def graph_rep_1_1(reaction) -> nx.DiGraph:
-
-    """
-    A method to convert a reaction type object into graph representation. Reaction much be of type 1 reactant -> 1
-    product
-
-    Args:
-       reactant (any of the reaction class object, ex. RedoxReaction, IntramolSingleBondChangeReaction):
-    """
-
-    entry0 = reaction.reactant
-    entry1 = reaction.product
-    graph = nx.DiGraph()
-    node_name_A = get_node_names_1_1(reaction)["node_name_A"]
-    node_name_B = get_node_names_1_1(reaction)["node_name_B"]
-    rxn_type_A = reaction.reaction_type()["rxn_type_A"]
-    rxn_type_B = reaction.reaction_type()["rxn_type_B"]
-    energy_A = reaction.energy()["energy_A"]
-    energy_B = reaction.energy()["energy_B"]
-    free_energy_A = reaction.free_energy()["free_energy_A"]
-    free_energy_B = reaction.free_energy()["free_energy_B"]
-    entry_ids_A = str(entry0.entry_id) + "," + str(entry1.entry_id)
-    entry_ids_B = str(entry1.entry_id) + "," + str(entry0.entry_id)
-
-    graph.add_node(node_name_A, rxn_type=rxn_type_A, bipartite=1, energy=energy_A, free_energy=free_energy_A,
-                   entry_ids=entry_ids_A)
-    graph.add_edge(entry0.parameters["ind"],
-                   node_name_A,
-                   softplus=ReactionNetwork.softplus(free_energy_A),
-                   exponent=ReactionNetwork.exponent(free_energy_A),
-                   weight=1.0)
-    graph.add_edge(node_name_A,
-                   entry1.parameters["ind"],
-                   softplus=0.0,
-                   exponent=0.0,
-                   weight=1.0)
-    graph.add_node(node_name_B, rxn_type=rxn_type_B, bipartite=1,energy_B=energy_B,free_energy=free_energy_B,
-                   entry_ids=entry_ids_B)
-    graph.add_edge(entry1.parameters["ind"],
-                   node_name_B,
-                   softplus=ReactionNetwork.softplus(free_energy_B),
-                   exponent=ReactionNetwork.exponent(free_energy_B),
-                   weight=1.0)
-    graph.add_edge(node_name_B,
-                   entry0.parameters["ind"],
-                   softplus=0.0,
-                   exponent=0.0,
-                   weight=1.0)
-
-    return graph
-
-
 class ReactionNetwork(MSONable):
     """
         Class to build a reaction network from molecules and reactions.
     """
 
-    def __init__(self, electron_free_energy, entries_dict, entries_list,
-                 graph, reactions, classes, mapping, PR_record, min_cost,
-                 num_starts):
+    def __init__(self, electron_free_energy, temperature, entries_dict,
+                 entries_list, graph, reactions, classes, mapping,
+                 PR_record, min_cost, num_starts):
         """
         :param electron_free_energy: Electron free energy (in eV)
+        :param temperature: Temperature of the system, used for free energy
+            and rate constants (temperature given in K)
         :param entries_dict: dict of dicts of dicts of lists (d[formula][bonds][charge])
         :param entries_list: list of unique entries in entries_dict
         :param graph: nx.DiGraph representing connections in the network
@@ -1126,6 +1126,7 @@ class ReactionNetwork(MSONable):
         """
 
         self.electron_free_energy = electron_free_energy
+        self.temperature = temperature
 
         self.entries = entries_dict
         self.entries_list = entries_list
@@ -1140,14 +1141,17 @@ class ReactionNetwork(MSONable):
         self.num_starts = num_starts
 
     @classmethod
-    def from_input_entries(cls, input_entries, electron_free_energy=-2.15):
+    def from_input_entries(cls, input_entries, electron_free_energy=-2.15,
+                           temperature=298.15):
         """
-        Generate a ReactionNetwork from a set of MoleculeEntries
+        Generate a ReactionNetwork from a set of MoleculeEntries.
 
         :param input_entries: list of MoleculeEntries which will make up the
             network
         :param electron_free_energy: float representing the Gibbs free energy
-            required to add an electron
+            required to add an electron (in eV)
+        :param temperature: Temperature of the system, used for free energy
+            and rate constants (in K)
         :return:
         """
 
@@ -1168,7 +1172,7 @@ class ReactionNetwork(MSONable):
         get_formula = lambda x: x.formula
         get_Nbonds = lambda x: x.Nbonds
         get_charge = lambda x: x.charge
-        get_free_energy = lambda x: x.free_energy()
+        get_free_energy = lambda x: x.free_energy(temp=temperature)
 
         sorted_entries_0 = sorted(connected_entries, key=get_formula)
         for k1, g1 in itertools.groupby(sorted_entries_0, get_formula):
@@ -1189,9 +1193,9 @@ class ReactionNetwork(MSONable):
                                 if entry.mol_graph.isomorphic_to(Uentry.mol_graph):
                                     isomorphic_found = True
                                     if entry.free_energy() is not None and Uentry.free_energy() is not None:
-                                        if entry.free_energy() < Uentry.free_energy():
+                                        if entry.free_energy(temp=temperature) < Uentry.free_energy(temp=temperature):
                                             unique[ii] = entry
-                                    elif entry.free_energy is not None:
+                                    elif entry.free_energy() is not None:
                                         unique[ii] = entry
                                     elif entry.energy < Uentry.energy:
                                         unique[ii] = entry
@@ -1215,7 +1219,7 @@ class ReactionNetwork(MSONable):
 
         graph = nx.DiGraph()
 
-        network = cls(electron_free_energy, entries, entries_list, graph,
+        network = cls(electron_free_energy, temperature, entries, entries_list, graph,
                       list(), dict(), dict(), None, dict(), None)
 
         return network
@@ -1379,6 +1383,7 @@ class ReactionNetwork(MSONable):
                                     if self.reactions[ind].parameters["ind"] == ind:
                                         self.reactions[ind].update_calculator(reference=reference_ts)
 
+        #TODO: Get rid of this (after testing)
         for c in classes:
             print(c)
 

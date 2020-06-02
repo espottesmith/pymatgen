@@ -242,10 +242,9 @@ class ReactionRateCalculator(MSONable):
             k_rate (float): temperature-dependent rate constant
         """
 
-        # Convert from eV to J/mol
-        gibbs = self.calculate_act_gibbs(temperature=temperature, reverse=reverse) * 96487
+        gibbs = self.calculate_act_gibbs(temperature=temperature, reverse=reverse)
 
-        k_rate = kappa * k * temperature / h * np.exp(-gibbs / (R * temperature))
+        k_rate = kappa * k * temperature / h * np.exp(-gibbs / (8.617333262 * 10 ** -5 * temperature))
         return k_rate
 
     def calculate_rate(self, concentrations, temperature=298.0, reverse=False, kappa=1.0):
@@ -337,7 +336,7 @@ class BEPRateCalculator(ReactionRateCalculator):
                 consider the forwards reaction
 
         Returns:
-            ea (float): the predicted energy of activation in kcal/mol
+            ea (float): the predicted energy of activation in eV
         """
 
         if reverse:
@@ -378,10 +377,9 @@ class BEPRateCalculator(ReactionRateCalculator):
             k_rate (float): temperature-dependent rate constant
         """
 
-        # Convert from eV to J/mol
-        ea = self.calculate_act_energy(reverse=reverse) * 96487
+        ea = self.calculate_act_energy(reverse=reverse)
 
-        k_rate = np.exp(-ea / (R * temperature))
+        k_rate = np.exp(-ea / (8.617333262 * 10 ** -5 * temperature))
 
         return k_rate
 
@@ -536,7 +534,7 @@ class ExpandedBEPRateCalculator(ReactionRateCalculator):
 
     def calculate_activation_thermo(self, temperature=298.0, reverse=False):
         raise NotImplementedError("Method calculate_activation_thermo is not valid for "
-                                  "BellEvansPolanyiRateCalculator,")
+                                  "ExpandedBEPRateCalculator,")
 
     def calculate_rate_constant(self, temperature=298.0, reverse=False, kappa=1.0):
         """
@@ -554,9 +552,9 @@ class ExpandedBEPRateCalculator(ReactionRateCalculator):
         """
 
         # Convert eV to J/mol
-        gibbs = self.calculate_act_gibbs(temperature=temperature, reverse=reverse) * 96487
+        gibbs = self.calculate_act_gibbs(temperature=temperature, reverse=reverse)
 
-        k_rate = kappa * k * temperature / h * np.exp(-gibbs / (R * temperature))
+        k_rate = kappa * k * temperature / h * np.exp(-gibbs / (8.617333262 * 10 ** -5 * temperature))
         return k_rate
 
 

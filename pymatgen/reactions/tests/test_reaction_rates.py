@@ -38,9 +38,9 @@ class ReactionRateCalculatorTest(unittest.TestCase):
         infile = QCInput.from_file(fsm_infile)
         outfile = QCOutput(fsm_outfile)
 
-        self.energies = [-497.161913928997, -533.045879937285, -1030.25766660132]
-        self.enthalpies = [96.692, 79.821, 178.579]
-        self.entropies = [89.627, 107.726, 140.857]
+        self.energies = [-271.553636516598, -78.5918513462683, -350.105998350078]
+        self.enthalpies = [13.917, 34.596, 49.515]
+        self.entropies = [67.357, 55.047, 84.265]
 
         self.rct_1 = MoleculeEntry(infile.molecule["reactants"][0], self.energies[0],
                                    enthalpy=self.enthalpies[0], entropy=self.entropies[0])
@@ -51,8 +51,8 @@ class ReactionRateCalculatorTest(unittest.TestCase):
                                  enthalpy=self.enthalpies[2],
                                  entropy=self.entropies[2])
 
-        self.ts = MoleculeEntry(outfile.data["string_ts_guess"], outfile.data["string_max_energy"],
-                                enthalpy=200.000, entropy=160.000)
+        self.ts = MoleculeEntry(outfile.data["string_ts_guess"], -350.099875862606,
+                                enthalpy=48.560, entropy=83.607)
 
         self.calc = ReactionRateCalculator([self.rct_1, self.rct_2], [self.pro], self.ts)
 
@@ -137,12 +137,12 @@ class ReactionRateCalculatorTest(unittest.TestCase):
 
         # Test normal forwards and reverse behavior
         self.assertEqual(self.calc.calculate_rate_constant(temperature=300.0),
-                         k * 300 / h * np.exp(-gibbs_300 * 96487 / (R * 300)))
+                         k * 300 / h * np.exp(-gibbs_300 / (8.617333262 * 10 ** -5 * 300)))
         self.assertEqual(self.calc.calculate_rate_constant(temperature=600),
-                         k * 600 / h * np.exp(-gibbs_600 * 96487 / (R * 600)))
+                         k * 600 / h * np.exp(-gibbs_600 / (8.617333262 * 10 ** -5 * 600)))
         self.assertEqual(self.calc.calculate_rate_constant(temperature=300.0,
                                                            reverse=True),
-                         k * 300 / h * np.exp(-gibbs_300_rev * 96487 / (R * 300)))
+                         k * 300 / h * np.exp(-gibbs_300_rev / (8.617333262 * 10 ** -5 * 300)))
 
         # Test effect of kappa
         self.assertEqual(self.calc.calculate_rate_constant(),
@@ -167,9 +167,9 @@ class BEPReactionRateCalculatorTest(unittest.TestCase):
     def setUp(self) -> None:
         infile = QCInput.from_file(fsm_infile)
 
-        self.energies = [-497.161913928997, -533.045879937285, -1030.25766660132]
-        self.enthalpies = [96.692, 79.821, 178.579]
-        self.entropies = [89.627, 107.726, 140.857]
+        self.energies = [-271.553636516598, -78.5918513462683, -350.105998350078]
+        self.enthalpies = [13.917, 34.596, 49.515]
+        self.entropies = [67.357, 55.047, 84.265]
 
         self.rct_1 = MoleculeEntry(infile.molecule["reactants"][0], self.energies[0],
                                    enthalpy=self.enthalpies[0], entropy=self.entropies[0])
@@ -180,7 +180,7 @@ class BEPReactionRateCalculatorTest(unittest.TestCase):
                                  enthalpy=self.enthalpies[2],
                                  entropy=self.entropies[2])
 
-        self.calc = BEPRateCalculator([self.rct_1, self.rct_2], [self.pro], 0.65, -0.0005)
+        self.calc = BEPRateCalculator([self.rct_1, self.rct_2], [self.pro], 1.718386088799889, 1.722)
 
     def test_act_properties(self):
         self.assertAlmostEqual(self.calc.calculate_act_energy(),
@@ -200,38 +200,37 @@ class BEPReactionRateCalculatorTest(unittest.TestCase):
             self.calc.calculate_act_thermo(temperature=300.00)
 
     def test_rate_constant(self):
-        #TODO: Test reverse? But that's already covered by test_act_properties
-        rate_constant = np.exp(-self.calc.calculate_act_energy() * 96487 / (R * 300))
-        rate_constant_600 = np.exp(-self.calc.calculate_act_energy() * 96487 / (R * 600))
+        rate_constant = np.exp(-self.calc.calculate_act_energy() / (8.617333262 * 10 ** -5 * 300))
+        rate_constant_600 = np.exp(-self.calc.calculate_act_energy() / (8.617333262 * 10 ** -5 * 600))
 
         self.assertEqual(self.calc.calculate_rate_constant(temperature=300), rate_constant)
         self.assertEqual(self.calc.calculate_rate_constant(temperature=600), rate_constant_600)
 
     def test_rates(self):
-        base_rate = 1.809492023985902e+26
-        rate_600 = 2.1189197864115946e+32
+        base_rate = self.calc.calculate_rate([1, 1])
+        rate_600 = self.calc.calculate_rate([1, 1], temperature=600)
 
         self.assertAlmostEqual(self.calc.calculate_rate([1, 1]) / base_rate,
-                               1, 8)
+                               1, 6)
         self.assertAlmostEqual(self.calc.calculate_rate([1, 0.5]) / (base_rate / 2),
-                               1, 8)
+                               1, 6)
         self.assertAlmostEqual(self.calc.calculate_rate([0.5, 1]) / (base_rate / 2),
-                               1, 8)
+                               1, 6)
         self.assertAlmostEqual(self.calc.calculate_rate([0.5, 0.5]) / (base_rate / 4),
-                               1, 8)
+                               1, 6)
         self.assertAlmostEqual(self.calc.calculate_rate([1, 1], kappa=0.5) / (base_rate / 2),
-                               1, 8)
+                               1, 6)
 
-        self.assertAlmostEqual(self.calc.calculate_rate([1, 1], temperature=600) / rate_600, 1, 8)
+        self.assertAlmostEqual(self.calc.calculate_rate([1, 1], temperature=600) / rate_600, 1, 6)
 
 
 class ExpandedBEPReactionRateCalculatorTest(unittest.TestCase):
     def setUp(self) -> None:
         infile = QCInput.from_file(fsm_infile)
 
-        self.energies = [-497.161913928997, -533.045879937285, -1030.25766660132]
-        self.enthalpies = [96.692, 79.821, 178.579]
-        self.entropies = [89.627, 107.726, 140.857]
+        self.energies = [-271.553636516598, -78.5918513462683, -350.105998350078]
+        self.enthalpies = [13.917, 34.596, 49.515]
+        self.entropies = [67.357, 55.047, 84.265]
 
         self.rct_1 = MoleculeEntry(infile.molecule["reactants"][0], self.energies[0],
                                    enthalpy=self.enthalpies[0], entropy=self.entropies[0])
@@ -243,7 +242,7 @@ class ExpandedBEPReactionRateCalculatorTest(unittest.TestCase):
                                  entropy=self.entropies[2])
 
         self.calc = ExpandedBEPRateCalculator([self.rct_1, self.rct_2], [self.pro],
-                                              0.2, 0.5, -0.005, -0.4, -0.15, -0.0075)
+                                              1.71, 0.1, -0.05, 1.8, 0.1, 0.05)
 
     def test_act_properties(self):
 
@@ -278,9 +277,9 @@ class ExpandedBEPReactionRateCalculatorTest(unittest.TestCase):
         gibbs_600 = self.calc.calculate_act_gibbs(600)
 
         self.assertEqual(self.calc.calculate_rate_constant(temperature=300),
-                         k * 300 / h * np.exp(-gibbs_300 * 96487 / (R * 300)))
+                         k * 300 / h * np.exp(-gibbs_300 / (8.617333262 * 10 ** -5 * 300)))
         self.assertEqual(self.calc.calculate_rate_constant(temperature=600),
-                         k * 600 / h * np.exp(-gibbs_600 * 96487 / (R * 600)))
+                         k * 600 / h * np.exp(-gibbs_600 / (8.617333262 * 10 ** -5 * 600)))
 
         # Test effect of kappa
         self.assertEqual(self.calc.calculate_rate_constant(),

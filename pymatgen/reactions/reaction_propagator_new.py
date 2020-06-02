@@ -16,7 +16,7 @@ __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 
 
-class ReactionPropagator:
+class KineticMonteCarloSimulator:
     """
     Class for stochastic kinetic Monte Carlo simulation, with reactions provided
     by the Reactions present in a ReactionNetwork.

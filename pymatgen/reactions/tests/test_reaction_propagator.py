@@ -5,7 +5,7 @@ from pymatgen.util.testing import PymatgenTest
 from pymatgen.reactions.reaction_network import ReactionNetwork
 from pymatgen.core import Molecule
 from pymatgen.entries.mol_entry import MoleculeEntry
-from pymatgen.reactions.reaction_propagator_new import ReactionPropagator
+from pymatgen.reactions.reaction_propagator_new import KineticMonteCarloSimulator
 import unittest
 import copy
 
@@ -16,7 +16,7 @@ __copyright__ = "Copyright 2020, The Materials Project"
 __version__ = "0.1"
 
 
-class TestReactionPropagator(PymatgenTest):
+class TestKineticMonteCarloSimulator(PymatgenTest):
     def setUp(self):
         """ Create an initial state and reaction network, based on H2O molecule.
         Species include H2, H2O, H, O, O2, OH, H3O
@@ -101,7 +101,7 @@ class TestReactionPropagator(PymatgenTest):
 
         # Only H2O, H2, O2 present initially
         self.initial_state = {1: self.concentration, 4: self.concentration, 10: self.concentration}
-        self.propagator = ReactionPropagator(self.reaction_network, self.initial_state, self.volume)
+        self.propagator = KineticMonteCarloSimulator(self.reaction_network, self.initial_state, self.volume)
 
     def tearDown(self) -> None:
         del self.volume
@@ -118,7 +118,7 @@ class TestReactionPropagator(PymatgenTest):
                 self.assertEqual(self.propagator.get_coordination(reaction, False),
                                  99)
 
-        diff_prop = ReactionPropagator(self.reaction_network, {13: self.concentration,
+        diff_prop = KineticMonteCarloSimulator(self.reaction_network, {13: self.concentration,
                                                                16: self.concentration},
                                        self.volume)
         for rr, reaction in diff_prop.reactions.items():
@@ -151,9 +151,9 @@ class TestReactionPropagator(PymatgenTest):
                     self.propagator.update_state(reaction, False)
                 break
 
-    #
-    # def test_choose_reaction(self):
-    #
+    def test_choose_reaction(self):
+        self.assertEqual(self.propagator.choose_reaction(0), 0)
+        self.assertEqual(self.propagator.choose_reaction(1), 91)
 
     def test_simulate(self):
         total_prop = self.propagator.total_propensity

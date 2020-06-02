@@ -6,8 +6,8 @@ import math
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.constants import h, k, R, N_A, pi
-import time
+from scipy.constants import N_A
+# import time
 
 
 __author__ = "Ronald Kam, Evan Spotte-Smith, Xiaowei Xie"
@@ -144,9 +144,12 @@ class ReactionPropagator:
         """
         if reverse:
             for reactant in reaction.products:
-                self._state[reactant.entry_id] -= 1
-                if self._state[reactant.entry_id] < 0:
-                    raise ValueError("State invalid! Negative specie: {}!".format(reactant.entry_id))
+                try:
+                    self._state[reactant.entry_id] -= 1
+                    if self._state[reactant.entry_id] < 0:
+                        raise ValueError("State invalid! Negative specie: {}!".format(reactant.entry_id))
+                except KeyError:
+                    raise ValueError("Specie {} given is not in state!".format(reactant.entry_id))
             for product in reaction.reactants:
                 p_id = product.entry_id
                 if p_id in self.state:
@@ -155,9 +158,12 @@ class ReactionPropagator:
                     self._state[p_id] = 1
         else:
             for reactant in reaction.reactants:
-                self._state[reactant.entry_id] -= 1
-                if self._state[reactant.entry_id] < 0:
-                    raise ValueError("State invalid! Negative specie: {}!".format(reactant.entry_id))
+                try:
+                    self._state[reactant.entry_id] -= 1
+                    if self._state[reactant.entry_id] < 0:
+                        raise ValueError("State invalid! Negative specie: {}!".format(reactant.entry_id))
+                except KeyError:
+                    raise ValueError("Specie {} given is not in state!".format(reactant.entry_id))
             for product in reaction.products:
                 p_id = product.entry_id
                 if p_id in self.state:
@@ -165,6 +171,22 @@ class ReactionPropagator:
                 else:
                     self._state[p_id] = 1
         return self._state
+
+    def choose_reaction(self, rando):
+        """
+        Based on a random factor (between 0 and 1), select a reaction for the
+            next time step.
+
+        Args:
+            rando: (float) Random number in the interval (0, 1)
+
+        Return:
+            ind: (int) index of the reaction to be chosen
+        """
+
+        random_propensity = rando * self.total_propensity
+        ind = self.rxn_ind[np.where(np.cumsum(self.propensity_array) >= random_propensity)[0][0]]
+        return ind
 
     def simulate(self, t_end):
         """
@@ -174,8 +196,8 @@ class ReactionPropagator:
         Args:
             t_end: (float) ending time of simulation
 
-        Returns
-            final state of molecules
+        Return:
+            self.data: (dict) complete state after simulation is complete
         """
         # If any change have been made to the state, revert them
         self._state = self.initial_state
@@ -202,9 +224,7 @@ class ReactionPropagator:
 
             # Choosing a reaction mu
             # Discrete probability distrubution of reaction choice
-            random_propensity = r2 * self.total_propensity
-
-            reaction_choice_ind = self.rxn_ind[np.where(np.cumsum(self.propensity_array) >= random_propensity)[0][0]]
+            reaction_choice_ind = self.choose_reaction(r2)
             reaction_mu = self.reactions[math.floor(reaction_choice_ind / 2)]
 
             if reaction_choice_ind % 2:
@@ -244,7 +264,7 @@ class ReactionPropagator:
             t += tau
 
             # Update data with the time step where the change in state occurred
-            # Usful for subsequent analysis
+            # Useful for subsequent analysis
             if reverse:
                 for reactant in reaction_mu.products:
                     self.data["state"][reactant.entry_id].append((t, self._state[reactant.entry_id]))

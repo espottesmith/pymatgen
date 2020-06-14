@@ -196,8 +196,8 @@ class RedoxReaction(Reaction):
     """
 
     def __init__(self, reactant: MoleculeEntry, product: MoleculeEntry,
-                 transition_state: Optional[MoleculeEntry] = None,
-                 parameters: Optional[Dict] = None):
+                 reorganization_energy=None, electrode_dist=None,
+                 electron_free_energy=None, parameters=None):
         """
             Initilizes RedoxReaction.reactant to be in the form of a MoleculeEntry,
             RedoxReaction.product to be in the form of MoleculeEntry,
@@ -207,16 +207,21 @@ class RedoxReaction(Reaction):
           Args:
             reactant: MoleculeEntry object
             product: MoleculeEntry object
-            transition_state (MoleculeEntry or None): A MoleculeEntry representing a
-                transition state for the reaction.
+            reorganization_energy (float): Solvent reorganization energy, in eV
+            electrode_dist (float): Distance from reactants to electrode, in
+                Angstrom
+            electron_free_energy (float): Free energy of the electron in the
+                electrode, in eV
             parameters (dict): Any additional data about this reaction
 
         """
         self.reactant = reactant
         self.product = product
-        self.electron_free_energy = None
+        self.reorganization_energy = reorganization_energy
+        self.electrode_dist = electrode_dist
+        self.electron_free_energy = electron_free_energy
         super().__init__([self.reactant], [self.product],
-                         transition_state=transition_state,
+                         transition_state=None,
                          parameters=parameters)
 
     def graph_representation(self) -> nx.DiGraph:

@@ -559,3 +559,73 @@ class ExpandedBEPRateCalculator(ReactionRateCalculator):
 
         k_rate = kappa * k * temperature / h * np.exp(-gibbs / (8.617333262 * 10 ** -5 * temperature))
         return k_rate
+
+
+class RedoxRateCalculator(ReactionRateCalculator):
+    """
+    This reaction rate calculator uses expressions from Marcus Theory to
+    estimate the reaction rate for a reduction or oxidation reaction. It assumes
+    that this reaction is between a single molecule in solution and an
+    electrode, which is not treated explicitly. Future work may expand this
+    class or develop another class to treat reduction and oxidation between
+    two species in solution (a charge transfer reaction).
+
+    The rate constant for a reduction or oxidation reaction is
+
+    k = kappa * k_b * T / h * exp[-Delta_G* / (k_b * T)]
+
+    where kappa is the transmission coefficient (in this case, an electron
+    tunnelling coefficient), Delta_G* is the energy barrier, k_b is the
+    Boltzmann constant, T is the temperature in Kelvin, and h is the Planck
+    constant.
+
+    Here, we either assume that the reaction occurs adiabatically, in which
+    case:
+
+    kappa = 1
+
+    or that the reaction is diabatic and has a simple exponential decay form:
+
+    kappa = exp[-beta * R],
+
+    where beta is some decay length (by default, 1.2 Angstrom^-1), and R is
+    the distance to the electrode, in Angstrom.
+
+    the energy barrier Delta_G is based both on the reaction free energy
+
+    delta_G = sum(G_product) - sum(G_reactant) - n*(electron free energy)
+
+    where n is the number of electrons transferred (n positive for reduction,
+    negative for oxidation), and the reorganization energy
+
+    lambda = lambda_i + lambda_o,
+
+    where lambda_i is the inner reorganization energy, the energy required to
+    repolarize the inner solvation shell after reduction/oxidation, and
+    lambda_o is the outer reorganization energy, the corresponding energy
+    for the bulk solvent.
+
+    where delta_e is the change in fundamental charge (e = 1.602 * 10 **-19 C),
+    epsilon_0 is tbe permittivity of the vacuum, r is the radius of the reactant
+    including the inner solvation shell, n here is the index of refraction of
+    the solvent, and epsilon is the dielectric constant of the solvent.
+
+    Args:
+        reactants (list): list of MoleculeEntry objects
+        products (list): list of MoleculeEntry objects
+        delta_ea_reference (float): activation energy reference point (in eV)
+        delta_ha_reference (float): activation enthalpy reference point (in eV)
+        delta_sa_reference (float): activation entropy reference point (in eV/K)
+        delta_e_reference (float): reaction energy reference point (in eV)
+        delta_h_reference (float): reaction enthalpy reference point (in eV)
+        delta_s_reference (float): reaction entropy reference point (in eV/K)
+        reaction (dict, or None): optional. If None (default), the "reactants" and
+        "products" lists will serve as the basis for a Reaction object which represents the
+        balanced stoichiometric reaction. Otherwise, this dict will show the number of molecules
+        present in the reaction for each reactant and each product in the reaction.
+        alpha (float): the reaction coordinate (must between 0 and 1)
+
+    """
+
+    def __init__(self, reactants, products, reorganization_energy,
+                 ):

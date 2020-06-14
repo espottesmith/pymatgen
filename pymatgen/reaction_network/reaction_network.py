@@ -342,18 +342,29 @@ class RedoxReaction(Reaction):
     def rate_constant(self, temperature=298.15) -> Mapping_Energy_Dict:
         rate_constant = dict()
         free_energy = self.free_energy(temperature=temperature)
-        ea = 10000  # [J/mol] activation barrier for exothermic reactions
-        if free_energy["free_energy_A"] < 0:
-            rate_constant["k_A"] = k * temperature / h * np.exp(-1 * ea / (R * temperature))
-        else:
-            rate_constant["k_A"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_A"] * 96487 /
-                                                                (R * temperature))
 
-        if free_energy["free_energy_B"] < 0:
-            rate_constant["k_B"] = k * temperature / h * np.exp(-1 * ea / (R * temperature))
+        if self.electrode_dist is None:
+            kappa = 1
         else:
-            rate_constant["k_B"] = k * temperature / h * np.exp(-1 * free_energy["free_energy_B"] * 96487 /
-                                                                (R * temperature))
+            kappa = np.exp(-1.2 * self.electrode_dist)
+
+        if self.reorganization_energy is None:
+            delta_g_a = free_energy["free_energy_A"]
+            delta_g_b = free_energy["free_energy_B"]
+        else:
+            lam_reorg = self.reorganization_energy
+            delta_g_a = lam_reorg / 4 * (1 + free_energy["free_energy_A"] / lam_reorg) ** 2
+            delta_g_b = lam_reorg / 4 * (1 + free_energy["free_energy_B"] / lam_reorg) ** 2
+
+        if self.reorganization_energy is None and free_energy["free_energy_A"] < 0:
+            rate_constant["k_A"] = kappa * k * temperature / h
+        else:
+            rate_constant["k_A"] = kappa * k * temperature / h * np.exp(-96487 * delta_g_a / (R * temperature))
+
+        if self.reorganization_energy is None and free_energy["free_energy_B"] < 0:
+            rate_constant["k_B"] = kappa * k * temperature / h
+        else:
+            rate_constant["k_B"] = kappa * k * temperature / h * np.exp(-96487 * delta_g_b / (R * temperature))
 
         return rate_constant
 

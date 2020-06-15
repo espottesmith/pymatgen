@@ -1,7 +1,7 @@
 import logging
 
 import numpy as np
-from scipy.constants import h, k, N_A, pi
+from scipy.constants import h, k, N_A, pi, epsilon_0, elementary_charge
 
 from monty.json import MSONable
 
@@ -554,7 +554,6 @@ class ExpandedBEPRateCalculator(ReactionRateCalculator):
             k_rate (float): temperature-dependent rate constant
         """
 
-        # Convert eV to J/mol
         gibbs = self.calculate_act_gibbs(temperature=temperature, reverse=reverse)
 
         k_rate = kappa * k * temperature / h * np.exp(-gibbs / (8.617333262 * 10 ** -5 * temperature))
@@ -572,7 +571,7 @@ class RedoxRateCalculator(ReactionRateCalculator):
 
     The rate constant for a reduction or oxidation reaction is
 
-    k = kappa * k_b * T / h * exp[-Delta_G* / (k_b * T)]
+    k = kappa * k_b * T / h * exp[-ΔG* / (k_b * T)]
 
     where kappa is the transmission coefficient (in this case, an electron
     tunnelling coefficient), Delta_G* is the energy barrier, k_b is the
@@ -591,19 +590,25 @@ class RedoxRateCalculator(ReactionRateCalculator):
     where beta is some decay length (by default, 1.2 Angstrom^-1), and R is
     the distance to the electrode, in Angstrom.
 
-    the energy barrier Delta_G is based both on the reaction free energy
+    the energy barrier ΔG is based both on the reaction free energy
 
-    delta_G = sum(G_product) - sum(G_reactant) - n*(electron free energy)
+    ΔG = sum(G_product) - sum(G_reactant) - n*(electron free energy)
 
     where n is the number of electrons transferred (n positive for reduction,
     negative for oxidation), and the reorganization energy
 
-    lambda = lambda_i + lambda_o,
+    lambda = lambda_inner + lambda_outer,
 
-    where lambda_i is the inner reorganization energy, the energy required to
+    where lambda_inner is the inner reorganization energy, the energy required to
     repolarize the inner solvation shell after reduction/oxidation, and
-    lambda_o is the outer reorganization energy, the corresponding energy
-    for the bulk solvent.
+    lambda_outer is the outer reorganization energy, the corresponding energy
+    for the bulk solvent. Generally, the inner reorganization energy
+    lambda_inner can be estimated directly, for instance by the four-point
+    method (Nelsen, Blackstock, & Kim 1987). The outer reorganization energy,
+    on the other hand, will be estimated as
+
+    lambda_outer = (delta_e) ** 2 / (8 * pi * epsilon_0) * (1/r - 1/(2*R)) * (1/n^2 - 1/epsilon) (in J)
+    lambda_outer = |delta_e| / (8 * pi * epsilon_0) * (1/r - 1/(2*R)) * (1/n^2 - 1/epsilon) (in eV)
 
     where delta_e is the change in fundamental charge (e = 1.602 * 10 **-19 C),
     epsilon_0 is tbe permittivity of the vacuum, r is the radius of the reactant
@@ -613,19 +618,110 @@ class RedoxRateCalculator(ReactionRateCalculator):
     Args:
         reactants (list): list of MoleculeEntry objects
         products (list): list of MoleculeEntry objects
-        delta_ea_reference (float): activation energy reference point (in eV)
-        delta_ha_reference (float): activation enthalpy reference point (in eV)
-        delta_sa_reference (float): activation entropy reference point (in eV/K)
-        delta_e_reference (float): reaction energy reference point (in eV)
-        delta_h_reference (float): reaction enthalpy reference point (in eV)
-        delta_s_reference (float): reaction entropy reference point (in eV/K)
-        reaction (dict, or None): optional. If None (default), the "reactants" and
-        "products" lists will serve as the basis for a Reaction object which represents the
-        balanced stoichiometric reaction. Otherwise, this dict will show the number of molecules
-        present in the reaction for each reactant and each product in the reaction.
-        alpha (float): the reaction coordinate (must between 0 and 1)
-
+        lambda_inner (float): Inner reorganization energy, in eV
+        dielectric (float): Dielectric constant of the solvent (unitless)
+        refractive (float): Refractive index of the solvent (unitless)
+        electron_free_energy (float): Free energy of the electron in the
+            electrode, in eV
+        radius (float): Radius of the reactant/product, in Angstrom
+        electrode_distance (float): Distance from the electrode surface, in
+            Anstrom
     """
 
-    def __init__(self, reactants, products, reorganization_energy,
-                 ):
+    def __init__(self, reactants, products, lambda_inner, dielectric,
+                 refractive, electron_free_energy, radius, electrode_distance):
+
+        self.lambda_inner = lambda_inner
+        self.dielectric = dielectric
+        self.refractive = refractive
+        self.electron_free_energy = electron_free_energy
+        self.radius = radius
+        self.electrode_distance = electrode_distance
+
+        super().__init__(reactants, products, None)
+
+    def calculate_act_energy(self, reverse=False):
+        raise NotImplementedError("Method calculate_act_energy is not valid for "
+                                  "RedoxRateCalculator,")
+
+    def calculate_act_enthalpy(self, reverse=False):
+        raise NotImplementedError("Method calculate_act_enthalpy is not valid for "
+                                  "RedoxRateCalculator,")
+
+    def calculate_act_entropy(self, reverse=False):
+        raise NotImplementedError("Method calculate_act_entropy is not valid for "
+                                  "RedoxRateCalculator,")
+
+    def calculate_outer_reorganization_energy(self):
+        """
+        Calculate the outer reorganization energy lambda_o using the Marcus
+            method (Marcus 1965).
+
+        Returns:
+            lambda_outer (float), in eV
+        """
+
+        lambda_outer = abs(elementary_charge) / (8 * pi * epsilon_0)
+        lambda_outer *= (1/self.radius - 1/(2 * self.electrode_distance)) * 10 ** 10
+        lambda_outer *= (1/self.refractive ** 2 - 1/self.dielectric)
+
+        return lambda_outer
+
+    def calculate_act_gibbs(self, temperature=298.0, reverse=False):
+        """
+        Calculate Gibbs free energy of activation at a given temperature.
+
+        ΔG* = lambda/4 * (1 + ΔG/lambda)**2
+        where lambda = lambda_inner + lambda_outer and
+
+        Args:
+            temperature (float): absolute temperature in Kelvin
+            reverse (bool): if True (default False), consider the reverse reaction; otherwise,
+                consider the forwards reaction
+
+        Returns:
+            delta_ga (float): Gibbs free energy of activation (in kcal/mol)
+        """
+
+        lambda_total = self.lambda_inner + self.calculate_outer_reorganization_energy()
+
+        charge_rct = sum([r.charge for r in self.reactants])
+        charge_pro = sum([p.charge for p in self.products])
+
+        if reverse:
+            delta_g = -1 * self.calculate_net_gibbs(temperature=temperature)
+            delta_g += self.electron_free_energy * (charge_rct - charge_pro)
+        else:
+            delta_g = self.calculate_net_gibbs(temperature=temperature)
+            delta_g += self.electron_free_energy * (charge_pro - charge_rct)
+
+        delta_ga = lambda_total / 4 * (1 + delta_g / lambda_total) ** 2
+
+        return delta_ga
+
+    def calculate_activation_thermo(self, temperature=298.0, reverse=False):
+        raise NotImplementedError("Method calculate_activation_thermo is not valid for "
+                                  "RedoxRateCalculator,")
+
+    def calculate_rate_constant(self, temperature=298.0, reverse=False, kappa=1.0):
+        """
+        Calculate the rate constant k by the Eyring-Polanyi equation of transition state theory.
+
+        Args:
+            temperature (float): absolute temperature in Kelvin
+            reverse (bool): if True (default False), consider the reverse reaction; otherwise,
+                consider the forwards reaction
+            kappa (float): transmission coefficient (not used in this function)
+
+        Returns:
+            k_rate (float): temperature-dependent rate constant
+        """
+
+        gibbs = self.calculate_act_gibbs(temperature=temperature, reverse=reverse)
+
+        kappa = np.exp(-1.2 * self.electrode_distance)
+
+        k_rate = kappa * k * temperature / h * np.exp(-gibbs / (8.617333262 * 10 ** -5 * temperature))
+
+        return k_rate
+

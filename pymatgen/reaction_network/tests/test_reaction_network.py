@@ -796,7 +796,7 @@ class TestReactionNetwork(PymatgenTest):
         self.assertEqual(len(RN.graph.nodes),10481)
         self.assertEqual(len(RN.graph.edges),22890)
 
-        # dumpfn(RN, os.path.join(test_dir, "RN.json"))
+        dumpfn(RN, os.path.join(test_dir, "RN.json"))
 
     @unittest.skipIf(not ob, "OpenBabel not present. Skipping...")
     def test_build_PR_record(self):

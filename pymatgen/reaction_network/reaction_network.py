@@ -17,7 +17,8 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.graphs import MolGraphSplitError
 from pymatgen.entries.mol_entry import MoleculeEntry
 from pymatgen.reaction_network.reaction_rates import (ReactionRateCalculator,
-                                                      ExpandedBEPRateCalculator)
+                                                      ExpandedBEPRateCalculator,
+                                                      RedoxRateCalculator)
 from pymatgen.util.classes import load_class
 
 
@@ -70,8 +71,8 @@ class Reaction(MSONable, metaclass=ABCMeta):
     def __len__(self):
         return len(self.reactants)
 
-    def update_calculator(self, transition_state: Optional[MoleculeEntry],
-                          reference: Optional[Dict]):
+    def update_calculator(self, transition_state: Optional[MoleculeEntry] = None,
+                          reference: Optional[Dict] = None):
         """
         Update the rate calculator with either a transition state (or a new
             transition state) or the thermodynamic properties of a reaction
@@ -196,8 +197,9 @@ class RedoxReaction(Reaction):
     """
 
     def __init__(self, reactant: MoleculeEntry, product: MoleculeEntry,
-                 reorganization_energy=None, electrode_dist=None,
-                 electron_free_energy=None, parameters=None):
+                 inner_reorganization_energy=None, dielectric=None,
+                 refractive=None, electron_free_energy=None,
+                 radius=None, electrode_dist=None, parameters=None):
         """
             Initilizes RedoxReaction.reactant to be in the form of a MoleculeEntry,
             RedoxReaction.product to be in the form of MoleculeEntry,
@@ -207,22 +209,45 @@ class RedoxReaction(Reaction):
           Args:
             reactant: MoleculeEntry object
             product: MoleculeEntry object
-            reorganization_energy (float): Solvent reorganization energy, in eV
-            electrode_dist (float): Distance from reactants to electrode, in
-                Angstrom
+            inner_reorganization_energy (float): Inner reorganization energy, in eV
+            dielectric (float): Dielectric constant of the solvent
+            refractive (float): Refractive index of the solvent
             electron_free_energy (float): Free energy of the electron in the
                 electrode, in eV
+            radius (float): Solute cavity radius (including inner solvent shell)
+            electrode_dist (float): Distance from reactants to electrode, in
+                Angstrom
             parameters (dict): Any additional data about this reaction
 
         """
         self.reactant = reactant
         self.product = product
-        self.reorganization_energy = reorganization_energy
-        self.electrode_dist = electrode_dist
-        self.electron_free_energy = electron_free_energy
+
         super().__init__([self.reactant], [self.product],
                          transition_state=None,
                          parameters=parameters)
+
+        self.inner_reorganization_energy = inner_reorganization_energy
+        self.dielectric = dielectric
+        self.refractive = refractive
+        self.electron_free_energy = electron_free_energy
+        self.radius = radius
+        self.electrode_dist = electrode_dist
+
+        if all([x is not None for x in [self.inner_reorganization_energy,
+                                        self.dielectric,
+                                        self.refractive,
+                                        self.electron_free_energy,
+                                        self.radius,
+                                        self.electrode_dist]]):
+            self.rate_calculator = RedoxRateCalculator([self.reactant],
+                                                       [self.product],
+                                                       self.inner_reorganization_energy,
+                                                       self.dielectric,
+                                                       self.refractive,
+                                                       self.electron_free_energy,
+                                                       self.radius,
+                                                       self.electrode_dist)
 
     def graph_representation(self) -> nx.DiGraph:
         """
@@ -233,6 +258,39 @@ class RedoxReaction(Reaction):
         """
 
         return graph_rep_1_1(self)
+
+    def update_calculator(self, transition_state: Optional[MoleculeEntry] = None,
+                          reference: Optional[Dict] = None):
+        """
+        Update the rate calculator with either a transition state (or a new
+            transition state) or the thermodynamic properties of a reaction
+
+        Args:
+            transition_state (MoleculeEntry): NOT USED BY THIS METHOD
+            reference (dict): Dictionary containing relevant values
+                values for a Marcus Theory-based rate calculator
+                Keys:
+                    lambda_inner: inner solvent reorganization energy, in eV
+                    dielectric: dielectric constant of the solvent
+                    refractive: refractive index of the solvent
+                    electron_free_energy: free energy of the electron, in eV
+                    radius: radius of the reactant + inner solvation shell
+                    electrode_dist: distance from the reactant to the electrode
+        Returns:
+            None
+        """
+
+        if reference is None:
+            pass
+        else:
+            self.rate_calculator = RedoxRateCalculator([self.reactant],
+                                                       [self.product],
+                                                       reference["lambda_inner"],
+                                                       reference["dielectric"],
+                                                       reference["refractive"],
+                                                       reference["electron_free_energy"],
+                                                       reference["radius"],
+                                                       reference["electrode_dist"])
 
     @classmethod
     def generate(cls, entries: MappingDict) -> Tuple[List[Reaction],
@@ -340,40 +398,40 @@ class RedoxReaction(Reaction):
         return {"energy_A": energy_A, "energy_B": energy_B}
 
     def rate_constant(self, temperature=298.15) -> Mapping_Energy_Dict:
-        rate_constant = dict()
-        free_energy = self.free_energy(temperature=temperature)
-
-        if self.electrode_dist is None:
-            kappa = 1
+        if isinstance(self.rate_calculator, RedoxRateCalculator):
+            return {"k_A": self.rate_calculator.calculate_rate_constant(temperature=temperature),
+                    "k_B": self.rate_calculator.calculate_rate_constant(temperature=temperature,
+                                                                        reverse=True)}
         else:
-            kappa = np.exp(-1.2 * self.electrode_dist)
+            rate_constant = dict()
+            free_energy = self.free_energy(temperature=temperature)
 
-        if self.reorganization_energy is None:
-            delta_g_a = free_energy["free_energy_A"]
-            delta_g_b = free_energy["free_energy_B"]
-        else:
-            lam_reorg = self.reorganization_energy
-            delta_g_a = lam_reorg / 4 * (1 + free_energy["free_energy_A"] / lam_reorg) ** 2
-            delta_g_b = lam_reorg / 4 * (1 + free_energy["free_energy_B"] / lam_reorg) ** 2
+            if self.electrode_dist is None:
+                kappa = 1
+            else:
+                kappa = np.exp(-1.2 * self.electrode_dist)
 
-        if self.reorganization_energy is None and free_energy["free_energy_A"] < 0:
-            rate_constant["k_A"] = kappa * k * temperature / h
-        else:
-            rate_constant["k_A"] = kappa * k * temperature / h * np.exp(-96487 * delta_g_a / (R * temperature))
+            if self.inner_reorganization_energy is None:
+                delta_g_a = free_energy["free_energy_A"]
+                delta_g_b = free_energy["free_energy_B"]
+            else:
+                lam_reorg = self.inner_reorganization_energy
+                delta_g_a = lam_reorg / 4 * (1 + free_energy["free_energy_A"] / lam_reorg) ** 2
+                delta_g_b = lam_reorg / 4 * (1 + free_energy["free_energy_B"] / lam_reorg) ** 2
 
-        if self.reorganization_energy is None and free_energy["free_energy_B"] < 0:
-            rate_constant["k_B"] = kappa * k * temperature / h
-        else:
-            rate_constant["k_B"] = kappa * k * temperature / h * np.exp(-96487 * delta_g_b / (R * temperature))
+            if self.inner_reorganization_energy is None and free_energy["free_energy_A"] < 0:
+                rate_constant["k_A"] = kappa * k * temperature / h
+            else:
+                rate_constant["k_A"] = kappa * k * temperature / h * np.exp(-96487 * delta_g_a / (R * temperature))
 
-        return rate_constant
+            if self.inner_reorganization_energy is None and free_energy["free_energy_B"] < 0:
+                rate_constant["k_B"] = kappa * k * temperature / h
+            else:
+                rate_constant["k_B"] = kappa * k * temperature / h * np.exp(-96487 * delta_g_b / (R * temperature))
+
+            return rate_constant
 
     def as_dict(self) -> dict:
-        if self.transition_state is None:
-            ts = None
-        else:
-            ts = self.transition_state.as_dict()
-
         if self.rate_calculator is None:
             rc = None
         else:
@@ -385,8 +443,12 @@ class RedoxReaction(Reaction):
              "products": [p.as_dict() for p in self.products],
              "reactant": self.reactant.as_dict(),
              "product": self.product.as_dict(),
+             "inner_reorganization_energy": self.inner_reorganization_energy,
+             "dielectric": self.dielectric,
+             "refractive": self.refractive,
              "electron_free_energy": self.electron_free_energy,
-             "transition_state": ts,
+             "radius": self.radius,
+             "electrode_dist": self.electrode_dist,
              "rate_calculator": rc,
              "parameters": self.parameters}
 
@@ -397,22 +459,18 @@ class RedoxReaction(Reaction):
         reactant = MoleculeEntry.from_dict(d["reactant"])
         product = MoleculeEntry.from_dict(d["product"])
 
-        if d["transition_state"] is None:
-            ts = None
-            if d["rate_calculator"] is None:
-                rate_calculator = None
-            else:
-                rate_calculator = ExpandedBEPRateCalculator.from_dict(d["rate_calculator"])
+        if d["rate_calculator"] is None:
+            rate_calculator = None
         else:
-            ts = MoleculeEntry.from_dict(d["transition_state"])
-            rate_calculator = ReactionRateCalculator.from_dict(d["rate_calculator"])
+            rate_calculator = RedoxRateCalculator.from_dict(d["rate_calculator"])
 
         parameters = d["parameters"]
 
-        reaction = cls(reactant, product, transition_state=ts,
-                       parameters=parameters)
+        reaction = cls(reactant, product, d["inner_reorganization_energy"],
+                       d["dielectric"], d["refractive"], d["electron_free_energy"],
+                       d["radius"], d["electrode_dist"], parameters=parameters)
         reaction.rate_calculator = rate_calculator
-        reaction.electron_free_energy = d["electron_free_energy"]
+
         return reaction
 
 
@@ -1208,6 +1266,7 @@ class ConcertedReaction(Reaction):
 
     def __init__(self, reactant: List[MoleculeEntry], product: List[MoleculeEntry],
                  transition_state: Optional[MoleculeEntry] = None,
+                 electron_free_energy: Optional[float] = None,
                  parameters: Optional[Dict] = None):
         """
             Initilizes IntermolecularReaction.reactant to be in the form of a
@@ -1221,11 +1280,13 @@ class ConcertedReaction(Reaction):
           Args:
             reactant: MoleculeEntry object
             product: list of MoleculeEntry object of length 2
+            transition_state: MoleculeEntry representing the TS for the reaction
+
         """
 
         self.reactants = reactant
         self.products = product
-        self.electron_free_energy = None
+        self.electron_free_energy = electron_free_energy
         self.electron_energy = None
         super().__init__(reactant, product,
                          transition_state=transition_state,
@@ -1334,6 +1395,12 @@ class ConcertedReaction(Reaction):
              the reactant and product of the ConcertedReaction
              object, and the backwards of this reaction would be free_energy_B.
          """
+
+        if self.electron_free_energy is None:
+            electron_free = 0.0
+        else:
+            electron_free = self.electron_free_energy
+
         cond_rct = all(reactant.free_energy() is not None for reactant in self.reactants)
         cond_pro = all(product.free_energy() is not None for product in self.products)
         if cond_rct and cond_pro:
@@ -1342,8 +1409,8 @@ class ConcertedReaction(Reaction):
             reactant_free_energy = np.sum([item.free_energy(temp=temperature) for item in self.reactants])
             product_free_energy = np.sum([item.free_energy(temp=temperature) for item in self.products])
             total_charge_change = product_charge - reactant_charge
-            free_energy_A = product_free_energy - reactant_free_energy + total_charge_change * self.electron_free_energy
-            free_energy_B = reactant_free_energy - product_free_energy - total_charge_change * self.electron_free_energy
+            free_energy_A = product_free_energy - reactant_free_energy + total_charge_change * electron_free
+            free_energy_B = reactant_free_energy - product_free_energy - total_charge_change * electron_free
 
         else:
             free_energy_A = None
@@ -1731,13 +1798,16 @@ class ReactionNetwork(MSONable):
 
     """
 
-    def __init__(self, electron_free_energy, temperature, entries_dict,
+    def __init__(self, electron_free_energy, temperature, solvent_dielectric,
+                 solvent_refractive_index, entries_dict,
                  entries_list, graph, reactions, families,
                  PR_record, min_cost, num_starts):
         """
         :param electron_free_energy: Electron free energy (in eV)
         :param temperature: Temperature of the system, used for free energy
             and rate constants (temperature given in K)
+        :param solvent_dielectric: dielectric constant of the solvent medium
+        :param solvent_refractive_index: refractive index of the solvent medium
         :param entries_dict: dict of dicts of dicts of lists (d[formula][bonds][charge])
         :param entries_list: list of unique entries in entries_dict
         :param graph: nx.DiGraph representing connections in the network
@@ -1750,6 +1820,8 @@ class ReactionNetwork(MSONable):
 
         self.electron_free_energy = electron_free_energy
         self.temperature = temperature
+        self.solvent_dielectric = solvent_dielectric
+        self.solvent_refractive_index = solvent_refractive_index
 
         self.entries = entries_dict
         self.entries_list = entries_list
@@ -1772,7 +1844,8 @@ class ReactionNetwork(MSONable):
 
     @classmethod
     def from_input_entries(cls, input_entries, electron_free_energy=-2.15,
-                           temperature=298.15):
+                           temperature=298.15, solvent_dielectric=18.5,
+                           solvent_refractive_index=1.415):
         """
         Generate a ReactionNetwork from a set of MoleculeEntries.
 
@@ -1782,6 +1855,8 @@ class ReactionNetwork(MSONable):
             required to add an electron (in eV)
         :param temperature: Temperature of the system, used for free energy
             and rate constants (in K)
+        :param solvent_dielectric: Dielectric constant of the solvent medium
+        :param solvent_refractive_index: Refractive index of the solvent medium
         :return:
         """
 
@@ -1848,7 +1923,8 @@ class ReactionNetwork(MSONable):
 
         graph = nx.DiGraph()
 
-        network = cls(electron_free_energy, temperature, entries, entries_list,
+        network = cls(electron_free_energy, temperature, solvent_dielectric,
+                      solvent_refractive_index, entries, entries_list,
                       graph, list(), dict(), dict(), dict(), 0)
 
         return network
@@ -2587,6 +2663,8 @@ class ReactionNetwork(MSONable):
              "families": families,
              "electron_free_energy": self.electron_free_energy,
              "temperature": self.temperature,
+             "solvent_dielectric": self.solvent_dielectric,
+             "solvent_refractive_index": self.solvent_refractive_index,
              "graph": json_graph.adjacency_data(self.graph),
              "PR_record": self.PR_record,
              "min_cost": self.min_cost,
@@ -2629,8 +2707,9 @@ class ReactionNetwork(MSONable):
 
         graph = json_graph.adjacency_graph(d["graph"], directed=True)
 
-        return cls(d["electron_free_energy"], d["temperature"], entries,
-                   entries_list, graph, reactions, families,
+        return cls(d["electron_free_energy"], d["temperature"],
+                   d["solvent_dielectric"], d["solvent_refractive_index"],
+                   entries, entries_list, graph, reactions, families,
                    d["PR_record"], d["min_cost"], d["num_starts"])
 
 

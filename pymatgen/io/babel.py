@@ -10,7 +10,7 @@ from pymatgen.analysis.graphs import MoleculeGraph
 from monty.dev import requires
 
 try:
-    import openbabel as ob
+    from openbabel import openbabel as ob
     from openbabel import pybel as pb
 except Exception:
     ob = None

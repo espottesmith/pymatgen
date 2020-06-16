@@ -1,4 +1,7 @@
 import copy
+import random
+import os
+from typing import Optional
 
 import numpy as np
 
@@ -6,6 +9,24 @@ from schrodinger.structure import StructureReader, Structure
 
 from pymatgen.core.structure import Molecule
 from pymatgen.core.sites import Site
+
+
+def file_to_schrodinger_structure(filename: str, format: Optional[str] = None):
+    """
+    Convert a file (sdf, pdb, sd, mol2, maestro, or maestro_text) to a
+        Schrodinger Structure object.
+
+    Args:
+        filename (str): Name of the file
+        format (str, or None): File format. If None (default), the file suffix
+            of filename will be used to determine the format
+
+    :return:
+    """
+
+
+def maestro_file_to_molecule():
+    pass
 
 
 def schrodinger_struct_to_molecule(structure: Structure):
@@ -46,3 +67,16 @@ def molecule_to_schrodinger_struct(molecule: Molecule):
         struct: schrodinger.structure.Structure object
     """
 
+    # First need to convert molecule to file to use StructureReader
+
+    file_suffix = random.randint(1, 100000000)
+    molecule.to('sdf', "temp_conversion{}.sdf".format(file_suffix))
+
+    reader = StructureReader("temp_conversion{}.sdf".format(file_suffix))
+
+    # Assume only one structure (should be the case for a single SDF file)
+    struct = reader[1]
+
+    os.remove("temp_conversion{}.sdf".format(file_suffix))
+
+    return struct

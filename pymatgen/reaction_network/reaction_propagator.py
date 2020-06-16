@@ -63,6 +63,7 @@ class KineticMonteCarloSimulator:
             self.reactions[rid] = reaction
             self.rate_constants[2 * rid] = reaction.rate_constant(temperature=temperature)["k_A"]
             self.rate_constants[2 * rid + 1] = reaction.rate_constant(temperature=temperature)["k_B"]
+            # print(rid, reaction.reactant_ids, reaction.product_ids, reaction.rate_constant(temperature=temperature))
             num_reactants_for = list()
             num_reactants_rev = list()
             for reactant in reaction.reactants:
@@ -340,9 +341,9 @@ class KineticMonteCarloSimulator:
                         this_id += 1
                         break
 
-                ax.plot(ts, nums, label=this_label, color=this_color)
+                ax.loglog(ts, nums, label=this_label, color=this_color)
             else:
-                ax.plot(ts, nums)
+                ax.loglog(ts, nums)
 
         if name is None:
             title = "KMC simulation, total time {}".format(data["times"][-1])

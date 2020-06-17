@@ -336,17 +336,18 @@ class KineticMonteCarloSimulator:
                     if mol_id == entry.entry_id:
                         this_composition = entry.molecule.composition.alphabetical_formula
                         this_charge = entry.molecule.charge
-                        this_label = this_composition + " " + str(this_charge)
+                        # this_label = this_composition + " " + str(this_charge)
+                        this_label = entry.entry_id
                         this_color = colors(this_id)
                         this_id += 1
                         break
 
-                ax.loglog(ts, nums, label=this_label, color=this_color)
+                ax.plot(ts, nums, label=this_label, color=this_color)
             else:
-                ax.loglog(ts, nums)
+                ax.plot(ts, nums)
 
         if name is None:
-            title = "KMC simulation, total time {}".format(data["times"][-1])
+            title = "KMC simulation, total time {}".format(sum(data["times"]))
         else:
             title = name
 

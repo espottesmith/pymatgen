@@ -48,8 +48,8 @@ class TestSchrodingerAdapter(unittest.TestCase):
                      [1.2400, 0.7370, -0.4960]]
 
         for ii, atom in enumerate(structures[0].molecule[1].atom):
-            self.assertSequenceEqual(np.array(positions[ii]),
-                                     atom.xyz)
+            self.assertListEqual(positions[ii],
+                                 list(atom.xyz))
 
     @unittest.skipIf(not ob, "Openbabel not present. Skipping...")
     def test_maestro_file_to_molecule(self):
@@ -73,7 +73,7 @@ class TestSchrodingerAdapter(unittest.TestCase):
 
         pos_array = np.array(positions)
         for ii, line in enumerate(pos_array):
-            self.assertSequenceEqual(line, molecules[0].cart_coords[ii])
+            self.assertListEqual(line, list(molecules[0].cart_coords[ii]))
 
     @unittest.skipIf(not ob, "Openbabel not present. Skipping...")
     def test_schrodinger_struct_to_molecule(self):

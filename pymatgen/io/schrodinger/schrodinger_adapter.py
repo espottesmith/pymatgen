@@ -89,7 +89,7 @@ def molecule_to_schrodinger_struct(molecule: Molecule):
     reader = StructureReader("temp_conversion{}.sdf".format(file_suffix))
 
     # Assume only one structure (should be the case for a single SDF file)
-    struct = reader[1]
+    struct = [r for r in reader][0]
 
     os.remove("temp_conversion{}.sdf".format(file_suffix))
 

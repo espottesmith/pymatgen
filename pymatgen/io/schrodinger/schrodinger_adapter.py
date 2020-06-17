@@ -7,21 +7,19 @@ from schrodinger.structure import StructureReader, Structure
 from pymatgen.core.structure import Molecule
 
 
-def file_to_schrodinger_structure(filename: str, format: Optional[str] = None):
+def file_to_schrodinger_structure(filename: str):
     """
     Convert a file (sdf, pdb, sd, mol2, maestro, or maestro_text) to a
         Schrodinger Structure object.
 
     Args:
         filename (str): Name of the file
-        format (str, or None): File format. If None (default), the file suffix
-            of filename will be used to determine the format
 
     Returns:
         structures (list of schrodinger.structure.Structure objects)
     """
 
-    reader = StructureReader(filename, format=format)
+    reader = StructureReader(filename)
 
     structures = [s for s in reader]
     return structures
@@ -37,7 +35,7 @@ def maestro_file_to_molecule(filename: str):
     Returns:
         molecules (list of pymatgen.core.structure.Molecule objects)
     """
-    structures = file_to_schrodinger_structure(filename=filename, format="maestro")
+    structures = file_to_schrodinger_structure(filename=filename)
 
     molecules = [schrodinger_struct_to_molecule(s) for s in structures]
     return molecules

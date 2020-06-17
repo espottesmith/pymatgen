@@ -71,8 +71,7 @@ class TestSchrodingerAdapter(unittest.TestCase):
                      [1.194818, 1.433330, -1.050016],
                      [1.626845, 1.559988, 0.679031]]
 
-        pos_array = np.array(positions)
-        for ii, line in enumerate(pos_array):
+        for ii, line in enumerate(positions):
             self.assertListEqual(line, list(molecules[0].cart_coords[ii]))
 
     @unittest.skipIf(not ob, "Openbabel not present. Skipping...")
@@ -84,8 +83,8 @@ class TestSchrodingerAdapter(unittest.TestCase):
                              [str(s) for s in mol.species])
 
         for ii in range(len(mol)):
-            self.assertListEqual(mol.cart_coords[ii],
-                                 struct.molecule[1].atom[ii + 1])
+            self.assertListEqual(list(mol.cart_coords[ii]),
+                                 list(struct.molecule[1].atom[ii + 1].xyz))
 
     @unittest.skipIf(not ob, "Openbabel not present. Skipping...")
     def test_molecule_to_schrodinger_struct(self):
@@ -95,8 +94,8 @@ class TestSchrodingerAdapter(unittest.TestCase):
                              [str(s) for s in self.molecule.species])
 
         for ii in range(len(self.molecule)):
-            self.assertListEqual(self.molecule.cart_coords[ii],
-                                 struct.molecule[1].atom[ii + 1])
+            self.assertListEqual(list(self.molecule.cart_coords[ii]),
+                                 list(struct.molecule[1].atom[ii + 1].xyz))
 
 
 if __name__ == "__main__":

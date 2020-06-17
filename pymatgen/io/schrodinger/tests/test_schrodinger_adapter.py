@@ -17,9 +17,9 @@ from pymatgen.io.schrodinger.schrodinger_adapter import (file_to_schrodinger_str
 from pymatgen.util.testing import PymatgenTest
 
 module_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-molecule_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..",
+molecule_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
                             "test_files", "molecules")
-schrodinger_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..",
+schrodinger_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
                                "test_files", "schrodinger")
 
 

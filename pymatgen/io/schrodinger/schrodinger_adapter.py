@@ -1,14 +1,10 @@
-import copy
 import random
 import os
 from typing import Optional
 
-import numpy as np
-
 from schrodinger.structure import StructureReader, Structure
 
 from pymatgen.core.structure import Molecule
-from pymatgen.core.sites import Site
 
 
 def file_to_schrodinger_structure(filename: str, format: Optional[str] = None):
@@ -21,12 +17,30 @@ def file_to_schrodinger_structure(filename: str, format: Optional[str] = None):
         format (str, or None): File format. If None (default), the file suffix
             of filename will be used to determine the format
 
-    :return:
+    Returns:
+        structures (list of schrodinger.structure.Structure objects)
     """
 
+    reader = StructureReader(filename, format=format)
 
-def maestro_file_to_molecule():
-    pass
+    structures = [s for s in reader]
+    return structures
+
+
+def maestro_file_to_molecule(filename: str):
+    """
+    Convert a Maestro file (*.mae) to pymatgen Molecule objects
+
+    Args:
+        filename (str): Name of the file to be converted
+
+    Returns:
+        molecules (list of pymatgen.core.structure.Molecule objects)
+    """
+    structures = file_to_schrodinger_structure(filename=filename, format="maestro")
+
+    molecules = [schrodinger_struct_to_molecule(s) for s in structures]
+    return molecules
 
 
 def schrodinger_struct_to_molecule(structure: Structure):

@@ -2,7 +2,7 @@ import random
 import os
 from typing import Optional
 
-from schrodinger.structure import StructureReader, Structure
+from schrodinger.structure import Structure, StructureReader, StructureWriter
 
 from pymatgen.core.structure import Molecule
 
@@ -39,6 +39,22 @@ def maestro_file_to_molecule(filename: str):
 
     molecules = [schrodinger_struct_to_molecule(s) for s in structures]
     return molecules
+
+
+def molecule_to_maestro_file(molecule: Molecule, filename: str):
+    """
+    Write a Pymatgen Molecule object to a Maestro file.
+
+    Args;
+        molecule (Molecule): Molecule to be written
+        filename (str): Path to file where molecule will be written.
+
+    Returns:
+         None
+    """
+
+    struct = molecule_to_schrodinger_struct(molecule)
+    StructureWriter.write(struct, filename)
 
 
 def schrodinger_struct_to_molecule(structure: Structure):
@@ -88,6 +104,10 @@ def molecule_to_schrodinger_struct(molecule: Molecule):
 
     # Assume only one structure (should be the case for a single SDF file)
     struct = [r for r in reader][0]
+
+    for atom in struct.atom:
+        atom.formal_charge = 0
+    struct.atom[1].formal_charge = molecule.charge
 
     os.remove("temp_conversion{}.sdf".format(file_suffix))
 

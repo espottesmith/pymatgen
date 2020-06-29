@@ -40,7 +40,7 @@ class AutoTSInput(MSONable):
         self.autots_variables["product"] = ["pro_{}.mae".format(rr) for rr in range(len(self.products))]
         self.autots_variables["charge"] = sum([m.charge for m in self.reactants])
 
-        nelectrons = sum([m._nelectrons] for m in self.reactants)
+        nelectrons = sum([m._nelectrons for m in self.reactants])
         self.autots_variables["multiplicity"] = 1 if nelectrons % 2 == 0 else 2
 
     def write(self, filename: str, write_molecules: Optional[bool] = True,

@@ -103,9 +103,9 @@ class AutoTSInput(MSONable):
             reactants = input_file.getValue("reactant")
             products = input_file.getValue("product")
 
-            rct_mols = [maestro_file_to_molecule(os.path.join(base_dir, r))
+            rct_mols = [maestro_file_to_molecule(os.path.join(base_dir, r))[0]
                         for r in reactants]
-            pro_mols = [maestro_file_to_molecule(os.path.join(base_dir, p))
+            pro_mols = [maestro_file_to_molecule(os.path.join(base_dir, p))[0]
                         for p in products]
         else:
             rct_mols = list()

@@ -212,7 +212,7 @@ class JagOutput(MSONable):
         self.data["input"]["charge"] = jag_out.charge
         self.data["input"]["multiplicity"] = jag_out.multiplicity
         self.data["input"]["basis_functions"] = jag_out.nbasis
-        self.data["input"]["num_electrons"] = jag_out.nelectrons
+        self.data["input"]["num_electrons"] = jag_out.nelectron
         self.data["input"]["input_file"] = jag_out.mae_in
         self.data["input"]["solvation"] = jag_out.opts.solvation
 

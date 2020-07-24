@@ -14,8 +14,7 @@ from pymatgen.io.qchem.outputs import (QCOutput,
                                        QCStringfileParser,
                                        QCPerpGradFileParser,
                                        QCVFileParser,
-                                       ScratchFileParser,
-                                       BernyLogParser)
+                                       ScratchFileParser)
 from pymatgen.util.testing import PymatgenTest
 
 try:
@@ -35,8 +34,6 @@ multi_job_dict = loadfn(os.path.join(
     os.path.dirname(__file__), "multi_job.json"))
 test_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
                         'test_files', "molecules")
-berny_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..",
-                        'test_files', "berny")
 
 property_list = {"errors",
                  "multiple_outputs",
@@ -462,30 +459,6 @@ class ScratchFileParserTest(PymatgenTest):
                     self.assertAlmostEqual(mat[i, j], 0)
 
         self.assertEqual("approximate", self.parsed.data["hess_approx_exact"][0])
-
-
-class BernyLogParserTest(PymatgenTest):
-
-    def setUp(self) -> None:
-        self.parsed = BernyLogParser(os.path.join(berny_dir, "berny.log"))
-        self.generate_berny_log_dict()
-
-    @staticmethod
-    def generate_berny_log_dict():
-        """
-        Used for testing pyberny log data.
-        """
-
-        dumpfn(BernyLogParser(filename=os.path.join(berny_dir, "berny.log")).as_dict(),
-               os.path.join(berny_dir, "berny.json"))
-
-    def test_berny(self):
-        filename = os.path.join(berny_dir, "berny.log")
-        parsed = BernyLogParser(filename=filename)
-
-        basis = loadfn(os.path.join(berny_dir, "berny.json"))
-
-        self.assertDictEqual(parsed.as_dict(), basis)
 
 
 if __name__ == "__main__":

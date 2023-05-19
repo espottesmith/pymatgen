@@ -288,7 +288,7 @@ class ORCAInput(InputFile):
             (List[str]) List of block names
         """
 
-        patterns = {"blocks": r"^\s*?\%([a-z_]+)"}
+        patterns = {"blocks": r"^%([a-z_]+)"}
         matches = read_pattern(string, patterns)
 
         # list of the blocks present
@@ -310,7 +310,7 @@ class ORCAInput(InputFile):
         charge = None
         spin_mult = None
         patterns = {
-            "xyzfile": r"^\s*\* xyzfile ((?:\-)*\d+)\s+((?:\-)*\d+)\s+([A-Za-z0-9\-\_\.]+)"
+            "xyzfile": r"^\s*\* xyzfile ((?:\-)*\d+)\s+((?:\-)*\d+)\s+([A-Za-z0-9\-\_\.]+)",
             "charge": r"^\s*\*xyz\s+([0-9\-]+)\s+[0-9\-]+",
             "spin_mult": r"^\s*\*xyz\s+[0-9\-]+\s+([0-9\-]+)",
         }
@@ -344,8 +344,42 @@ class ORCAInput(InputFile):
 
     @staticmethod
     def read_simple_input(string: str) -> List[str]:
-        pass
+        """
+        Parse simple input from string.
+
+        Args:
+            string (str): string (representation of an input file) to be searched
+
+        Returns:
+            (List[str]) list representation of simple input string
+        """
+
+        patterns = {"simple_input": r"^\s*?!\s*([^\n]+)"}
+        matches = read_pattern(string, patterns)
+
+        if "simple_input" in matches:
+            # Break it down as a list, separated by whitespace
+            simple_input = matches["simple_input"][0][0].strip().split()
+            return simple_input
+        else:
+            return None
     
     @staticmethod
     def read_block(string: str, block_name: str) -> Dict[str, Any]:
-        pass
+        """
+        Parse a ORCA input block
+
+        Args:
+            string (str): string (representation of an input file) to be searched
+            block_name (str): Name of the block to search for
+
+        Returns:
+            (Dict[str, Any]])
+        """
+
+        header = r"^%" + block_name
+        row = r"\s*([a-zA-Z\_\d]+)\s+([a-zA-Z\-\_\d]+)"
+        footer = r"^end"
+
+        table = read_table_pattern(string, header_pattern=header, row_pattern=row, footer_pattern=footer)
+        return dict(table[0])

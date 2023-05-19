@@ -180,8 +180,7 @@ class ORCAInput(InputFile):
         plots = None
         scf = None
 
-        if "simple_input" in blocks:
-            simple_input = cls.read_simple_input(string)
+        simple_input = cls.read_simple_input(string)
         if "basis" in blocks:
             basis = cls.read_block(string, "basis")
         if "cpcm" in blocks:
@@ -354,7 +353,7 @@ class ORCAInput(InputFile):
             (List[str]) list representation of simple input string
         """
 
-        patterns = {"simple_input": r"^\s*?!\s*([^\n]+)"}
+        patterns = {"simple_input": r"^\s*!\s*([^\n]+)"}
         matches = read_pattern(string, patterns)
 
         if "simple_input" in matches:

@@ -1,6 +1,6 @@
-import pytest
+import logging
 
-from monty.serialization import loadfn, dumpfn
+import pytest
 
 from pymatgen.core.structure import Molecule
 from pymatgen.io.orca.inputs import ORCAInput

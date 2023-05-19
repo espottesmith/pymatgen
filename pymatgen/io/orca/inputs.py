@@ -311,8 +311,8 @@ class ORCAInput(InputFile):
         spin_mult = None
         patterns = {
             "xyzfile": r"^\s*\* xyzfile ((?:\-)*\d+)\s+((?:\-)*\d+)\s+([A-Za-z0-9\-\_\.]+)",
-            "charge": r"^\s*\*xyz\s+([0-9\-]+)\s+[0-9\-]+",
-            "spin_mult": r"^\s*\*xyz\s+[0-9\-]+\s+([0-9\-]+)",
+            "charge": r"^\s*\*\s*xyz\s+([0-9\-]+)\s+[0-9\-]+",
+            "spin_mult": r"^\s*\*\s*xyz\s+[0-9\-]+\s+([0-9\-]+)",
         }
         matches = read_pattern(string, patterns)
         if "xyzfile" in matches:

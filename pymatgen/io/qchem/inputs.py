@@ -13,7 +13,7 @@ from monty.io import zopen
 from pymatgen.core import Molecule
 from pymatgen.io.core import InputFile
 
-from .utils import lower_and_check_unique, read_pattern, read_table_pattern
+from pymatgen.io.qchem.utils import lower_and_check_unique, read_pattern, read_table_pattern
 
 if TYPE_CHECKING:
     from pathlib import Path

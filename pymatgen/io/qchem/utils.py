@@ -104,7 +104,6 @@ def read_table_pattern(
         row_pattern.
     """
     table_pattern_text = header_pattern + r"\s*(?P<table_body>(?:" + row_pattern + r")+)\s*" + footer_pattern
-    print(table_pattern_text)
     table_pattern = re.compile(table_pattern_text, re.MULTILINE | re.DOTALL)
     rp = re.compile(row_pattern)
     data = {}

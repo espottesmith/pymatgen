@@ -330,9 +330,9 @@ class ORCAInput(InputFile):
         if "spin_mult" in matches:
             spin_mult = int(matches["spin_mult"][0][0])
 
-        header = r"^\s*\*xyz\s+[0-9\-]+\s+[0-9\-]+"
+        header = r"^\s*\*\s+xyz\s+[0-9\-]+\s+[0-9\-]+"
         row = r"\s*([A-Za-z]+)\s+([\d\-\.]+)\s+([\d\-\.]+)\s+([\d\-\.]+)"
-        footer = r"^\s*\*"
+        footer = r"\s*\*"
         mol_table = read_table_pattern(string, header_pattern=header, row_pattern=row, footer_pattern=footer)
         species = [val[0] for val in mol_table[0]]
         coords = [[float(val[1]), float(val[2]), float(val[3])] for val in mol_table[0]]

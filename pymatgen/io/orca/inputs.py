@@ -269,7 +269,7 @@ class ORCAInput(InputFile):
         block_list = [f"%{block_name}"]
         for k, v in contents.items():
             if isinstance(v, list):
-                block_list.append(f"  {k} {','.join(v)}")
+                block_list.append(f"  {k} {','.join([str(x) for x in v])}")
             else:
                 block_list.append(f"  {k} {v}")
         block_list.append("end")

@@ -34,8 +34,7 @@ def test_template():
   string str
   integer 1
   float 1.337
-end
-"""
+end"""
 
 def test_find_blocks():
     test_input = """! NORI CPCM Opt Freq ExtremeSCF

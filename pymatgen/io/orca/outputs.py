@@ -74,10 +74,6 @@ class ORCAOutput(MSONable):
         else:
             self.data["version"] = "unknown"
 
-        # TODO: parse initial structure
-        # Parse initial structure, including charge, spin, and number of electrons
-        self._parse_initial_structure()
-
         # Check if calculation finished
         completed_match = read_pattern(
             self.text,
@@ -97,6 +93,10 @@ class ORCAOutput(MSONable):
 
         # Parse basic calculation parameters
         self._parse_calculation_parameters()
+
+        # TODO: parse initial structure
+        # Parse initial structure, including charge, spin, and number of electrons
+        self._parse_initial_structure()
 
         # Parse the SCF
         self._parse_SCF()
@@ -141,8 +141,53 @@ class ORCAOutput(MSONable):
         pass
 
     def _parse_calculation_parameters(self):
-        # TODO
-        pass
+        if "parameters" not in self.data:
+            self.data["parameters"] = dict()
+
+        # Parse basis
+        basis_matches = read_pattern(
+            self.text,
+            {
+                "basis": r"Your calculation utilizes the basis: ([A-Za-z0-9\-\*\+\(\)]+)",
+                "aux_basis": r"Your calculation utilizes the auxiliary basis: ([A-Za-z0-9/\-\*\+\(\)]+)"
+            }
+        )
+
+        if basis_matches.get("basis") is None:
+            self.data["parameters"]["basis"] = None
+        else:
+            self.data["parameters"]["basis"] = basis_matches["basis"][0][0]
+
+        if basis_matches.get("aux_basis") is None:
+            self.data["parameters"]["aux_basis"] = None
+        else:
+            self.data["parameters"]["aux_basis"] = basis_matches["aux_basis"][0][0]
+
+        matches = read_pattern(
+            self.text,
+            {
+                "charge": r"Total Charge\s+Charge\s+\.\.\.\.\s+(\d+)",
+                "spin": r"Multiplicity\s+Mult\s+\.\.\.\.\s+(\d+)",
+                "nelec": r"Number of Electrons\s+NEL\s+\.\.\.\.\s+(\d+)"
+            }
+        )
+
+        # TODO: should we continue parsing if we can't get charge or spin?
+        # We could also get this from the input information
+        if matches.get("charge") is None:
+            self.data["charge"] = None
+        else:
+            self.data["charge"] = int(matches["charge"][0][0])
+        
+        if matches.get("spin") is None:
+            self.data["spin_multiplicity"] = None
+        else:
+            self.data["spin_multiplicity"] = int(matches["spin"][0][0])
+        
+        if matches.get("nelec") is None:
+            self.data["nelectrons"] = None
+        else:
+            self.data["nelectrons"] = int(matches["nelec"][0][0])
 
     def _parse_runtime(self):
         run_match = read_pattern(
@@ -164,8 +209,14 @@ class ORCAOutput(MSONable):
             self.data["runtime"] = total_seconds
 
     def _parse_SCF(self):
-        # TODO
-        pass
+        #TODO: you are here
+        header_pattern = r"\-+\s*SCF ITERATIONS\s*\-+"
+        table_pattern = (r"(?:(?:ITER\s+Energy\s+Delta\-E\s+Max\-DP\s+RMS\-DP\s+\[F,P\]\s+Damp)|"
+                         r"(?:\s+\*\*\*[A-Za-z\s\-/]+\*\*\*)|"
+                         r"(?:ITER\s+Energy\s+Delta\-E\s+Grad\s+Rot\s+Max\-DP\s+RMS\-DP)|"
+                         r"(?:\s*\d+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+"
+                         r"\s+[\-\.0-9]+\s+[\-\.0-9]+))\n")
+        footer_pattern = r""
 
     def _parse_charges_and_dipoles(self):
         # TODO

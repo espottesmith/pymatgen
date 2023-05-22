@@ -182,8 +182,15 @@ class ORCAOutput(MSONable):
         
         if matches.get("spin") is None:
             self.data["spin_multiplicity"] = None
+            self.data["open_shell"] = None
         else:
             self.data["spin_multiplicity"] = int(matches["spin"][0][0])
+
+            # Assess if the calculation is closed-shell or open-shell
+            if self.data["spin_multiplicity"] != 1:
+                self.data["open_shell"] = True
+            else:
+                self.data["open_shell"] = False
         
         if matches.get("nelec") is None:
             self.data["nelectrons"] = None
@@ -234,13 +241,120 @@ class ORCAOutput(MSONable):
         
         self.data["SCF"] = scf
 
+    def _parse_orbital_energies(self):
+        type_matches = read_pattern(
+            self.text,
+            {
+                "open": r"\-+\s+ORBITAL ENERGIES\s+\-+\s+SPIN UP ORBITALS"
+            }
+        )
+
+        header_pattern = r"\-+\s+ORBITAL ENERGIES\s+\-+\s+NO\s+OCC\s+E\(Eh\)\s+E\(eV\)"
+        up_header = r"\s+SPIN UP ORBITALS\s+NO\s+OCC\s+E\(Eh\)\s+E\(eV\)"
+        down_header = r"\s+SPIN DOWN ORBITALS\s+NO\s+OCC\s+E\(Eh\)\s+E\(eV\)"
+        table_pattern = r"\s*\d+\s+([0-9\.]+)\s+([0-9\-\.]+)\s+([0-9\-\.]+)\s*\n"
+        footer_pattern = r""
+
+        # Molecule is open-shell
+        if type_matches.get("open") is not None:
+            if not self.data["open_shell"]:
+                self.data["open_shell"] = True
+
+            up_orbitals = list()
+            down_orbitals = list()
+            up_matches = read_table_pattern(
+                self.text,
+                up_header,
+                table_pattern,
+                footer_pattern
+            )
+            for orb_match in up_matches:
+                this_orbitals = list()
+                for orb in orb_match:
+                    this_orbitals.append(
+                        {
+                            "occupancy": float(orb[0]),
+                            "energy_Ha": float(orb[1])
+                        }
+                    )
+                up_orbitals.append(this_orbitals)
+
+            down_matches = read_table_pattern(
+                self.text,
+                down_header,
+                table_pattern,
+                footer_pattern
+            )
+            for orb_match in down_matches:
+                this_orbitals = list()
+                for orb in orb_match:
+                    this_orbitals.append(
+                        {
+                            "occupancy": float(orb[0]),
+                            "energy_Ha": float(orb[1])
+                        }
+                    )
+                down_orbitals.append(this_orbitals)
+
+            if len(up_orbitals) != len(down_orbitals):
+                if "warnings" not in self.data:
+                    self.data["warnings"] = list()
+                self.data["warnings"].append("up_down_orbitals_dont_match")
+            self.data["orbitals"] = list(zip(up_orbitals, down_orbitals))
+        # Closed-shell
+        else:
+            orbital_matches = read_table_pattern(
+                self.text,
+                header_pattern,
+                table_pattern,
+                footer_pattern
+            )
+
+            orbitals = list()
+            for orb_match in orbital_matches:
+                this_orbitals = list()
+                for orb in orb_match:
+                    this_orbitals.append(
+                        {
+                            "occupancy": float(orb[0]),
+                            "energy_Ha": float(orb[1])
+                        }
+                    )
+                orbitals.append(this_orbitals)
+            
+            self.data["orbitals"] = orbitals
+
     def _parse_charges_and_dipoles(self):
         # TODO
         pass
 
     def _parse_general_warnings(self):
-        # TODO
-        pass
+        if "warnings" not in self.data:
+            self.data["warnings"] = list()
+
+        warning_matches = read_pattern(
+            self.text,
+            {
+                "open_shell_RHF": r"WARNING: your system is open\-shell and RHF/RKS was chosen",
+                "geom_opt": r"WARNING: Geometry Optimization",
+                "S2_irrelevant": r"Warning: in a DFT calculation there is little theoretical justification to\s+"
+                                 r"calculate <S\*\*2> as in Hartree-Fock theory.",
+                "ulimit": r"The 'ulimit \-s' on the system is set to 'unlimited'. This may have negative performance\s+"
+                          r"implications. Please set the stack size to the default value",
+                "RFO_low_scaling": r"Warning: RFO finds a terribly low value for the scaling factor"
+            }
+        )
+
+        if warning_matches.get("open_shell_RHF") is not None:
+            self.data["warnings"].append("open_shell_RHF")
+        if warning_matches.get("geom_opt") is not None:
+            self.data["warnings"].append("geom_opt")
+        if warning_matches.get("S2_irrelevant") is not None:
+            self.data["warnings"].append("S2_irrelevant")
+        if warning_matches.get("ulimit") is not None:
+            self.data["warnings"].append("ulimit")
+        if warning_matches.get("RFO_low_scaling") is not None:
+            self.data["warnings"].append("RFO_low_scaling")
 
     def _parse_common_errors():
         # TODO

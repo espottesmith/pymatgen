@@ -21,6 +21,7 @@ from monty.json import MSONable, jsanitize
 from pymatgen.analysis.graphs import MoleculeGraph
 from pymatgen.analysis.local_env import OpenBabelNN, metal_edge_extender
 from pymatgen.core.structure import Molecule
+from pymatgen.io.qchem.outputs import nbo_parser
 from pymatgen.io.qchem.utils import (
     process_parsed_coords,
     process_parsed_fock_matrix,
@@ -209,14 +210,29 @@ class ORCAOutput(MSONable):
             self.data["runtime"] = total_seconds
 
     def _parse_SCF(self):
-        #TODO: you are here
         header_pattern = r"\-+\s*SCF ITERATIONS\s*\-+"
-        table_pattern = (r"(?:(?:ITER\s+Energy\s+Delta\-E\s+Max\-DP\s+RMS\-DP\s+\[F,P\]\s+Damp)|"
-                         r"(?:\s+\*\*\*[A-Za-z\s\-/]+\*\*\*)|"
+        table_pattern = (r"\s*(?:(?:ITER\s+Energy\s+Delta\-E\s+Max\-DP\s+RMS\-DP\s+\[F,P\]\s+Damp)|"
+                         r"(?:\s*\*\*\*[A-Za-z\s\-/]+\*\*\*)|"
                          r"(?:ITER\s+Energy\s+Delta\-E\s+Grad\s+Rot\s+Max\-DP\s+RMS\-DP)|"
-                         r"(?:\s*\d+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+"
-                         r"\s+[\-\.0-9]+\s+[\-\.0-9]+))\n")
-        footer_pattern = r""
+                         r"(\s*\d+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+"
+                         r"\s+[\-\.0-9]+\s+[\-\.0-9]+))\s*")
+        footer_pattern = r"\s+\*+\s+\*\s+SUCCESS\s+\*\s+\*\s+SCF CONVERGED AFTER\s+\d+\s+CYCLES\s+\*\s+\*+"
+        scf_match = read_table_pattern(self.text, header_pattern, table_pattern, footer_pattern)
+
+        scf = list()
+        for one_scf in scf_match:
+            this_scf = list()
+            for point in one_scf:
+                try:
+                    parsed = point[0].strip().split()
+                    if parsed[0] is None or parsed[0] == "None":
+                        continue
+                    this_scf.append(float(parsed[1]))
+                except IndexError:
+                    continue
+            scf.append(this_scf)
+        
+        self.data["SCF"] = scf
 
     def _parse_charges_and_dipoles(self):
         # TODO
@@ -255,8 +271,11 @@ class ORCAOutput(MSONable):
         pass
 
     def _parse_nbo(self):
-        # TODO
-        pass
+        dfs = nbo_parser(self.filename)
+        nbo_data = dict()
+        for key, value in dfs.items():
+            nbo_data[key] = [df.to_dict() for df in value]
+        self.data["nbo_data"] = nbo_data
 
 
 class ORCAPCMOutput(MSONable):

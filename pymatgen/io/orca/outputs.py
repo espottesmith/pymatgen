@@ -419,8 +419,33 @@ class ORCAOutput(MSONable):
                 loewdin.append(this_loew)
 
         # Mayer population analysis
+        header_pattern = r"ATOM\s+NA\s+ZA\s+QA\s+VA\s+BVA\s+FA\s*"
+        table_pattern = (r"\s*\d+\s+[A-Za-z]+\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)"
+                         r"\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s*\n")
+        footer_pattern = r""
 
+        mayer = list()
+        mayer_match = read_table_pattern(
+            self.text,
+            header_pattern,
+            table_pattern,
+            footer_pattern
+        )
 
+        for match in mayer_match:
+            this_mayer = list()
+            for atom in match:
+                this_mayer.append(
+                    {
+                        "gross_population": float(atom[0]),
+                        "nuclear_charge": float(atom[1]),
+                        "gross_atomic_charge": float(atom[2]),
+                        "mayer_total_valence": float(atom[3]),
+                        "mayer_bonded_valence": float(atom[4]),
+                        "mayer_free_valence": float(atom[5])
+                    }
+                )
+            mayer.append(this_mayer)
 
     def _parse_general_warnings(self):
         if "warnings" not in self.data:

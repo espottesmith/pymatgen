@@ -105,6 +105,9 @@ class ORCAOutput(MSONable):
         # Parse the partial charges (e.g. Mulliken) and dipoles
         self._parse_charges_and_dipoles()
 
+        # Parse bond orders (from e.g. Mayer analysis)
+        self._parse_bond_orders()
+
         # Check for various warnings
         self._parse_general_warnings()
 
@@ -325,8 +328,99 @@ class ORCAOutput(MSONable):
             self.data["orbitals"] = orbitals
 
     def _parse_charges_and_dipoles(self):
-        # TODO
-        pass
+        # Mulliken population analysis
+        mulliken_open_match = read_pattern(
+            self.text,
+            {
+                "open": r"\-+\s*MULLIKEN ATOMIC CHARGES AND SPIN POPULATIONS\s*\-+"
+            }
+        )
+
+        mulliken = list()
+        # Molecule is open-shell
+        if mulliken_open_match.get("open") is not None:
+            if not self.data["open_shell"]:
+                self.data["open_shell"] = True
+
+            header_pattern = r"\-+\s*MULLIKEN ATOMIC CHARGES AND SPIN POPULATIONS\s*\-+"
+            table_pattern = r"\s*\d+\s+[A-Za-z]+\s*:\s+([0-9\-\.]+)\s+([0-9\-\.]+)\s*\n"
+            footer_pattern = r"Sum of atomic charges\s+:\s+[0-9\.\-]+"
+
+            mull_table_match = read_table_pattern(
+                self.text,
+                header_pattern,
+                table_pattern,
+                footer_pattern
+            )
+
+            for mull_match in mull_table_match:
+                this_mulliken = list()
+                for atom in mull_match:
+                    this_mulliken.append((float(atom[0]), float(atom[1])))
+                
+                mulliken.append(this_mulliken)
+        # Molecule is closed-shell
+        else:
+            header_pattern = r"\-+\s*MULLIKEN ATOMIC CHARGES\s*\-+"
+            table_pattern = r"\s*\d+\s+[A-Za-z]+\s*:\s+([0-9\-\.]+)\s*\n"
+            footer_pattern = r"Sum of atomic charges\s+:\s+[0-9\.\-]+"
+
+            for mull_match in mull_table_match:
+                this_mulliken = list()
+                for atom in mull_match:
+                    this_mulliken.append((float(atom[0])))
+                
+                mulliken.append(this_mulliken)
+        
+        self.data["mulliken"] = mulliken
+
+        # Lowedin population analysis
+        loewdin_open_match = read_pattern(
+            self.text,
+            {
+                "open": r"\-+\s*LOEWDIN ATOMIC CHARGES AND SPIN POPULATIONS\s*\-+"
+            }
+        )
+
+        loewdin = list()
+        # Molecule is open-shell
+        if loewdin_open_match.get("open") is not None:
+            if not self.data["open_shell"]:
+                self.data["open_shell"] = True
+
+            header_pattern = r"\-+\s*LOEWDIN ATOMIC CHARGES AND SPIN POPULATIONS\s*\-+"
+            table_pattern = r"\s*\d+\s+[A-Za-z]+\s*:\s+([0-9\-\.]+)\s+([0-9\-\.]+)\s*\n"
+            footer_pattern = r""
+
+            loew_table_match = read_table_pattern(
+                self.text,
+                header_pattern,
+                table_pattern,
+                footer_pattern
+            )
+
+            for loew_match in loew_table_match:
+                this_loew = list()
+                for atom in loew_match:
+                    this_loew.append((float(atom[0]), float(atom[1])))
+                
+                loewdin.append(this_loew)
+        # Molecule is closed-shell
+        else:
+            header_pattern = r"\-+\s*LOEWDIN ATOMIC CHARGES\s*\-+"
+            table_pattern = r"\s*\d+\s+[A-Za-z]+\s*:\s+([0-9\-\.]+)\s*\n"
+            footer_pattern = r"Sum of atomic charges\s+:\s+[0-9\.\-]+"
+
+            for loew_match in loew_table_match:
+                this_loew = list()
+                for atom in loew_match:
+                    this_loew.append((float(atom[0])))
+                
+                loewdin.append(this_loew)
+
+        # Mayer population analysis
+
+
 
     def _parse_general_warnings(self):
         if "warnings" not in self.data:
@@ -381,6 +475,10 @@ class ORCAOutput(MSONable):
         pass
 
     def _parse_gradients(self):
+        # TODO
+        pass
+
+    def _parse_bond_orders(self):
         # TODO
         pass
 

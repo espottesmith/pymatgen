@@ -241,7 +241,7 @@ class ORCAOutput(MSONable):
         
         self.data["SCF"] = scf
 
-    def _parse_orbital_energies(self):
+    def _parse_orbitals(self):
         type_matches = read_pattern(
             self.text,
             {

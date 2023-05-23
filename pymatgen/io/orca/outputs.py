@@ -117,8 +117,8 @@ class ORCAOutput(MSONable):
         # Check to see if PCM or SMD are present
         self._parse_solvent_info()
 
-        # Parse the final energy
-        self._parse_final_energy()
+        # Parse thermodynamic information
+        self._parse_thermo()
 
         # TODO: SHOULD check if job-type-specific parsing is actually necessary
 
@@ -243,6 +243,21 @@ class ORCAOutput(MSONable):
             scf.append(this_scf)
         
         self.data["SCF"] = scf
+
+        final_energy_match = read_pattern(
+            self.text,
+            {
+                "final_energy": r"\-+\s+\-+\s*FINAL SINGLE POINT ENERGY\s+([0-9\-\.]+)\s*\-+\s+\-+",
+
+            }
+        )
+
+        sp_energies = list()
+        if final_energy_match.get("final_energy") is not None:
+            for fe_match in final_energy_match:
+                sp_energies.append(float(fe_match[0]))
+        self.data["sp_energies"] = sp_energies
+        self.data["final_energy"] = sp_energies[-1]
 
     def _parse_orbitals(self):
         type_matches = read_pattern(
@@ -483,8 +498,25 @@ class ORCAOutput(MSONable):
         # TODO
         pass
 
-    def _parse_final_energy(self):
-        # TODO
+    def _parse_thermo(self):
+        thermo_matches = read_pattern(
+            self.text,
+            {
+                "electronic_energy": r"Electronic energy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh",
+                "zpe": r"Zero point energy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "therm_vib_corr": (r"Thermal vibrational correction\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+"
+                                   r"([0-9\.\-]+)\s+kcal/mol"),
+                "therm_rot_corr": (r"Thermal rotational correction\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+"
+                                   r"([0-9\.\-]+)\s+kcal/mol"),
+                "therm_trans_corr": (r"Thermal translational correction\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+"
+                                     r"([0-9\.\-]+)\s+kcal/mol"),
+                "tot_internal": r"Total thermal energy\s+([0-9\-\.]+)\s+Eh",
+                "therm_total": r"Total thermal correction\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "correction_total": r"Total correction\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "thermal_enthalpy": r"Thermal Enthalpy correction\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "enthalpy_total": r"Total Enthalpy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh"
+            }
+        )
         pass
 
     def _parse_geometry_optimization(self):

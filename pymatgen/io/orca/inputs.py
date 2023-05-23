@@ -48,6 +48,7 @@ class ORCAInput(InputFile):
             geom: Optional[Dict[str, Any]] = None,
             method: Optional[Dict[str, Any]] = None,
             nbo: Optional[Dict[str, Any]] = None,
+            neb: Optional[Dict[str, Any]] = None,
             numgrad: Optional[Dict[str, Any]] = None,
             output: Optional[Dict[str, Any]] = None,
             pal: Optional[Dict[str, Any]] = None,
@@ -66,6 +67,7 @@ class ORCAInput(InputFile):
             geom (Optional[Dict[str, Any]]): key-value pairs for %geom block
             method (Optional[Dict[str, Any]]): key-value pairs for %method block
             nbo (Optional[Dict[str, Any]]): key-value pairs for %nbo block
+            neb (Optional[Dict[str, Any]]): key-value pairs for %neb block
             numgrad (Optional[Dict[str, Any]]): key-value pairs for %numgrad block
             output (Optional[Dict[str, Any]]): key-value pairs for %output block
             pal (Optional[Dict[str, Any]]): key-value pairs for %pal block
@@ -81,6 +83,7 @@ class ORCAInput(InputFile):
         self.geom = check_unique_block(geom)
         self.method = check_unique_block(method)
         self.nbo = check_unique_block(nbo)
+        self.neb = check_unique_block(neb)
         self.numgrad = check_unique_block(numgrad)
         self.output = check_unique_block(output)
         self.pal = check_unique_block(pal)
@@ -131,6 +134,10 @@ class ORCAInput(InputFile):
         # nbo block
         if self.nbo:
             combined_list.append(self.template(self.nbo, "nbo"))
+            combined_list.append("")
+        # neb block
+        if self.neb:
+            combined_list.append(self.template(self.neb, "neb"))
             combined_list.append("")
         # numgrad block
         if self.numgrad:
@@ -193,6 +200,8 @@ class ORCAInput(InputFile):
             method = cls.read_block(string, "method")
         if "nbo" in blocks:
             nbo = cls.read_block(string, "nbo")
+        if "neb" in blocks:
+            neb = cls.read_block(string, "neb")
         if "numgrad" in blocks:
             numgrad = cls.read_block(string, "numgrad")
         if "output" in blocks:
@@ -213,6 +222,7 @@ class ORCAInput(InputFile):
             geom=geom,
             method=method,
             nbo=nbo,
+            neb=neb,
             numgrad=numgrad,
             output=output,
             pal=pal,
@@ -376,9 +386,33 @@ class ORCAInput(InputFile):
             (Dict[str, Any]])
         """
 
-        header = r"^%" + block_name
-        row = r"\s*([a-zA-Z\_\d]+)\s+([a-zA-Z\-\_\d]+)"
-        footer = r"^end"
+        total_block_match = read_pattern(
+            string,
+            {
+                "key": r"^%" + block_name + r"\s+([^%]+)end"
+            }
+        )
 
-        table = read_table_pattern(string, header_pattern=header, row_pattern=row, footer_pattern=footer)
-        return dict(table[0])
+        block_contents = dict()
+        if total_block_match.get("key") is not None:
+            block = total_block_match["key"][0][0]
+
+            entry_matches = read_pattern(
+                block,
+                {
+                    "key_value": r"\s*([a-zA-Z\_\d]+)\s+([a-zA-Z\-\_\d\"\', ]+)\s*\n",
+                    "sub_block": r"\s*([a-zA-Z\_\d]+)\s+((?:.|\s)+?)end\s*\n",
+                }
+            )
+
+            if entry_matches.get("key_value") is not None:
+                for match in entry_matches["key_value"]:
+                    # TODO: try to interpret match[1] to be appropriate type (e.g. float, int)
+                    block_contents[match[0]] = match[1]
+            
+            if entry_matches.get("sub_block") is not None:
+                for match in entry_matches["sub_block"]:
+                    # Minimal processing - separate into lines
+                    block_contents[match[0]] = match[1].strip().split("\n")
+
+        return block_contents

@@ -400,7 +400,7 @@ class ORCAInput(InputFile):
             entry_matches = read_pattern(
                 block,
                 {
-                    "key_value": r"\s*([a-zA-Z\_\d]+)\s+([a-zA-Z\-\_\d\"\', ]+)\s*\n",
+                    "key_value": r"\s*([a-zA-Z\_\d]+)\s+([a-zA-Z\-\_\d\"\',\.\{\}\[\]\(\) ]+)\s*\n",
                     "sub_block": r"\s*([a-zA-Z\_\d]+)\s+((?:.|\s)+?)end\s*\n",
                 }
             )

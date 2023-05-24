@@ -601,8 +601,47 @@ class ORCAOutput(MSONable):
         self.data["rotational_entropy_by_symmetry_number"] = entropy_by_sn
 
     def _parse_geometry_optimization(self):
-        # TODO
-        pass
+        # First, parse basic optimization settings
+        opt_settings_match = read_pattern(
+            self.text,
+            {
+                "update_method": r"Update method\s+Update\s+\.\.\.\.\s+([^\n]+)\n",
+                "coordinates": r"Choice of coordinates\s+CoordSys\s+\.\.\.\.\s+([^\n]+)\n",
+                "initial_hessian": r"Initial Hessian\s+InHess\s+\.\.\.\.\s+([^\n]+)\n",
+                "energy_tolerance": r"Energy Change\s+TolE\s+\.\.\.\.\s+([0-9\.\-e]+)\s+Eh",
+                "max_gradient": r"Max\. Gradient\s+TolMAXG\s+\.\.\.\.\s+([0-9\.\-e]+)\s+Eh\bohr",
+                "rms_gradient": r"RMS Gradient\s+TolRMSG\s+\.\.\.\.\s+([0-9\.\-e]+)\s+Eh/bohr",
+                "max_displacement": r"Max\. Displacement\s+TolMAXD\s+\.\.\.\.\s+([0-9\.\-e]+)\s+bohr",
+                "rms_displacement": r"RMS Displacement\s+TolRMSD\s+\.\.\.\.\s+([0-9\.\-e]+)\s+bohr",
+                "strict_convergence": r"Strinct Convergence\s+\.\.\.\.\s+(False|True)"
+            }
+        )
+
+        # Basic parameters
+        if opt_settings_match.get("update_method") is not None:
+            self.data["geom_opt_update_method"] = opt_settings_match["update_method"][0][0].strip()
+        if opt_settings_match.get("coordinates") is not None:
+            self.data["geom_opt_coordinate_system"] = opt_settings_match["coordinates"][0][0].strip()
+        if opt_settings_match.get("initial_hessian") is not None:
+            self.data["geom_opt_initial_hessian"] = opt_settings_match["initial_hessian"][0][0].strip()
+
+        # Convergence criteria
+        if opt_settings_match.get("energy_tolerance") is not None:
+            self.data["geom_opt_energy_tolerance"] = float(opt_settings_match["energy_tolerance"][0][0])
+        if opt_settings_match.get("max_gradient") is not None:
+            self.data["geom_opt_max_gradient"] = float(opt_settings_match["max_gradient"][0][0])
+        if opt_settings_match.get("rms_gradient") is not None:
+            self.data["geom_opt_rms_gradient"] = float(opt_settings_match["rms_gradient"][0][0])
+        if opt_settings_match.get("max_displacement") is not None:
+            self.data["geom_opt_max_displacement"] = float(opt_settings_match["max_displacement"][0][0])
+        if opt_settings_match.get("rms_displacement") is not None:
+            self.data["geom_opt_rms_displacement"] = float(opt_settings_match["rms_displacement"][0][0])
+        if opt_settings_match.get("strict_convergence") is not None:
+            match = opt_settings_match["strict_convergence"][0][0]
+            if match == "True":
+                self.data["geom_opt_strict_convergence"] = True
+            else:
+                self.data["geom_opt_strict_convergence"] = False
 
     def _parse_constrained_optimization(self):
         # TODO

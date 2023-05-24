@@ -726,8 +726,97 @@ class ORCAOutput(MSONable):
         pass
 
     def _parse_bond_orders(self):
-        # TODO
-        pass
+        # Mayer bond order
+        mayer_match = read_pattern(
+            self.text,
+            {
+                "key": r"\s+Mayer bond orders larger than [0-9\.\-]+\s+"
+                       r"((?:B\(\s+[0-9]+\-[A-Za-z]+\s+,\s+[0-9]+\-[A-Za-z]+\s+\)\s+:\s+[0-9\.\-]+\s+)+)"
+            }
+        )
+        if mayer_match.get("key") is not None:
+            mayer_bonds = list()
+            for mm in mayer_match["key"]:
+                indiv_bond_match = read_pattern(
+                    mm[0],
+                    {
+                        "bond": r"B\(\s+([0-9]+)\-([A-Za-z]+)\s+,\s+([0-9]+)\-([A-Za-z]+)\s+\)\s+:\s+([0-9\.\-]+)\s+"
+                    }
+                )
+                for bond in indiv_bond_match.get("bond"):
+                    mayer_bonds.append((int(bond[0]), int(bond[2]), float(bond[4])))
+
+        # NBO bonding summary
+        nbo_bond_match = read_pattern(
+            self.text,
+            {
+                "key": r"\$CHOOSE((?:.|\s)+)\$END",
+            }
+        )
+
+        if nbo_bond_match.get("key") is not None:
+            def _get_bond_order_from_symbol(strength_symbol: str):
+                if strength == "S":
+                    order = 1.0
+                elif strength == "D":
+                    order = 2.0
+                elif strength == "T":
+                    order = 3.0
+                elif strength == "Q":
+                    order = 4.0
+                elif strength == "5":
+                    order = 5.0
+                else:
+                    order = 6.0
+                return order
+
+            contents = nbo_bond_match["key"][0][0]
+
+            choose_sec_match = read_pattern(
+                contents,
+                {
+                    "lone": r"\s*LONE\s+((?:\d+\s+)+)\s*END",
+                    "bond": r"\s*BOND\s+((?:[STDQ56] \d+ \d+\s+)+)\s*END",
+                    "3c": r"\s*3C\s+((?:[STDQ56] \d+ \d+ \d+\s+)+)\s*END"
+                }
+            )
+
+            if choose_sec_match.get("lone") is not None:
+                lps = choose_sec_match["lone"][0][0]
+                nbo_lone_pairs = dict()
+                for i in lps.strip().split():
+                    if int(i) not in nbo_lone_pairs:
+                        nbo_lone_pairs[int(i)] = 1
+                    else:
+                        nbo_lone_pairs[int(i)] += 1
+                self.data["nbo_lone_pairs"] = nbo_lone_pairs
+
+            if choose_sec_match.get("bond") is not None:
+                bds = choose_sec_match["bond"][0][0]
+                nbo_bonds = list()
+                contents = bds.strip().split()
+                num_bonds = len(contents) / 3
+                for i in range(num_bonds):
+                    strength = contents[i * 3]
+                    order = _get_bond_order_from_symbol(strength)
+                    atom1 = int(contents[i * 3 + 1])
+                    atom2 = int(contents[i * 3 + 2])
+                    nbo_bonds.append((atom1, atom2, order))
+                self.data["nbo_bonds"] = nbo_bonds
+
+            if choose_sec_match.get("3c") is not None:
+                threec = choose_sec_match["3c"][0][0]
+                nbo_three_center = list()
+                contents = threec.strip().split()
+                num_3c = len(contents) / 4
+                for i in range(num_3c):
+                    strength = contents[i * 4]
+                    order = _get_bond_order_from_symbol(strength)
+                    atom1 = int(contents[i * 4 + 1])
+                    atom2 = int(contents[i * 4 + 2])
+                    atom3 = int(contents[i * 4 + 3])
+                    nbo_three_center.append((atom1, atom2, atom3, order))
+                self.data["nbo_three_center"] = nbo_three_center
 
     def _parse_nbo(self):
         dfs = nbo_parser(self.filename)

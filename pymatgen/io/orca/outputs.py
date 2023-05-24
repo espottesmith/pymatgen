@@ -117,26 +117,35 @@ class ORCAOutput(MSONable):
         # Check to see if PCM or SMD are present
         self._parse_solvent_info()
 
-        # Parse thermodynamic information
-        self._parse_thermo()
-
-        # TODO: SHOULD check if job-type-specific parsing is actually necessary
+        # Parse gradient information
+        self._parse_gradients()
 
         # Parse geometry optimization information
-        self._parse_geometry_optimization()
+        if read_pattern(
+            self.text,
+            {"key": r"\*+\s+\*\s+Geometry Optimization Run\s+\*\s+\*+"}
+        ).get("key") is not None:
+            self._parse_geometry_optimization()
 
         # Parse constrained optimization
         # TODO: SHOULD this be separate from normal geometry optimization stuff or no?
         self._parse_constrained_optimization()
 
-        # Parse vibrational frequency analysis
-        self._parse_frequency_analysis()
-
-        # Parse gradient information
-        self._parse_gradients()
+        if read_pattern(
+            self.text,
+            {"key": r"\-+\s+ORCA SCF HESSIAN\s+\-+"}
+        ).get("key") is not None:
+            # Parse vibrational frequency analysis
+            self._parse_frequency_analysis()
+            self._parse_thermo()
 
         # Parse NBO information, if present
-        self._parse_nbo()
+        if read_pattern(
+            self.text,
+            {"key": r"\*+\s+NBO 7\.0\s+\*+\s+N A T U R A L\s+A T O M I C\s+O R B I T A L\s+A N D\s+"
+                    r"N A T U R A L\s+B O N D\s+O R B I T A L\s+A N A L Y S I S\s+\*+"}
+        ).get("key") is not None:
+            self._parse_nbo()
 
     def _parse_initial_structure(self):
         # Tricky thing here: structure can be input from file, Cartesian, or internal coordinates

@@ -502,6 +502,8 @@ class ORCAOutput(MSONable):
         thermo_matches = read_pattern(
             self.text,
             {
+                "temperature": r"Temperature\s+\.\.\.\s+([0-9\.]+)\s+K",
+                "pressure": r"Pressure\s+\.\.\.\s+([0-9\.]+)\s+atm",
                 "electronic_energy": r"Electronic energy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh",
                 "zpe": r"Zero point energy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
                 "therm_vib_corr": (r"Thermal vibrational correction\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+"
@@ -513,11 +515,90 @@ class ORCAOutput(MSONable):
                 "tot_internal": r"Total thermal energy\s+([0-9\-\.]+)\s+Eh",
                 "therm_total": r"Total thermal correction\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
                 "correction_total": r"Total correction\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
-                "thermal_enthalpy": r"Thermal Enthalpy correction\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
-                "enthalpy_total": r"Total Enthalpy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh"
+                "thermal_enthalpy": r"Thermal Enthalpy correction\s+\.\.\.\s+([0-9\.\-]+)\s+Eh"
+                                    r"\s+([0-9\.\-]+)\s+kcal/mol",
+                "enthalpy_total": r"Total Enthalpy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh",
+                "entropy_elec": r"Electronic entropy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "entropy_vib": r"Vibrational entropy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "entropy_rot": r"Rotational entropy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "entropy_trans": r"Translational entropy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "entropy_total": r"Final entropy term\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol",
+                "gibbs_free_energy": r"Final Gibbs free energy\s+\.\.\.\s+([0-9\.\-]+)\s+Eh",
+                "gibbs_energy_diff": r"G\-E\(el\)\s+\.\.\.\s+([0-9\.\-]+)\s+Eh\s+([0-9\.\-]+)\s+kcal/mol"
             }
         )
-        pass
+
+        if thermo_matches.get("temperature") is not None:
+            self.data["thermo_temperature"] = [float(i[0]) for i in thermo_matches.get("temperature")]
+        if thermo_matches.get("pressure") is not None:
+            self.data["thermo_pressure"] = [float(i[0]) for i in thermo_matches.get("pressure")]
+        if thermo_matches.get("electronic_energy") is not None:
+            self.data["electronic_energy"] = [float(i[0]) for i in thermo_matches.get("electronic_energy")]
+        if thermo_matches.get("zpe") is not None:
+            self.data["zero_point_energy"] = [float(i[0]) for i in thermo_matches.get("zpe")]
+        if thermo_matches.get("thermo_vib_corr") is not None:
+            self.data["thermal_vibration_correction"] = [float(i[0]) for i in thermo_matches.get("thermo_vib_corr")]
+        if thermo_matches.get("thermo_rot_corr") is not None:
+            self.data["thermal_rotation_correction"] = [float(i[0]) for i in thermo_matches.get("thermo_rot_corr")]
+        if thermo_matches.get("thermo_trans_corr") is not None:
+            self.data["thermal_translation_correction"] = [float(i[0]) for i in thermo_matches.get("thermo_trans_corr")]
+        if thermo_matches.get("tot_internal") is not None:
+            self.data["total_internal_energy"] = [float(i[0]) for i in thermo_matches.get("tot_internal")]
+        if thermo_matches.get("therm_total") is not None:
+            self.data["total_thermal_energy"] = [float(i[0]) for i in thermo_matches.get("therm_total")]
+        if thermo_matches.get("correction_total") is not None:
+            self.data["total_thermo_correction"] = [float(i[0]) for i in thermo_matches.get("correction_total")]
+        if thermo_matches.get("thermal_enthalpy") is not None:
+            self.data["thermal_enthalpy"] = [float(i[0]) for i in thermo_matches.get("thermal_enthalpy")]
+        if thermo_matches.get("enthalpy_total") is not None:
+            self.data["total_enthalpy"] = [float(i[0]) for i in thermo_matches.get("enthalpy_total")]
+        if thermo_matches.get("entropy_elec") is not None:
+            self.data["electronic_entropy"] = [float(i[0]) for i in thermo_matches.get("enthalpy_elec")]
+        if thermo_matches.get("entropy_vib") is not None:
+            self.data["vibrational_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_vib")]
+        if thermo_matches.get("entropy_rot") is not None:
+            self.data["rotational_entropy"] = [float(i[0]) for i in thermo_matches.get("enthalpy_rot")]
+        if thermo_matches.get("entropy_trans") is not None:
+            self.data["translational_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_trans")]
+        if thermo_matches.get("entropy_total") is not None:
+            self.data["total_entropy"] = [float(i[0]) for i in thermo_matches.get("enthalpy_total")]
+        if thermo_matches.get("gibbs_free_energy") is not None:
+            self.data["gibbs_free_energy"] = [float(i[0]) for i in thermo_matches.get("gibbs_free_energy")]
+        if thermo_matches.get("gibbs_energy_diff") is not None:
+            self.data["g_minus_e"] = [float(i[0]) for i in thermo_matches.get("gibbs_energy_diff")]        
+
+        # TODO: rotational constants, entropy by symmetry number
+        symmetry_match = read_pattern(
+            self.text,
+            {
+                "pg_sn": r"Point Group:\s+([A-Za-z\d]+),\s+Symmetry Number:\s+(\d+)",
+                "rot_consts": r"Rotational constants in cm-1:\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)"
+            }
+        )
+
+        if symmetry_match.get("pg_sn") is not None:
+            self.data["point_group"] = symmetry_match["pg_sn"][0][0]
+            self.data["symmetry_number"] = int(symmetry_match["pg_sn"][0][1])
+
+        header_pattern = r"\s*\-+\s*"
+        row_pattern = r"\s*\|\s+sn=\s+(\d+)\s+\|\s+S\(rot\)=\s+([0-9\-\.]+)\s+Eh\s+([0-9\-\.]+)\s+kcal/mol\|\s*"
+        footer_pattern = r"\s*\-+"
+        entropy_by_sn = read_table_pattern(
+            self.text,
+            header_pattern,
+            row_pattern,
+            footer_pattern
+        )
+        entropy_by_sn = list()
+        for one_s_sn in entropy_by_sn:
+            this_s_by_sn = dict()
+            for row in one_s_sn:
+                sn = int(row[0])
+                s = float(row[1])
+                this_s_by_sn[sn] = s
+            entropy_by_sn.append(this_s_by_sn)
+        
+        self.data["rotational_entropy_by_symmetry_number"] = entropy_by_sn
 
     def _parse_geometry_optimization(self):
         # TODO

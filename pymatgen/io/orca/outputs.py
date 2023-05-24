@@ -95,10 +95,6 @@ class ORCAOutput(MSONable):
         # Parse basic calculation parameters
         self._parse_calculation_parameters()
 
-        # TODO: parse initial structure
-        # Parse initial structure, including charge, spin, and number of electrons
-        self._parse_initial_structure()
-
         # Parse the SCF
         self._parse_SCF()
 
@@ -117,6 +113,9 @@ class ORCAOutput(MSONable):
         # Check to see if PCM or SMD are present
         self._parse_solvent_info()
 
+        # Parse (Cartesian) structures
+        self._parse_structures()
+
         # Parse gradient information
         self._parse_gradients()
 
@@ -126,10 +125,6 @@ class ORCAOutput(MSONable):
             {"key": r"\*+\s+\*\s+Geometry Optimization Run\s+\*\s+\*+"}
         ).get("key") is not None:
             self._parse_geometry_optimization()
-
-        # Parse constrained optimization
-        # TODO: SHOULD this be separate from normal geometry optimization stuff or no?
-        self._parse_constrained_optimization()
 
         if read_pattern(
             self.text,
@@ -146,12 +141,6 @@ class ORCAOutput(MSONable):
                     r"N A T U R A L\s+B O N D\s+O R B I T A L\s+A N A L Y S I S\s+\*+"}
         ).get("key") is not None:
             self._parse_nbo()
-
-    def _parse_initial_structure(self):
-        # Tricky thing here: structure can be input from file, Cartesian, or internal coordinates
-        # In inputs.py, assuming that we're only ever inputting Cartesian coordinates
-        # That's probably lazy and not correct
-        pass
 
     def _parse_calculation_parameters(self):
         if "parameters" not in self.data:
@@ -499,14 +488,6 @@ class ORCAOutput(MSONable):
         if warning_matches.get("RFO_low_scaling") is not None:
             self.data["warnings"].append("RFO_low_scaling")
 
-    def _parse_common_errors():
-        # TODO
-        pass
-
-    def _parse_solvent_info(self):
-        # TODO
-        pass
-
     def _parse_thermo(self):
         thermo_matches = read_pattern(
             self.text,
@@ -652,10 +633,6 @@ class ORCAOutput(MSONable):
             else:
                 self.data["geom_opt_strict_convergence"] = False
 
-    def _parse_constrained_optimization(self):
-        # TODO
-        pass
-
     def _parse_frequency_analysis(self):
         header_pattern = (
             r"\-+\s+IR SPECTRUM\s+\-+\s+Mode\s+freq\s+eps\s+Int\s+T\*\*2\s+TX\s+TY\s+TZ\s+"
@@ -720,10 +697,6 @@ class ORCAOutput(MSONable):
 
                     vib_contributions.append((freq, vib_energy))
                 self.data["vibrational_contributions"] = vib_contributions
-
-    def _parse_gradients(self):
-        # TODO
-        pass
 
     def _parse_bond_orders(self):
         # Mayer bond order
@@ -824,6 +797,67 @@ class ORCAOutput(MSONable):
         for key, value in dfs.items():
             nbo_data[key] = [df.to_dict() for df in value]
         self.data["nbo_data"] = nbo_data
+
+    def _parse_structures(self):
+        header_pattern = r"\-+\s+CARTESIAN COORDINATES \(ANGSTROEM\)\s+\-+"
+        row_pattern = r"\s*([A-Za-z]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s*"
+        footer_pattern = r""
+
+        structure_match = read_table_pattern(
+            self.text,
+            header_pattern,
+            row_pattern,
+            footer_pattern
+        )
+
+        if self.data["charge"] is None:
+            charge = 0.0
+        else:
+            charge = self.data["charge"]
+        
+        spin = self.data.get("spin_multiplicity")
+
+        geometries = list()
+        molecules = list()
+        for structure in structure_match:
+            this_species = list()
+            this_coords = list()
+            for row in structure:
+                this_species.append(row[0])
+                this_coords.append(
+                    [
+                        float(row[1]),
+                        float(row[2]),
+                        float(row[3])
+                    ]
+                )
+            geometries.append(this_coords)
+            molecules.append(
+                Molecule(
+                    this_species,
+                    this_coords,
+                    charge=charge,
+                    spin_multiplicity=spin
+                )
+            )
+        
+        self.data["geometries"] = geometries
+        self.data["molecules"] = molecules
+        self.data["initial_molecule"] = molecules[0]
+        self.data["molecule_from_final_geometry"] = molecules[-1]
+
+    def _parse_gradients(self):
+        header_pattern = r"\-+\s+CARTESIAN GRADIENT\s+\-+\s+"
+        row_pattern = r"\s*\d+\s+([A-Za-z]+)\s+:\s+([0-9\-\.]+)\s+([0-9\-\.]+)\s+([0-9\-\.]+)\s*"
+        footer_pattern = r""
+
+    def _parse_common_errors(self):
+        # TODO
+        pass
+
+    def _parse_solvent_info(self):
+        # TODO
+        pass
 
 
 class ORCAPCMOutput(MSONable):

@@ -609,8 +609,69 @@ class ORCAOutput(MSONable):
         pass
 
     def _parse_frequency_analysis(self):
-        # TODO
-        pass
+        header_pattern = (
+            r"\-+\s+IR SPECTRUM\s+\-+\s+Mode\s+freq\s+eps\s+Int\s+T\*\*2\s+TX\s+TY\s+TZ\s+"
+            r"cm\*\*-1\s+L/\(mol\*cm\)\s+km/mol\s+a\.u\.\s+\-+\s*"
+        )
+        row_pattern = (
+            r"\s*(\d+):\s+([0-9\-i\.]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+)\s+"
+            r"\(\s*([\-\.0-9]+)\s+([\-\.0-9]+)\s+([\-\.0-9]+)\s*\)\s*"
+        )
+        footer_pattern = r""
+
+        ir_matches = read_table_pattern(
+            self.text,
+            header_pattern,
+            row_pattern,
+            footer_pattern
+        )
+
+        if len(ir_matches) == 0:
+            self.data["ir_spectrum"] = None
+        else:
+            # Should only be one IR spectrum
+            frequencies = list()
+            for row in ir_matches[0]:
+                if "i" in row[1].lower():
+                    freq = -1 * float(row[1].lower().replace("i", ""))
+                else:
+                    freq = float(row[1])
+                frequency = {
+                    "frequency": freq,
+                    "epsilon": float(row[1]),
+                    "intensity": float(row[2]),
+                    "T**2": float(row[3]),
+                    "Tx": float(row[4]),
+                    "Ty": float(row[5]),
+                    "Tz": float(row[6])
+                }
+                frequencies.append(frequency)
+            self.data["ir_spectrum"] = frequencies
+
+        if self.data["ir_spectrum"] is not None:
+            header_pattern = r""
+            row_pattern = r"freq\.\s+([0-9\.\-i]+)\s+E\(vib\)\s+\.\.\.\s+([0-9\.\-]+)"
+            footer_pattern = r""
+
+            vib_energy_match = read_table_pattern(
+                self.text,
+                header_pattern,
+                row_pattern,
+                footer_pattern
+            )
+
+            if len(vib_energy_match) > 0:
+                vib_contributions = list()
+                for row in vib_energy_match[0]:
+                    if "i" in row[0].lower():
+                        freq = -1 * float(row[0].lower().replace("i", ""))
+                    else:
+                        freq = float(row[0])
+                    
+                    vib_energy = float(row[1])
+
+                    vib_contributions.append((freq, vib_energy))
+                self.data["vibrational_contributions"] = vib_contributions
 
     def _parse_gradients(self):
         # TODO

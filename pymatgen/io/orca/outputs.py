@@ -851,6 +851,27 @@ class ORCAOutput(MSONable):
         row_pattern = r"\s*\d+\s+([A-Za-z]+)\s+:\s+([0-9\-\.]+)\s+([0-9\-\.]+)\s+([0-9\-\.]+)\s*"
         footer_pattern = r""
 
+        grad_matches = read_table_pattern(
+            self.text,
+            header_pattern,
+            row_pattern,
+            footer_pattern
+        )
+
+        gradients = list()
+        for grad_match in grad_matches:
+            this_gradient = list()
+            for row in grad_match:
+                this_gradient.append(
+                    [
+                        float(row[1]),
+                        float(row[2]),
+                        float(row[3])
+                    ]
+                )
+            gradients.append(this_gradient)
+        self.data["gradients"] = gradients
+
     def _parse_common_errors(self):
         # TODO
         pass

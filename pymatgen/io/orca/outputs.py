@@ -872,11 +872,40 @@ class ORCAOutput(MSONable):
             gradients.append(this_gradient)
         self.data["gradients"] = gradients
 
-    def _parse_common_errors(self):
-        # TODO
-        pass
-
     def _parse_solvent_info(self):
+        cpcm_matches = read_pattern(
+            self.text,
+            {
+                "cpcm": r"CPCM parameters:\s+Epsilon\s+\.\.\.\s+([0-9\.]+)\s+Refrac\s+\.\.\.\s+([0-9\.]+)\s+"
+                        r"Rsolv\s+\.\.\.\s+([0-9\.]+)\s+Surface type\s+\.\.\.\s+([A-Za-z ]+)\s+"
+                        r"Epsilon function type\s+\.\.\.\s+([A-Za-z ]+)",
+                "solvent": r"Solvent:\s+\.\.\.\s+([A-Za-z0-9\-\(\),/ ]+)",
+                "smd_cds": r"SMD\-CDS solvent descriptors:\s+Soln\s+\.\.\.\s+([0-9\.]+)\s+Soln25\s+\.\.\.\s+([0-9\.]+)"
+                           r"\s+Sola\s+\.\.\.\s+([0-9\.]+)\s+Solb\s+\.\.\.\s+([0-9\.]+)\s+Solg\s+\.\.\.\s+([0-9\.]+)"
+                           r"\s+Solc\s+\.\.\.\s+([0-9\.]+)\s+Solh\s+\.\.\.\s+([0-9\.]+)"
+            }
+        )
+
+        if cpcm_matches.get("cpcm") is not None:
+            cpcm = cpcm_matches["cpcm"][0]
+            self.data["cpcm_epsilon"] = float(cpcm[0])
+            self.data["cpcm_n"] = float(cpcm[1])
+            self.data["cpcm_rsolv"] = float(cpcm[2])
+            self.data["cpcm_surface_type"] = cpcm[3].strip()
+            self.data["cpcm_epsilon_function_type"] = cpcm[4].strip()
+        if cpcm_matches.get("solvent") is not None:
+            self.data["smd_solvent"] = cpcm_matches["solvent"][0][0].strip()
+        if cpcm_matches.get("smd_cds") is not None:
+            smd_cds = cpcm_matches["smd_cds"][0]
+            self.data["smd_n"] = float(smd_cds[0])
+            self.data["smd_n25"] = float(smd_cds[1])
+            self.data["smd_a"] = float(smd_cds[2])
+            self.data["smd_b"] = float(smd_cds[3])
+            self.data["smd_g"] = float(smd_cds[4])
+            self.data["smd_c"] = float(smd_cds[5])
+            self.data["smd_h"] = float(smd_cds[6])
+
+    def _parse_common_errors(self):
         # TODO
         pass
 

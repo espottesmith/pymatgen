@@ -53,7 +53,7 @@ class ORCAOutput(MSONable):
         self.filename = filename
         self.data: Dict[str, Any] = {}
         self.data["errors"] = []
-        self.data["warnings"] = {}
+        self.data["warnings"] = list()
 
         self.text = ""
         with zopen(filename, mode="rt", encoding="ISO-8859-1") as f:

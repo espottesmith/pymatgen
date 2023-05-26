@@ -703,7 +703,7 @@ class ORCAOutput(MSONable):
                             these_modes[ii].append(float(c))
                     for mode in these_modes:
                         as_array = np.array(mode).reshape((-1, 3))
-                        modes.append(as_array.to_list())
+                        modes.append(as_array.tolist())
                 self.data["normal_modes"] = modes
 
         # IR spectra

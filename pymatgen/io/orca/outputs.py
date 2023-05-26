@@ -769,6 +769,20 @@ class ORCAOutput(MSONable):
                 self.data["vibrational_contributions"] = vib_contributions
 
     def _parse_bond_orders(self):
+        def _get_bond_order_from_symbol(strength: str):
+            if strength == "S":
+                return 1.0
+            elif strength == "D":
+                return 2.0
+            elif strength == "T":
+                return 3.0
+            elif strength == "Q":
+                return 4.0
+            elif strength == "5":
+                return 5.0
+            else:
+                return 6.0
+            
         # Mayer bond order
         mayer_match = read_pattern(
             self.text,
@@ -788,31 +802,17 @@ class ORCAOutput(MSONable):
                 )
                 for bond in indiv_bond_match.get("bond"):
                     mayer_bonds.append((int(bond[0]), int(bond[2]), float(bond[4])))
+            self.data["mayer_bonds"] = mayer_bonds
 
         # NBO bonding summary
         nbo_bond_match = read_pattern(
             self.text,
             {
-                "key": r"\$CHOOSE((?:.|\s)+)\$END",
+                "key": r"\$CHOOSE((?:.|\s)+?)\$END",
             }
         )
 
         if nbo_bond_match.get("key") is not None:
-            def _get_bond_order_from_symbol(strength: str):
-                if strength == "S":
-                    order = 1.0
-                elif strength == "D":
-                    order = 2.0
-                elif strength == "T":
-                    order = 3.0
-                elif strength == "Q":
-                    order = 4.0
-                elif strength == "5":
-                    order = 5.0
-                else:
-                    order = 6.0
-                return order
-
             contents = nbo_bond_match["key"][0][0]
 
             choose_sec_match = read_pattern(
@@ -839,7 +839,7 @@ class ORCAOutput(MSONable):
                 nbo_bonds = list()
                 contents = bds.strip().split()
                 num_bonds = len(contents) / 3
-                for i in range(num_bonds):
+                for i in range(int(num_bonds)):
                     strength = contents[i * 3]
                     order = _get_bond_order_from_symbol(strength)
                     atom1 = int(contents[i * 3 + 1])
@@ -852,7 +852,7 @@ class ORCAOutput(MSONable):
                 nbo_three_center = list()
                 contents = threec.strip().split()
                 num_3c = len(contents) / 4
-                for i in range(num_3c):
+                for i in range(int(num_3c)):
                     strength = contents[i * 4]
                     order = _get_bond_order_from_symbol(strength)
                     atom1 = int(contents[i * 4 + 1])

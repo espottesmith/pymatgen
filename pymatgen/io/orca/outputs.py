@@ -425,6 +425,13 @@ class ORCAOutput(MSONable):
             table_pattern = r"\s*\d+\s+[A-Za-z]+\s*:\s+([0-9\-\.]+)\s*\n"
             footer_pattern = r"Sum of atomic charges\s+:\s+[0-9\.\-]+"
 
+            loew_table_match = read_table_pattern(
+                self.text,
+                header_pattern,
+                table_pattern,
+                footer_pattern
+            )
+
             for loew_match in loew_table_match:
                 this_loew = list()
                 for atom in loew_match:

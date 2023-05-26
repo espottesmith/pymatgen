@@ -162,7 +162,7 @@ class ORCAOutput(MSONable):
         matches = read_pattern(
             self.text,
             {
-                "charge": r"Total Charge\s+Charge\s+\.\.\.\.\s+(\d+)",
+                "charge": r"Total Charge\s+Charge\s+\.\.\.\.\s+([\-\d]+)",
                 "spin": r"Multiplicity\s+Mult\s+\.\.\.\.\s+(\d+)",
                 "nelec": r"Number of Electrons\s+NEL\s+\.\.\.\.\s+(\d+)"
             }

@@ -668,7 +668,12 @@ class ORCAOutput(MSONable):
         normal_mode_table_match = read_pattern(
             self.text,
             {
-                "key": r"((?:(?:\s*(?:\d+\s*){1,6}\n)|(?:\s*\d+\s+([\-0-9]+\.[0-9]+\s+){1,6}\s*))+)"
+                "key": (
+                    r"\-+\s+NORMAL MODES\s+\-+\s+These modes are the Cartesian displacements weighted by the diagonal "
+                    r"matrix\s+M\(i,i\)=1/sqrt\(m\[i\]\) where m\[i\] is the mass of the displaced atom\s+"
+                    r"Thus, these vectors are normalized but \*not\* orthogonal\s+"
+                    r"((?:(?:\s*(?:\d+\s*){1,6}\n)|(?:\s*\d+\s+([\-0-9]+\.[0-9]+\s+){1,6}\s*))+)"
+                )
             }
         )
         if normal_mode_table_match.get("key") is not None:

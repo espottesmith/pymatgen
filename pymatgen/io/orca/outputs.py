@@ -552,7 +552,7 @@ class ORCAOutput(MSONable):
         if thermo_matches.get("enthalpy_total") is not None:
             self.data["total_enthalpy"] = [float(i[0]) for i in thermo_matches.get("enthalpy_total")]
         if thermo_matches.get("entropy_elec") is not None:
-            self.data["electronic_entropy"] = [float(i[0]) for i in thermo_matches.get("enthalpy_elec")]
+            self.data["electronic_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_elec")]
         if thermo_matches.get("entropy_vib") is not None:
             self.data["vibrational_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_vib")]
         if thermo_matches.get("entropy_rot") is not None:
@@ -560,7 +560,7 @@ class ORCAOutput(MSONable):
         if thermo_matches.get("entropy_trans") is not None:
             self.data["translational_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_trans")]
         if thermo_matches.get("entropy_total") is not None:
-            self.data["total_entropy"] = [float(i[0]) for i in thermo_matches.get("enthalpy_total")]
+            self.data["total_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_total")]
         if thermo_matches.get("gibbs_free_energy") is not None:
             self.data["gibbs_free_energy"] = [float(i[0]) for i in thermo_matches.get("gibbs_free_energy")]
         if thermo_matches.get("gibbs_energy_diff") is not None:

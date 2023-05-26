@@ -372,6 +372,13 @@ class ORCAOutput(MSONable):
             table_pattern = r"\s*\d+\s+[A-Za-z]+\s*:\s+([0-9\-\.]+)\s*\n"
             footer_pattern = r"Sum of atomic charges\s+:\s+[0-9\.\-]+"
 
+            mull_table_match = read_table_pattern(
+                self.text,
+                header_pattern,
+                table_pattern,
+                footer_pattern
+            )
+
             for mull_match in mull_table_match:
                 this_mulliken = list()
                 for atom in mull_match:

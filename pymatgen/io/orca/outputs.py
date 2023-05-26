@@ -691,10 +691,10 @@ class ORCAOutput(MSONable):
                     for line in lines:
                         contents = line.strip().split()
                         # Edge case - end line of section
-                        if len(contents) == 0:
+                        if len(contents) < 2:
                             continue
                         
-                        for ii, c in enumerate(contents):
+                        for ii, c in enumerate(contents[1:]):
                             these_modes[ii].append(float(c))
                     for mode in these_modes:
                         as_array = np.array(mode).reshape((-1, 3))

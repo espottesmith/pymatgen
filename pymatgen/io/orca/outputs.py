@@ -691,10 +691,10 @@ class ORCAOutput(MSONable):
                 modes = list()
                 for chunk in mode_chunk_match["key"]:
                     lines = chunk[0].split("\n")
-                    num_modes = len(lines[0].strip().split()) - 1
+                    lines_contents = [line.strip().split() for line in lines]
+                    num_modes = max([len(x) for x in lines_contents]) - 1
                     these_modes = [[] for i in range(num_modes)]
-                    for line in lines:
-                        contents = line.strip().split()
+                    for contents in lines_contents:
                         # Edge case - end line of section
                         if len(contents) < 2:
                             continue

@@ -214,6 +214,7 @@ class ORCAOutput(MSONable):
     def _parse_SCF(self):
         header_pattern = r"\-+\s*SCF ITERATIONS\s*\-+"
         table_pattern = (r"\s*(?:(?:ITER\s+Energy\s+Delta\-E\s+Max\-DP\s+RMS\-DP\s+\[F,P\]\s+Damp)|"
+                         r"(?:\s*\*\*\*\*\s*Energy Check signals convergence\s*\*\*\*\*)|"
                          r"(?:\s*\*\*\*[A-Za-z\s\-/]+\*\*\*)|"
                          r"(?:ITER\s+Energy\s+Delta\-E\s+Grad\s+Rot\s+Max\-DP\s+RMS\-DP)|"
                          r"(\s*\d+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+"

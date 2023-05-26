@@ -18,8 +18,6 @@ import pandas as pd
 from monty.io import zopen
 from monty.json import MSONable, jsanitize
 
-from pymatgen.analysis.graphs import MoleculeGraph
-from pymatgen.analysis.local_env import OpenBabelNN, metal_edge_extender
 from pymatgen.core.structure import Molecule
 from pymatgen.io.qchem.outputs import nbo_parser
 from pymatgen.io.qchem.utils import (
@@ -29,11 +27,6 @@ from pymatgen.io.qchem.utils import (
     read_pattern,
     read_table_pattern,
 )
-
-try:
-    from openbabel import openbabel
-except ImportError:
-    openbabel = None
 
 
 __author__ = "Evan Spotte-Smith"
@@ -108,6 +101,7 @@ class ORCAOutput(MSONable):
         self._parse_general_warnings()
 
         # Check for common errors
+        # TODO
         self._parse_common_errors()
 
         # Check to see if PCM or SMD are present
@@ -557,7 +551,6 @@ class ORCAOutput(MSONable):
         if thermo_matches.get("gibbs_energy_diff") is not None:
             self.data["g_minus_e"] = [float(i[0]) for i in thermo_matches.get("gibbs_energy_diff")]        
 
-        # TODO: rotational constants, entropy by symmetry number
         symmetry_match = read_pattern(
             self.text,
             {
@@ -634,6 +627,66 @@ class ORCAOutput(MSONable):
                 self.data["geom_opt_strict_convergence"] = False
 
     def _parse_frequency_analysis(self):
+        # Frequencies
+        header_pattern = (r"\-+\s+VIBRATIONAL FREQUENCIES\s+\-+\s+Scaling factor for frequencies\s+"
+                          r"=\s+[\-\.0-9]+\s+\(already applied\!\)\s*")
+        row_pattern = r"\s*\d+:\s+([0-9\.\-]+)\s+cm\*\*\-1(?: \*\*\*imaginary mode\*\*\*)?\s*"
+        footer_pattern = r""
+
+        freq_matches = read_table_pattern(
+            self.text,
+            header_pattern,
+            row_pattern,
+            footer_pattern
+        )
+        if len(freq_matches) == 0:
+            self.data["frequencies"] = None
+        else:
+            # Should only be one IR spectrum
+            # In case that's not true, take the last one
+            freqs = list()
+            for row in freq_matches[-1]:
+                freqs.append(float(row[0]))
+            self.data["frequencies"] = freqs
+
+        # Normal modes
+        normal_mode_table_match = read_pattern(
+            self.text,
+            {
+                "key": r"((?:(?:\s*(?:\d+\s*){1,6}\n)|(?:\s*\d+\s+([\-0-9]+\.[0-9]+\s+){1,6}\s*))+)"
+            }
+        )
+        if normal_mode_table_match.get("key") is not None:
+            for nmt in normal_mode_table_match["key"]:
+                table = nmt[0]
+                # Separate by chunk of normal modes
+                mode_chunk_match = read_pattern(
+                    table,
+                    {
+                        "key": r"((?:\s*\d+\s+(?:[\-0-9]+\.[0-9]+\s+){1,6}\s*)+)"
+                    }
+                )
+                # Not doing the normal 'if x.get("key") is not None'
+                # If we get this far, the chunk SHOULD be there
+                modes = list()
+                for chunk in mode_chunk_match["key"]:
+                    lines = chunk[0].split("\n")
+                    num_modes = len(lines[0].strip().split()) - 1
+                    these_modes = [[] for i in range(num_modes)]
+                    for line in lines:
+                        contents = line.strip().split()
+                        # Edge case - end line of section
+                        if len(contents) == 0:
+                            continue
+                        
+                        for ii, c in enumerate(contents):
+                            these_modes[ii].append(float(c))
+                    for mode in these_modes:
+                        as_array = np.array(mode).reshape((-1, 3))
+                        modes.append(as_array.to_list())
+                self.data["normal_modes"] = modes
+
+        # IR spectra
         header_pattern = (
             r"\-+\s+IR SPECTRUM\s+\-+\s+Mode\s+freq\s+eps\s+Int\s+T\*\*2\s+TX\s+TY\s+TZ\s+"
             r"cm\*\*-1\s+L/\(mol\*cm\)\s+km/mol\s+a\.u\.\s+\-+\s*"
@@ -655,8 +708,9 @@ class ORCAOutput(MSONable):
             self.data["ir_spectrum"] = None
         else:
             # Should only be one IR spectrum
+            # In case that's not true, take the last one
             frequencies = list()
-            for row in ir_matches[0]:
+            for row in ir_matches[-1]:
                 if "i" in row[1].lower():
                     freq = -1 * float(row[1].lower().replace("i", ""))
                 else:
@@ -673,6 +727,7 @@ class ORCAOutput(MSONable):
                 frequencies.append(frequency)
             self.data["ir_spectrum"] = frequencies
 
+        # Vibrational energy contributions
         if self.data["ir_spectrum"] is not None:
             header_pattern = r""
             row_pattern = r"freq\.\s+([0-9\.\-i]+)\s+E\(vib\)\s+\.\.\.\s+([0-9\.\-]+)"
@@ -685,9 +740,10 @@ class ORCAOutput(MSONable):
                 footer_pattern
             )
 
+            # Likewise, there should only be one section with vibrational energy contributions
             if len(vib_energy_match) > 0:
                 vib_contributions = list()
-                for row in vib_energy_match[0]:
+                for row in vib_energy_match[-1]:
                     if "i" in row[0].lower():
                         freq = -1 * float(row[0].lower().replace("i", ""))
                     else:

@@ -556,7 +556,7 @@ class ORCAOutput(MSONable):
         if thermo_matches.get("entropy_vib") is not None:
             self.data["vibrational_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_vib")]
         if thermo_matches.get("entropy_rot") is not None:
-            self.data["rotational_entropy"] = [float(i[0]) for i in thermo_matches.get("enthalpy_rot")]
+            self.data["rotational_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_rot")]
         if thermo_matches.get("entropy_trans") is not None:
             self.data["translational_entropy"] = [float(i[0]) for i in thermo_matches.get("entropy_trans")]
         if thermo_matches.get("entropy_total") is not None:

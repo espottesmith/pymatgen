@@ -246,7 +246,7 @@ class ORCAOutput(MSONable):
 
         sp_energies = list()
         if final_energy_match.get("final_energy") is not None:
-            for fe_match in final_energy_match:
+            for fe_match in final_energy_match["final_energy"]:
                 sp_energies.append(float(fe_match[0]))
         self.data["sp_energies"] = sp_energies
         self.data["final_energy"] = sp_energies[-1]

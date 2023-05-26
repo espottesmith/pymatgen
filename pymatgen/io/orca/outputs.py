@@ -798,7 +798,7 @@ class ORCAOutput(MSONable):
         )
 
         if nbo_bond_match.get("key") is not None:
-            def _get_bond_order_from_symbol(strength_symbol: str):
+            def _get_bond_order_from_symbol(strength: str):
                 if strength == "S":
                     order = 1.0
                 elif strength == "D":

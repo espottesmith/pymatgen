@@ -987,7 +987,125 @@ class ORCAOutput(MSONable):
 
 
 class ORCAPCMOutput(MSONable):
-    pass
+    """
+    Class to parse ORCA PCM output files (typically *.cpcm)
+    """
+
+    def __init__(self, filename: str, parse_surface_points: bool = False):
+        """
+        Args:
+            filename (str): Filename to parse
+        """
+
+        self.filename = filename
+        self.data: Dict[str, Any] = {}
+        self.parse_surface_points = parse_surface_points
+
+        self.text = ""
+        with zopen(filename, mode="rt", encoding="ISO-8859-1") as f:
+            self.text = f.read()
+
+        self._parse_basic_information()
+        
+        self._parse_radii()
+
+        if self.parse_surface_points:
+            self._parse_surface_points()
+
+    def _parse_basic_information(self):
+        basic_matches = read_pattern(
+            self.text,
+            {
+                "num_atoms": r"(\d+)\s+#\s+Number of atoms",
+                "num_surf_points": r"(\d+)\s+#\s+Number of surface points",
+                "surf_type": r"(\d+)\s+#\s+Surface type",
+                "epsilon_func_type": r"(\d+)\s+#\s+Epsilon function type",
+                "num_leb_points": r"(\d+)\s+#\s+Number of Leb\. points",
+                "volume": r"\s*([0-9\.]+)\s+#\s+Volume",
+                "area": r"\s*([0-9\.]+)\s+#\s+Area",
+                "cpcm_dielec_energy": r"\s*([0-9\.\-]+)\s+#\s+CPCM dielectric energy",
+                "1e_operator_energy": r"\s*([0-9\.\-]+)\s+#\s+One\-electron operator energy"
+            }
+        )
+
+        if basic_matches.get("num_atoms") is not None:
+            self.data["num_atoms"] = int(basic_matches["num_atoms"][0][0])
+        if basic_matches.get("num_surf_point") is not None:
+            self.data["num_surf_points"] = int(basic_matches["num_surf_points"][0][0])
+        if basic_matches.get("surf_type") is not None:
+            self.data["surf_type"] = int(basic_matches["surf_type"][0][0])
+        if basic_matches.get("epsilon_func_type") is not None:
+            self.data["epsilon_func_type"] = int(basic_matches["epsilon_func_type"][0][0])
+        if basic_matches.get("num_leb_points") is not None:
+            self.data["num_leb_points"] = int(basic_matches["num_leb_points"][0][0])
+        if basic_matches.get("volume") is not None:
+            self.data["volume"] = float(basic_matches["volume"][0][0])
+        if basic_matches.get("area") is not None:
+            self.data["area"] = float(basic_matches["area"][0][0])
+        if basic_matches.get("cpcm_dielec_energy") is not None:
+            self.data["cpcm_dielec_energy"] = float(basic_matches["cpcm_dielec_energy"][0][0])
+        if basic_matches.get("1e_operator_energy") is not None:
+            self.data["1e_operator_energy"] = float(basic_matches["1e_operator_energy"][0][0])
+
+    def _parse_radii(self):
+        header_pattern = r"#\-+\s+#\s+CARTESIAN COORDINATES\s+\(A\.U\.\)\s+\+\s+RADII\s+\(A\.U\.\)\s+#\-+\s*"
+        row_pattern = r"\s*(?:[0-9\-]+\.[0-9]+)\s+(?:[0-9\-]+\.[0-9]+)\s+(?:[0-9\-]+\.[0-9]+)\s+([0-9\.\-]+)"
+        footer_pattern = r""
+
+        cart_coords_match = read_table_pattern(
+            self.text,
+            header_pattern,
+            row_pattern,
+            footer_pattern
+        )
+
+        for table in cart_coords_match:
+            radii = list()
+            for row in table:
+                radii.append(float(row[0]))
+            self.data["pcm_radii"] = radii
+            # There should only be one of these tables, so stop after parsing the first one
+            break
+
+    def _parse_surface_points(self):
+        header_pattern = (
+            r"#\-+\s+#\s+SURFACE POINTS \(A\.U\.\)\s+\(Hint \- charge NOT scaled by FEps\)\s+#\-+\s+"
+            r"X\s+Y\s+Z\s+area\s+potential\s+charge\s+w_leb\s+Switch_F\s+G_width\s+atom\s*"
+        )
+        row_pattern = (
+            r"([\-\.0-9eE]+)\s+([\-\.0-9eE]+)\s+([\-\.0-9eE]+)\s+([\-\.0-9eE]+)\s+([\-\.0-9eE]+)"
+            r"\s+([\-\.0-9eE]+)\s+([\-\.0-9eE]+)\s+([\-\.0-9eE]+)\s+([\-\.0-9eE]+)\s+(\d+)\s*"
+        )
+        footer_pattern = r""
+
+        surf_point_matches = read_table_pattern(
+            self.text,
+            header_pattern,
+            row_pattern,
+            footer_pattern
+        )
+
+        for table in surf_point_matches:
+            points = list()
+            for row in table:
+                points.append(
+                    {
+                        "x": float(row[0]),
+                        "y": float(row[1]),
+                        "z": float(row[2]),
+                        "area": float(row[3]),
+                        "potential": float(row[4]),
+                        "charge": float(row[5]),
+                        "w_leb": float(row[6]),
+                        "switch_f": float(row[7]),
+                        "g_width": float(row[8]),
+                        "atom": int(row[9])
+                    }
+                )
+
+            self.data["surface_points"] = points
+            # There should only be one of these tables, so stop after parsing the first one
+            break
 
 
 class ORCASMDOutput(MSONable):

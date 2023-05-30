@@ -23,9 +23,7 @@ import numpy as np
 from numpy.linalg import norm, svd
 
 from pymatgen.analysis.bond_valence import BVAnalyzer
-from pymatgen.analysis.chemenv.coordination_environments.chemenv_strategies import (
-    MultiWeightsChemenvStrategy,
-)
+from pymatgen.analysis.chemenv.coordination_environments.chemenv_strategies import MultiWeightsChemenvStrategy
 from pymatgen.analysis.chemenv.coordination_environments.coordination_geometries import (
     EXPLICIT_PERMUTATIONS,
     SEPARATION_PLANE,
@@ -36,9 +34,7 @@ from pymatgen.analysis.chemenv.coordination_environments.structure_environments 
     LightStructureEnvironments,
     StructureEnvironments,
 )
-from pymatgen.analysis.chemenv.coordination_environments.voronoi import (
-    DetailedVoronoiContainer,
-)
+from pymatgen.analysis.chemenv.coordination_environments.voronoi import DetailedVoronoiContainer
 from pymatgen.analysis.chemenv.utils.coordination_geometry_utils import (
     Plane,
     collinear,
@@ -1035,16 +1031,16 @@ class LocalGeometryFinder:
             RR = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
         else:
             RR = random_rotation
-        newcoords = []
+        new_coords = []
         for cc in coords:
             newcc = np.dot(RR, cc).T
-            newcoords.append(newcc.ravel())
-        coords = newcoords
-        newcoords = []
+            new_coords.append(newcc.ravel())
+        coords = new_coords
+        new_coords = []
         for cc in neighb_coords:
             newcc = np.dot(RR, cc.T)
-            newcoords.append(newcc.ravel())
-        neighb_coords = newcoords
+            new_coords.append(newcc.ravel())
+        neighb_coords = new_coords
 
         # Translating the test environment
         if random_translation == "RANDOM":

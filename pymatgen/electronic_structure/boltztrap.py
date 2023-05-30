@@ -382,7 +382,7 @@ class BoltztrapRunner(MSONable):
         # This function is useless in std version of BoltzTraP code
         # because x_trans script overwrite BoltzTraP.def
         for oi, o in enumerate(Orbital):
-            for site_nb in range(0, len(self._bs.structure.sites)):
+            for site_nb in range(len(self._bs.structure)):
                 if oi < len(self._bs.projections[Spin.up][0][0]):
                     with open(output_file_proj + "_" + str(site_nb) + "_" + str(o), "w") as f:
                         f.write(self._bs.structure.composition.formula + "\n")
@@ -424,7 +424,7 @@ class BoltztrapRunner(MSONable):
             )
             i = 1000
             for oi, o in enumerate(Orbital):
-                for site_nb in range(0, len(self._bs.structure.sites)):
+                for site_nb in range(0, len(self._bs.structure)):
                     if oi < len(self._bs.projections[Spin.up][0][0]):
                         f.write(f"{i},'boltztrap.proj_{site_nb}_{o.name}old', 'formatted',0\n")
                         i += 1
@@ -1639,14 +1639,15 @@ class BoltztrapAnalyzer:
                 raise BoltztrapError("Dos merging error: spin component are the same")
 
         for s in self._dos_partial:
-            if structure.sites[int(s)] not in pdoss:
-                pdoss[structure.sites[int(s)]] = {}
+            idx = int(s)
+            if structure[idx] not in pdoss:
+                pdoss[structure[idx]] = {}
             for o in self._dos_partial[s]:
-                if Orbital[o] not in pdoss[structure.sites[int(s)]]:
-                    pdoss[structure.sites[int(s)]][Orbital[o]] = {}
-                pdoss[structure.sites[int(s)]][Orbital[o]][spin_1] = self._dos_partial[s][o]
+                if Orbital[o] not in pdoss[structure[idx]]:
+                    pdoss[structure[idx]][Orbital[o]] = {}
+                pdoss[structure[idx]][Orbital[o]][spin_1] = self._dos_partial[s][o]
                 if analyzer_for_second_spin:
-                    pdoss[structure.sites[int(s)]][Orbital[o]][spin_2] = analyzer_for_second_spin._dos_partial[s][o]
+                    pdoss[structure[idx]][Orbital[o]][spin_2] = analyzer_for_second_spin._dos_partial[s][o]
         if analyzer_for_second_spin:
             tdos = Dos(
                 self.dos.efermi,

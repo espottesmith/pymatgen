@@ -204,7 +204,6 @@ _gulp_kw = {
     "meanke",
     "nodensity_out",
     "nodpsym",
-    "nofirst_point",
     "nofrequency",
     "nokpoints",
     "operators",
@@ -217,8 +216,6 @@ _gulp_kw = {
     "save",
     "terse",
     # Structure control
-    "full",
-    "hexagonal",
     "lower_symmetry",
     "nosymmetry",
     # PDF control
@@ -299,12 +296,12 @@ class GulpIO:
 
         if frac_flg:
             gin += "frac\n"
-            coord_attr = "frac_coords"
+            coords_key = "frac_coords"
         else:
             gin += "cart\n"
-            coord_attr = "coords"
-        for site in structure.sites:
-            coord = [str(i) for i in getattr(site, coord_attr)]
+            coords_key = "coords"
+        for site in structure:
+            coord = [str(i) for i in getattr(site, coords_key)]
             specie = site.specie
             core_site_desc = specie.symbol + " core " + " ".join(coord) + "\n"
             gin += core_site_desc

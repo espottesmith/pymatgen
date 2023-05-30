@@ -22,9 +22,7 @@ from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import get_el_sp
 from pymatgen.core.structure import Lattice, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-from pymatgen.transformations.site_transformations import (
-    PartialRemoveSitesTransformation,
-)
+from pymatgen.transformations.site_transformations import PartialRemoveSitesTransformation
 from pymatgen.transformations.transformation_abc import AbstractTransformation
 
 if TYPE_CHECKING:
@@ -121,7 +119,7 @@ class OxidationStateDecorationTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -181,7 +179,7 @@ class AutoOxiStateDecorationTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -220,7 +218,7 @@ class OxidationStateRemovalTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -402,7 +400,7 @@ class RemoveSpeciesTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -493,7 +491,7 @@ class PartialRemoveSpecieTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
 
 class OrderDisorderedStructureTransformation(AbstractTransformation):
@@ -683,7 +681,7 @@ class OrderDisorderedStructureTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -741,7 +739,7 @@ class PrimitiveCellTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -792,7 +790,7 @@ class ConventionalCellTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -850,7 +848,7 @@ class PerturbStructureTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -972,7 +970,7 @@ class DiscretizeOccupanciesTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -1105,7 +1103,7 @@ class ScaleToRelaxedTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:

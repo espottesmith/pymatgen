@@ -2434,15 +2434,15 @@ class MoleculeGraph(MSONable):
         cycles_edges = []
 
         # Remove all two-edge cycles
-        all_cycles = [c for c in nx.simple_cycles(directed) if len(c) > 2]
+        all_cycles = [sorted(cycle) for cycle in nx.simple_cycles(directed) if len(cycle) > 2]
 
         # Using to_directed() will mean that each cycle always appears twice
         # So, we must also remove duplicates
         unique_sorted = []
         unique_cycles = []
         for cycle in all_cycles:
-            if sorted(cycle) not in unique_sorted:
-                unique_sorted.append(sorted(cycle))
+            if cycle not in unique_sorted:
+                unique_sorted.append(cycle)
                 unique_cycles.append(cycle)
 
         if including is None:
@@ -2688,24 +2688,20 @@ class MoleculeGraph(MSONable):
         with using `to_dict_of_dicts` from NetworkX
         to store graph information.
         """
-        d = {
-            "@module": type(self).__module__,
-            "@class": type(self).__name__,
-            "molecule": self.molecule.as_dict(),
-            "graphs": json_graph.adjacency_data(self.graph),
-        }
-
-        return d
+        dct = {"@module": type(self).__module__, "@class": type(self).__name__}
+        dct["molecule"] = self.molecule.as_dict()
+        dct["graphs"] = json_graph.adjacency_data(self.graph)
+        return dct
 
     @classmethod
-    def from_dict(cls, d):
+    def from_dict(cls, dct):
         """
         As in :class:`pymatgen.core.Molecule` except
         restoring graphs using `from_dict_of_dicts`
         from NetworkX to restore graph information.
         """
-        m = Molecule.from_dict(d["molecule"])
-        return cls(m, d["graphs"])
+        m = Molecule.from_dict(dct["molecule"])
+        return cls(m, dct["graphs"])
 
     @classmethod
     def _edges_to_string(cls, g):

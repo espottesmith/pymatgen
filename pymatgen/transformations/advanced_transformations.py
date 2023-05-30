@@ -26,9 +26,7 @@ from pymatgen.analysis.ewald import EwaldSummation
 from pymatgen.analysis.gb.grain import GrainBoundaryGenerator
 from pymatgen.analysis.local_env import MinimumDistanceNN
 from pymatgen.analysis.structure_matcher import SpinComparator, StructureMatcher
-from pymatgen.analysis.structure_prediction.substitution_probability import (
-    SubstitutionPredictor,
-)
+from pymatgen.analysis.structure_prediction.substitution_probability import SubstitutionPredictor
 from pymatgen.command_line.enumlib_caller import EnumError, EnumlibAdaptor
 from pymatgen.command_line.mcsqs_caller import run_mcsqs
 from pymatgen.core.periodic_table import DummySpecies, Element, Species, get_el_sp
@@ -97,7 +95,7 @@ class ChargeBalanceTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -160,7 +158,7 @@ class SuperTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -267,7 +265,7 @@ class MultipleSubstitutionTransformation:
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -508,7 +506,7 @@ class EnumerateStructureTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -578,7 +576,7 @@ class SubstitutionPredictorTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -932,11 +930,12 @@ class MagOrderingTransformation(AbstractTransformation):
         # remove duplicate structures and group according to energy model
         m = StructureMatcher(comparator=SpinComparator())
 
-        def key(x):
-            return SpacegroupAnalyzer(x, 0.1).get_space_group_number()
+        def key(struct: Structure) -> int:
+            struct.to(filename="LiMnO2.cif")
+            return SpacegroupAnalyzer(struct, 0.1).get_space_group_number()
 
         out = []
-        for _, g in groupby(sorted((d["structure"] for d in alls), key=key), key):
+        for _, g in groupby(sorted((dct["structure"] for dct in alls), key=key), key):
             g = list(g)  # type: ignore
             grouped = m.group_structures(g)
             out.extend([{"structure": g[0], "energy": self.energy_model.get_energy(g[0])} for g in grouped])
@@ -954,7 +953,7 @@ class MagOrderingTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -1186,7 +1185,7 @@ class DopingTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -1272,7 +1271,7 @@ class SlabTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -1334,7 +1333,7 @@ class DisorderOrderedTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -1536,7 +1535,7 @@ class GrainBoundaryTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -1682,7 +1681,7 @@ class CubicSupercellTransformation(AbstractTransformation):
         Returns:
             None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -1775,7 +1774,7 @@ class AddAdsorbateTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -1934,7 +1933,7 @@ class SubstituteSurfaceSiteTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -2049,7 +2048,7 @@ class SQSTransformation(AbstractTransformation):
         disordered_substructure = struc_disordered.copy()
 
         idx_to_remove = []
-        for idx, site in enumerate(disordered_substructure.sites):
+        for idx, site in enumerate(disordered_substructure):
             if site.is_ordered:
                 idx_to_remove.append(idx)
         disordered_substructure.remove_sites(idx_to_remove)
@@ -2193,7 +2192,7 @@ class SQSTransformation(AbstractTransformation):
     @property
     def inverse(self):
         """Returns: None"""
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:
@@ -2282,7 +2281,7 @@ class MonteCarloRattleTransformation(AbstractTransformation):
         """
         Returns: None
         """
-        return None
+        return
 
     @property
     def is_one_to_many(self) -> bool:

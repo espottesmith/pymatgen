@@ -11,12 +11,8 @@ from __future__ import annotations
 import numpy as np
 from monty.json import MontyDecoder, MSONable, jsanitize
 
-from pymatgen.analysis.chemenv.coordination_environments.coordination_geometries import (
-    AllCoordinationGeometries,
-)
-from pymatgen.analysis.chemenv.coordination_environments.voronoi import (
-    DetailedVoronoiContainer,
-)
+from pymatgen.analysis.chemenv.coordination_environments.coordination_geometries import AllCoordinationGeometries
+from pymatgen.analysis.chemenv.coordination_environments.voronoi import DetailedVoronoiContainer
 from pymatgen.analysis.chemenv.utils.chemenv_errors import ChemenvError
 from pymatgen.analysis.chemenv.utils.defs_utils import AdditionalConditions
 from pymatgen.core.periodic_table import Element, Species
@@ -681,12 +677,12 @@ class StructureEnvironments(MSONable):
             import matplotlib.pyplot as plt
         except ImportError:
             print('Plotting Chemical Environments requires matplotlib ... exiting "plot" function')
-            return None
+            return
         fig = self.get_csm_and_maps(isite=isite, max_csm=max_csm)
         if fig is None:
-            return None
+            return
         plt.show()
-        return None
+        return
 
     def get_csm_and_maps(self, isite, max_csm=8.0, figsize=None, symmetry_measure_type=None):
         """
@@ -728,14 +724,14 @@ class StructureEnvironments(MSONable):
                 ce = self.ce_list[isite][cn][inb_set]
                 if ce is None:
                     continue
-                mingeoms = ce.minimum_geometries(max_csm=max_csm)
-                if len(mingeoms) == 0:
+                min_geoms = ce.minimum_geometries(max_csm=max_csm)
+                if len(min_geoms) == 0:
                     continue
                 wds = nb_set.normalized_distances
-                max_wd = max(max_wd, max(wds))
+                max_wd = max(max_wd, *wds)
                 all_wds.append(wds)
                 all_was.append(nb_set.normalized_angles)
-                for mp_symbol, cg_dict in mingeoms:
+                for mp_symbol, cg_dict in min_geoms:
                     csm = cg_dict["other_symmetry_measures"][symmetry_measure_type]
                     subplot.plot(idx, csm, "ob")
                     subplot.annotate(mp_symbol, xy=(idx, csm))
@@ -1604,7 +1600,7 @@ class LightStructureEnvironments(MSONable):
                 else:
                     csm = None
                 ce_dict["csm"] = csm
-                ce_dict["permutation"] = ce_and_neighbors["ce_dict"]["permutation"]
+                ce_dict["permutation"] = (ce_and_neighbors.get("ce_dict") or {}).get("permutation")
                 site_ces.append(ce_dict)
                 # Neighbors
                 neighbors = ce_and_neighbors["neighbors"]

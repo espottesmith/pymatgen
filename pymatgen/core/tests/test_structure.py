@@ -12,19 +12,13 @@ import numpy as np
 import pytest
 from monty.json import MontyDecoder, MontyEncoder
 from monty.tempfile import ScratchDir
+from numpy.testing import assert_array_equal
 
 from pymatgen.core.composition import Composition
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import Element, Species
-from pymatgen.core.structure import (
-    IMolecule,
-    IStructure,
-    Molecule,
-    PeriodicNeighbor,
-    Structure,
-    StructureError,
-)
+from pymatgen.core.structure import IMolecule, IStructure, Molecule, PeriodicNeighbor, Structure, StructureError
 from pymatgen.electronic_structure.core import Magmom
 from pymatgen.util.testing import PymatgenTest
 
@@ -33,6 +27,7 @@ mcsqs_cmd = which("mcsqs")
 
 try:
     import m3gnet
+    import tensorflow as tf  # noqa: F401
 except ImportError:
     m3gnet = None
 
@@ -317,14 +312,14 @@ class IStructureTest(PymatgenTest):
         for s in int_s:
             assert s is not None, "Interpolation Failed!"
             assert int_s[0].lattice == s.lattice
-        self.assertArrayEqual(int_s[1][1].frac_coords, [0.725, 0.5, 0.725])
+        assert_array_equal(int_s[1][1].frac_coords, [0.725, 0.5, 0.725])
 
         # test ximages
         int_s = struct.interpolate(struct2, nimages=np.linspace(0.0, 1.0, 3))
         for s in int_s:
             assert s is not None, "Interpolation Failed!"
             assert int_s[0].lattice == s.lattice
-        self.assertArrayEqual(int_s[1][1].frac_coords, [0.625, 0.5, 0.625])
+        assert_array_equal(int_s[1][1].frac_coords, [0.625, 0.5, 0.625])
 
         badlattice = [[1, 0.00, 0.00], [0, 1, 0.00], [0.00, 0, 1]]
         struct2 = IStructure(badlattice, ["Si"] * 2, coords2)
@@ -346,8 +341,8 @@ class IStructureTest(PymatgenTest):
         random.shuffle(s2)
 
         for s in s1.interpolate(s2, autosort_tol=0.5):
-            self.assertArrayAlmostEqual(s1[0].frac_coords, s[0].frac_coords)
-            self.assertArrayAlmostEqual(s1[2].frac_coords, s[2].frac_coords)
+            self.assert_all_close(s1[0].frac_coords, s[0].frac_coords)
+            self.assert_all_close(s1[2].frac_coords, s[2].frac_coords)
 
         # Make sure autosort has no effect on simpler interpolations,
         # and with shuffled sites.
@@ -357,9 +352,9 @@ class IStructureTest(PymatgenTest):
         random.shuffle(s2)
 
         for s in s1.interpolate(s2, autosort_tol=0.5):
-            self.assertArrayAlmostEqual(s1[1].frac_coords, s[1].frac_coords)
-            self.assertArrayAlmostEqual(s1[2].frac_coords, s[2].frac_coords)
-            self.assertArrayAlmostEqual(s1[3].frac_coords, s[3].frac_coords)
+            self.assert_all_close(s1[1].frac_coords, s[1].frac_coords)
+            self.assert_all_close(s1[2].frac_coords, s[2].frac_coords)
+            self.assert_all_close(s1[3].frac_coords, s[3].frac_coords)
 
         # Test non-hexagonal setting.
         lattice = Lattice.rhombohedral(4.0718, 89.459)
@@ -374,7 +369,7 @@ class IStructureTest(PymatgenTest):
         struct_pbc = IStructure(self.lattice_pbc, ["Si"], coords)
         struct2_pbc = IStructure(self.lattice_pbc, ["Si"], coords2)
         int_s_pbc = struct_pbc.interpolate(struct2_pbc, nimages=2)
-        self.assertArrayAlmostEqual(int_s_pbc[1][0].frac_coords, [1.05, 1.05, 0.55])
+        self.assert_all_close(int_s_pbc[1][0].frac_coords, [1.05, 1.05, 0.55])
 
     def test_interpolate_lattice(self):
         coords = []
@@ -387,12 +382,12 @@ class IStructureTest(PymatgenTest):
         l2 = Lattice.from_parameters(3, 4, 4, 100, 100, 70)
         struct2 = IStructure(l2, ["Si"] * 2, coords2)
         int_s = struct.interpolate(struct2, 2, interpolate_lattices=True)
-        self.assertArrayAlmostEqual(struct.lattice.abc, int_s[0].lattice.abc)
-        self.assertArrayAlmostEqual(struct.lattice.angles, int_s[0].lattice.angles)
-        self.assertArrayAlmostEqual(struct2.lattice.abc, int_s[2].lattice.abc)
-        self.assertArrayAlmostEqual(struct2.lattice.angles, int_s[2].lattice.angles)
+        self.assert_all_close(struct.lattice.abc, int_s[0].lattice.abc)
+        self.assert_all_close(struct.lattice.angles, int_s[0].lattice.angles)
+        self.assert_all_close(struct2.lattice.abc, int_s[2].lattice.abc)
+        self.assert_all_close(struct2.lattice.angles, int_s[2].lattice.angles)
         int_angles = [110.3976469, 94.5359731, 64.5165856]
-        self.assertArrayAlmostEqual(int_angles, int_s[1].lattice.angles)
+        self.assert_all_close(int_angles, int_s[1].lattice.angles)
 
         # Assert that volume is monotonic
         assert struct2.lattice.volume >= int_s[1].lattice.volume
@@ -437,7 +432,7 @@ class IStructureTest(PymatgenTest):
         sp = ["Ag", "Ag", "Be", "Be"]
         struct = Structure(latt, sp, coords)
         dm = struct.get_primitive_structure().distance_matrix
-        self.assertArrayAlmostEqual(dm, [[0, 2.5], [2.5, 0]])
+        self.assert_all_close(dm, [[0, 2.5], [2.5, 0]])
 
     def test_primitive_on_large_supercell(self):
         coords = [[0, 0, 0], [0.5, 0.5, 0], [0, 0.5, 0.5], [0.5, 0, 0.5]]
@@ -549,7 +544,7 @@ Direct
         s = self.struct
         c_indices1, c_indices2, c_offsets, c_distances = s.get_neighbor_list(3)
         p_indices1, p_indices2, p_offsets, p_distances = s._get_neighbor_list_py(3)
-        self.assertArrayAlmostEqual(sorted(c_distances), sorted(p_distances))
+        self.assert_all_close(sorted(c_distances), sorted(p_distances))
 
     # @unittest.skipIf(not os.getenv("CI"), "Only run this in CI tests.")
     # def test_get_all_neighbors_crosscheck_old(self):
@@ -686,7 +681,7 @@ Direct
 
     def test_get_dist_matrix(self):
         ans = [[0.0, 2.3516318], [2.3516318, 0.0]]
-        self.assertArrayAlmostEqual(self.struct.distance_matrix, ans)
+        self.assert_all_close(self.struct.distance_matrix, ans)
 
     def test_to_from_file_string(self):
         with ScratchDir("."):
@@ -694,17 +689,17 @@ Direct
                 struct = self.struct.to(fmt=fmt)
                 assert struct is not None
                 ss = IStructure.from_str(struct, fmt=fmt)
-                self.assertArrayAlmostEqual(ss.lattice.parameters, self.struct.lattice.parameters, decimal=5)
-                self.assertArrayAlmostEqual(ss.frac_coords, self.struct.frac_coords)
+                self.assert_all_close(ss.lattice.parameters, self.struct.lattice.parameters, decimal=5)
+                self.assert_all_close(ss.frac_coords, self.struct.frac_coords)
                 assert isinstance(ss, IStructure)
 
             assert "Fd-3m" in self.struct.to(fmt="CIF", symprec=0.1)
 
             self.struct.to(filename="POSCAR.testing")
-            assert os.path.exists("POSCAR.testing")
+            assert os.path.isfile("POSCAR.testing")
 
             self.struct.to(filename="Si_testing.yaml")
-            assert os.path.exists("Si_testing.yaml")
+            assert os.path.isfile("Si_testing.yaml")
             struct = Structure.from_file("Si_testing.yaml")
             assert struct == self.struct
             # Test Path support
@@ -731,10 +726,10 @@ Direct
             assert struct.formula == "Ni32 O32"
 
     def test_pbc(self):
-        self.assertArrayEqual(self.struct.pbc, (True, True, True))
+        assert_array_equal(self.struct.pbc, (True, True, True))
         assert self.struct.is_3d_periodic
         struct_pbc = Structure(self.lattice_pbc, ["Si"] * 2, self.struct.frac_coords)
-        self.assertArrayEqual(struct_pbc.pbc, (True, True, False))
+        assert_array_equal(struct_pbc.pbc, (True, True, False))
         assert not struct_pbc.is_3d_periodic
 
 
@@ -758,10 +753,10 @@ class StructureTest(PymatgenTest):
         assert s.formula == "Fe1 Si1"
         s[0] = "Fe", [0.5, 0.5, 0.5]
         assert s.formula == "Fe1 Si1"
-        self.assertArrayAlmostEqual(s[0].frac_coords, [0.5, 0.5, 0.5])
+        self.assert_all_close(s[0].frac_coords, [0.5, 0.5, 0.5])
         s.reverse()
         assert s[0].specie == Element("Si")
-        self.assertArrayAlmostEqual(s[0].frac_coords, [0.75, 0.5, 0.75])
+        self.assert_all_close(s[0].frac_coords, [0.75, 0.5, 0.75])
         s[0] = {"Mn": 0.5}
         assert s.formula == "Mn0.5 Fe1"
         del s[1]
@@ -940,7 +935,7 @@ class StructureTest(PymatgenTest):
         op = SymmOp.from_axis_angle_and_translation([0, 0, 1], 90)
         s = self.structure.copy()
         s.apply_operation(op)
-        self.assertArrayAlmostEqual(
+        self.assert_all_close(
             s.lattice.matrix,
             [
                 [0.000000, 3.840198, 0.000000],
@@ -953,7 +948,7 @@ class StructureTest(PymatgenTest):
         op = SymmOp([[1, 1, 0, 0.5], [1, 0, 0, 0.5], [0, 0, 1, 0.5], [0, 0, 0, 1]])
         s = self.structure.copy()
         s.apply_operation(op, fractional=True)
-        self.assertArrayAlmostEqual(
+        self.assert_all_close(
             s.lattice.matrix,
             [
                 [5.760297, 3.325710, 0.000000],
@@ -968,7 +963,7 @@ class StructureTest(PymatgenTest):
         initial_coord = s[1].coords
         s.apply_strain(0.01)
         assert pytest.approx(s.lattice.abc) == (3.8785999130369997, 3.878600984287687, 3.8785999130549516)
-        self.assertArrayAlmostEqual(s[1].coords, initial_coord * 1.01)
+        self.assert_all_close(s[1].coords, initial_coord * 1.01)
         a1, b1, c1 = s.lattice.abc
         s.apply_strain([0.1, 0.2, 0.3])
         a2, b2, c2 = s.lattice.abc
@@ -979,42 +974,42 @@ class StructureTest(PymatgenTest):
     def test_scale_lattice(self):
         initial_coord = self.structure[1].coords
         self.structure.scale_lattice(self.structure.volume * 1.01**3)
-        self.assertArrayAlmostEqual(
+        self.assert_all_close(
             self.structure.lattice.abc,
             (3.8785999130369997, 3.878600984287687, 3.8785999130549516),
         )
-        self.assertArrayAlmostEqual(self.structure[1].coords, initial_coord * 1.01)
+        self.assert_all_close(self.structure[1].coords, initial_coord * 1.01)
 
     def test_translate_sites(self):
         self.structure.translate_sites([0, 1], [0.5, 0.5, 0.5], frac_coords=True)
-        self.assertArrayAlmostEqual(self.structure.frac_coords[0], [0.5, 0.5, 0.5])
+        self.assert_all_close(self.structure.frac_coords[0], [0.5, 0.5, 0.5])
 
         self.structure.translate_sites([0], [0.5, 0.5, 0.5], frac_coords=False)
-        self.assertArrayAlmostEqual(self.structure.cart_coords[0], [3.38014845, 1.05428585, 2.06775453])
+        self.assert_all_close(self.structure.cart_coords[0], [3.38014845, 1.05428585, 2.06775453])
 
         self.structure.translate_sites([0], [0.5, 0.5, 0.5], frac_coords=True, to_unit_cell=False)
-        self.assertArrayAlmostEqual(self.structure.frac_coords[0], [1.00187517, 1.25665291, 1.15946374])
+        self.assert_all_close(self.structure.frac_coords[0], [1.00187517, 1.25665291, 1.15946374])
 
         lattice_pbc = Lattice(self.structure.lattice.matrix, pbc=(True, True, False))
         struct_pbc = Structure(lattice_pbc, ["Si"], [[0.75, 0.75, 0.75]])
         struct_pbc.translate_sites([0], [0.5, 0.5, 0.5], frac_coords=True, to_unit_cell=True)
-        self.assertArrayAlmostEqual(struct_pbc.frac_coords[0], [0.25, 0.25, 1.25])
+        self.assert_all_close(struct_pbc.frac_coords[0], [0.25, 0.25, 1.25])
 
     def test_rotate_sites(self):
         self.structure.rotate_sites(
             indices=[1],
             theta=2.0 * np.pi / 3.0,
-            anchor=self.structure.sites[0].coords,
+            anchor=self.structure[0].coords,
             to_unit_cell=False,
         )
-        self.assertArrayAlmostEqual(self.structure.frac_coords[1], [-1.25, 1.5, 0.75], decimal=6)
+        self.assert_all_close(self.structure.frac_coords[1], [-1.25, 1.5, 0.75], decimal=6)
         self.structure.rotate_sites(
             indices=[1],
             theta=2.0 * np.pi / 3.0,
-            anchor=self.structure.sites[0].coords,
+            anchor=self.structure[0].coords,
             to_unit_cell=True,
         )
-        self.assertArrayAlmostEqual(self.structure.frac_coords[1], [0.75, 0.5, 0.75], decimal=6)
+        self.assert_all_close(self.structure.frac_coords[1], [0.75, 0.5, 0.75], decimal=6)
 
     def test_mul(self):
         self.structure *= [2, 1, 1]
@@ -1024,7 +1019,7 @@ class StructureTest(PymatgenTest):
         assert isinstance(s, Structure)
         s = self.structure * [[1, 0, 0], [2, 1, 0], [0, 0, 2]]
         assert s.formula == "Si8"
-        self.assertArrayAlmostEqual(s.lattice.abc, [7.6803959, 17.5979979, 7.6803959])
+        self.assert_all_close(s.lattice.abc, [7.6803959, 17.5979979, 7.6803959])
 
     def test_make_supercell(self):
         self.structure.make_supercell([2, 1, 1])
@@ -1033,7 +1028,7 @@ class StructureTest(PymatgenTest):
         assert self.structure.formula == "Si4"
         self.structure.make_supercell(2)
         assert self.structure.formula == "Si32"
-        self.assertArrayAlmostEqual(self.structure.lattice.abc, [15.360792, 35.195996, 7.680396], 5)
+        self.assert_all_close(self.structure.lattice.abc, [15.360792, 35.195996, 7.680396], 5)
 
     def test_disordered_supercell_primitive_cell(self):
         latt = Lattice.cubic(2)
@@ -1071,19 +1066,23 @@ class StructureTest(PymatgenTest):
 
     def test_to_from_file_string(self):
         with ScratchDir("."):
+            # to/from string
             for fmt in ["cif", "json", "poscar", "cssr", "yaml", "xsf", "res"]:
                 s = self.structure.to(fmt=fmt)
                 assert s is not None
                 ss = Structure.from_str(s, fmt=fmt)
-                self.assertArrayAlmostEqual(ss.lattice.parameters, self.structure.lattice.parameters, decimal=5)
-                self.assertArrayAlmostEqual(ss.frac_coords, self.structure.frac_coords)
+                self.assert_all_close(ss.lattice.parameters, self.structure.lattice.parameters, decimal=5)
+                self.assert_all_close(ss.frac_coords, self.structure.frac_coords)
                 assert isinstance(ss, Structure)
 
+            # to/from file
             self.structure.to(filename="POSCAR.testing")
-            assert os.path.exists("POSCAR.testing")
+            assert os.path.isfile("POSCAR.testing")
 
-            self.structure.to(filename="structure_testing.json")
-            assert Structure.from_file("structure_testing.json") == self.structure
+            for ext in (".json", ".json.gz", ".json.bz2", ".json.xz", ".json.lzma"):
+                self.structure.to(filename=f"json-struct{ext}")
+                assert os.path.isfile(f"json-struct{ext}")
+                assert Structure.from_file(f"json-struct{ext}") == self.structure
 
     def test_from_spacegroup(self):
         s1 = Structure.from_spacegroup("Fm-3m", Lattice.cubic(3), ["Li", "O"], [[0.25, 0.25, 0.25], [0, 0, 0]])
@@ -1178,7 +1177,7 @@ class StructureTest(PymatgenTest):
         s.merge_sites(mode="s")
         assert s[0].specie.symbol == "Ag"
         assert s[1].species == Composition({"Cl": 0.35, "F": 0.25})
-        self.assertArrayAlmostEqual(s[1].frac_coords, [0.5, 0.5, 0.5005])
+        self.assert_all_close(s[1].frac_coords, [0.5, 0.5, 0.5005])
 
         # Test for TaS2 with spacegroup 166 in 160 setting.
         latt = Lattice.hexagonal(3.374351, 20.308941)
@@ -1317,13 +1316,13 @@ class StructureTest(PymatgenTest):
         ch4 = ["C", "H", "H", "H", "H"]
 
         species = []
-        allcoords = []
+        all_coords = []
         for vec in ([0, 0, 0], [4, 0, 0], [0, 4, 0], [4, 4, 0]):
             species.extend(ch4)
             for c in coords:
-                allcoords.append(np.array(c) + vec)
+                all_coords.append(np.array(c) + vec)
 
-        structure = Structure(Lattice.cubic(10), species, allcoords, coords_are_cartesian=True)
+        structure = Structure(Lattice.cubic(10), species, all_coords, coords_are_cartesian=True)
 
         for site in structure:
             if site.specie.symbol == "C":
@@ -1348,17 +1347,15 @@ class StructureTest(PymatgenTest):
             assert len(getattr(trajectory, key)) == {"atoms": 2}.get(key, 1)
 
     def test_from_prototype(self):
-        for pt in ["bcc", "fcc", "hcp", "diamond"]:
-            s = Structure.from_prototype(pt, ["C"], a=3, c=4)
-            assert isinstance(s, Structure)
+        for prototype in ["bcc", "fcc", "hcp", "diamond"]:
+            struct = Structure.from_prototype(prototype, ["C"], a=3, c=4)
+            assert isinstance(struct, Structure)
 
         with pytest.raises(ValueError):
             Structure.from_prototype("hcp", ["C"], a=3)
 
-        s = Structure.from_prototype("rocksalt", ["Li", "Cl"], a=2.56)
-        assert (
-            str(s)
-            == """Full Formula (Li4 Cl4)
+        struct = Structure.from_prototype("rocksalt", ["Li", "Cl"], a=2.56)
+        expected_struct_str = """Full Formula (Li4 Cl4)
 Reduced Formula: LiCl
 abc   :   2.560000   2.560000   2.560000
 angles:  90.000000  90.000000  90.000000
@@ -1374,10 +1371,10 @@ Sites (8)
   5  Cl    0    0.5  0.5
   6  Cl    0.5  0.5  0
   7  Cl    0    0    0"""
-        )
-        for pt in ("cscl", "fluorite", "antifluorite", "zincblende"):
-            s = Structure.from_prototype(pt, ["Cs", "Cl"], a=5)
-            assert s.lattice.is_orthogonal
+        assert str(struct) == expected_struct_str
+        for prototype in ("cscl", "fluorite", "antifluorite", "zincblende"):
+            struct = Structure.from_prototype(prototype, ["Cs", "Cl"], a=5)
+            assert struct.lattice.is_orthogonal
 
 
 class IMoleculeTest(PymatgenTest):
@@ -1477,8 +1474,8 @@ Site: H (-0.5134, 0.8892, -0.3630)"""
     def test_get_boxed_structure(self):
         s = self.mol.get_boxed_structure(9, 9, 9)
         # C atom should be in center of box.
-        self.assertArrayAlmostEqual(s[4].frac_coords, [0.50000001, 0.5, 0.5])
-        self.assertArrayAlmostEqual(s[1].frac_coords, [0.6140799, 0.5, 0.45966667])
+        self.assert_all_close(s[4].frac_coords, [0.50000001, 0.5, 0.5])
+        self.assert_all_close(s[1].frac_coords, [0.6140799, 0.5, 0.45966667])
         with pytest.raises(ValueError):
             self.mol.get_boxed_structure(1, 1, 1)
         s2 = self.mol.get_boxed_structure(5, 5, 5, (2, 3, 4))
@@ -1487,7 +1484,7 @@ Site: H (-0.5134, 0.8892, -0.3630)"""
 
         # Test offset option
         s3 = self.mol.get_boxed_structure(9, 9, 9, offset=[0.5, 0.5, 0.5])
-        self.assertArrayAlmostEqual(s3[4].coords, [5, 5, 5])
+        self.assert_all_close(s3[4].coords, [5, 5, 5])
         # Test no_cross option
         with pytest.raises(ValueError):
             self.mol.get_boxed_structure(
@@ -1530,7 +1527,7 @@ Site: H (-0.5134, 0.8892, -0.3630)"""
             [1.08900040717, 1.7783298026, 1.77833003783, 0.0, 1.77833],
             [1.08900040717, 1.7783298026, 1.77833003783, 1.77833, 0.0],
         ]
-        self.assertArrayAlmostEqual(self.mol.distance_matrix, ans)
+        self.assert_all_close(self.mol.distance_matrix, ans)
 
     def test_break_bond(self):
         (mol1, mol2) = self.mol.break_bond(0, 1)
@@ -1541,7 +1538,7 @@ Site: H (-0.5134, 0.8892, -0.3630)"""
         assert self.mol.charge == 0
         assert self.mol.spin_multiplicity == 1
         assert self.mol.nelectrons == 10
-        self.assertArrayAlmostEqual(self.mol.center_of_mass, [0, 0, 0])
+        self.assert_all_close(self.mol.center_of_mass, [0, 0, 0])
         with pytest.raises(ValueError):
             Molecule(
                 ["C", "H", "H", "H", "H"],
@@ -1577,7 +1574,7 @@ Site: H (-0.5134, 0.8892, -0.3630)"""
     def test_get_centered_molecule(self):
         mol = IMolecule(["O"] * 2, [[0, 0, 0], [0, 0, 1.2]], spin_multiplicity=3)
         centered = mol.get_centered_molecule()
-        self.assertArrayAlmostEqual(centered.center_of_mass, [0, 0, 0])
+        self.assert_all_close(centered.center_of_mass, [0, 0, 0])
 
     def test_to_from_dict(self):
         d = self.mol.as_dict()
@@ -1611,10 +1608,10 @@ Site: H (-0.5134, 0.8892, -0.3630)"""
             assert isinstance(m, IMolecule)
 
         self.mol.to(filename="CH4_testing.xyz")
-        assert os.path.exists("CH4_testing.xyz")
+        assert os.path.isfile("CH4_testing.xyz")
         os.remove("CH4_testing.xyz")
         self.mol.to(filename="CH4_testing.yaml")
-        assert os.path.exists("CH4_testing.yaml")
+        assert os.path.isfile("CH4_testing.yaml")
         mol = Molecule.from_file("CH4_testing.yaml")
         assert self.mol == mol
         os.remove("CH4_testing.yaml")
@@ -1639,10 +1636,10 @@ class MoleculeTest(PymatgenTest):
         s = self.mol
         s[1] = ("F", [0.5, 0.5, 0.5])
         assert s.formula == "H3 C1 F1"
-        self.assertArrayAlmostEqual(s[1].coords, [0.5, 0.5, 0.5])
+        self.assert_all_close(s[1].coords, [0.5, 0.5, 0.5])
         s.reverse()
         assert s[0].specie == Element("H")
-        self.assertArrayAlmostEqual(s[0].coords, [-0.513360, 0.889165, -0.363000])
+        self.assert_all_close(s[0].coords, [-0.513360, 0.889165, -0.363000])
         del s[1]
         assert s.formula == "H2 C1 F1"
         s[3] = "N", [0, 0, 0], {"charge": 4}
@@ -1666,11 +1663,11 @@ class MoleculeTest(PymatgenTest):
 
     def test_translate_sites(self):
         self.mol.translate_sites([0, 1], [0.5, 0.5, 0.5])
-        self.assertArrayEqual(self.mol.cart_coords[0], [0.5, 0.5, 0.5])
+        assert_array_equal(self.mol.cart_coords[0], [0.5, 0.5, 0.5])
 
     def test_rotate_sites(self):
         self.mol.rotate_sites(theta=np.radians(30))
-        self.assertArrayAlmostEqual(self.mol.cart_coords[2], [0.889164737, 0.513359500, -0.363000000])
+        self.assert_all_close(self.mol.cart_coords[2], [0.889164737, 0.513359500, -0.363000000])
 
     def test_replace(self):
         self.mol[0] = "Ge"
@@ -1708,12 +1705,12 @@ class MoleculeTest(PymatgenTest):
         d = self.mol.as_dict()
         mol2 = Molecule.from_dict(d)
         assert isinstance(mol2, Molecule)
-        self.assertMSONable(self.mol)
+        self.assert_msonable(self.mol)
 
     def test_apply_operation(self):
         op = SymmOp.from_axis_angle_and_translation([0, 0, 1], 90)
         self.mol.apply_operation(op)
-        self.assertArrayAlmostEqual(self.mol[2].coords, [0.000000, 1.026719, -0.363000])
+        self.assert_all_close(self.mol[2].coords, [0.000000, 1.026719, -0.363000])
 
     def test_substitute(self):
         coords = [
@@ -1769,7 +1766,7 @@ class MoleculeTest(PymatgenTest):
             assert isinstance(m, Molecule)
 
         self.mol.to(filename="CH4_testing.xyz")
-        assert os.path.exists("CH4_testing.xyz")
+        assert os.path.isfile("CH4_testing.xyz")
         os.remove("CH4_testing.xyz")
 
     def test_extract_cluster(self):

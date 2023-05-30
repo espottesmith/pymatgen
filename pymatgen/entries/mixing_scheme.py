@@ -21,10 +21,7 @@ from pymatgen.entries.compatibility import (
     CompatibilityError,
     MaterialsProject2020Compatibility,
 )
-from pymatgen.entries.computed_entries import (
-    ComputedStructureEntry,
-    ConstantEnergyAdjustment,
-)
+from pymatgen.entries.computed_entries import ComputedStructureEntry, ConstantEnergyAdjustment
 from pymatgen.entries.entry_tools import EntrySet
 
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -300,8 +297,8 @@ class MaterialsProjectDFTMixingScheme(Compatibility):
             )
 
         # Verify that the entry is included in the mixing state data
-        if (entry.entry_id not in mixing_state_data["entry_id_1"].values) and (
-            entry.entry_id not in mixing_state_data["entry_id_2"].values
+        if (entry.entry_id not in mixing_state_data["entry_id_1"].values) and (  # noqa: PD011
+            entry.entry_id not in mixing_state_data["entry_id_2"].values  # noqa: PD011
         ):
             raise CompatibilityError(
                 f"WARNING! Discarding {run_type} entry {entry.entry_id} for {entry.composition.formula} "
@@ -311,8 +308,8 @@ class MaterialsProjectDFTMixingScheme(Compatibility):
             )
 
         # Verify that the entry's energy has not been modified since mixing state data was generated
-        if (entry.energy_per_atom not in mixing_state_data["energy_1"].values) and (
-            entry.energy_per_atom not in mixing_state_data["energy_2"].values
+        if (entry.energy_per_atom not in mixing_state_data["energy_1"].values) and (  # noqa: PD011
+            entry.energy_per_atom not in mixing_state_data["energy_2"].values  # noqa: PD011
         ):
             raise CompatibilityError(
                 f"WARNING! Discarding {run_type} entry {entry.entry_id} for {entry.composition.formula} "
@@ -738,7 +735,7 @@ class MaterialsProjectDFTMixingScheme(Compatibility):
         try:
             pd = PhaseDiagram(entries)
         except ValueError:
-            return None
+            return
 
         print(
             f"{'entry_id':<12}{'formula':<12}{'spacegroup':<12}{'run_type':<10}{'eV/atom':<8}"
@@ -750,4 +747,4 @@ class MaterialsProjectDFTMixingScheme(Compatibility):
                 f"{e.parameters['run_type']:<10}{e.energy_per_atom:<8.3f}"
                 f"{e.correction / e.composition.num_atoms:<9.3f} {pd.get_e_above_hull(e):<9.3f}"
             )
-        return None
+        return

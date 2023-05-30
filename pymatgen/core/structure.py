@@ -17,17 +17,7 @@ import warnings
 from abc import ABCMeta, abstractmethod
 from fnmatch import fnmatch
 from io import StringIO
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Iterable,
-    Iterator,
-    Literal,
-    Sequence,
-    SupportsIndex,
-    cast,
-)
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, Sequence, SupportsIndex, cast
 
 import numpy as np
 from monty.dev import deprecated
@@ -446,7 +436,7 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
             (bool) True if SiteCollection does not contain atoms that are too
             close together.
         """
-        if len(self.sites) == 1:
+        if len(self) == 1:
             return True
         all_dists = self.distance_matrix[np.triu_indices(len(self), 1)]
         return bool(np.min(all_dists) > tol)
@@ -490,7 +480,7 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
             values (list): A sequence of values. Must be same length as
                 number of sites.
         """
-        if len(values) != len(self.sites):
+        if len(values) != len(self):
             raise ValueError("Values must be same length as sites.")
         for site, val in zip(self.sites, values):
             site.properties[property_name] = val
@@ -561,8 +551,11 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
             oxidation_states (list): List of oxidation states.
                 E.g., [1, 1, 1, 1, 2, 2, 2, 2, 5, 5, 5, 5, -2, -2, -2, -2]
         """
-        if len(oxidation_states) != len(self.sites):
-            raise ValueError("Oxidation states of all sites must be specified.")
+        if len(oxidation_states) != len(self):
+            raise ValueError(
+                f"Oxidation states of all sites must be specified, expected {len(self)} values, "
+                f"got {len(oxidation_states)}"
+            )
         for site, ox in zip(self.sites, oxidation_states):
             new_sp = {}
             for el, occu in site.species.items():
@@ -623,8 +616,8 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
             spins (list): List of spins
                 E.g., [+5, -5, 0, 0]
         """
-        if len(spins) != len(self.sites):
-            raise ValueError("Spin of all sites must be specified in the dictionary.")
+        if len(spins) != len(self):
+            raise ValueError(f"Spins for all sites must be specified, expected {len(self)} spins, got {len(spins)}")
 
         for site, spin in zip(self.sites, spins):
             new_sp = {}
@@ -783,17 +776,17 @@ class IStructure(SiteCollection, MSONable):
         prop_keys: list[str] = []
         props = {}
         lattice = sites[0].lattice
-        for i, site in enumerate(sites):
+        for idx, site in enumerate(sites):
             if site.lattice != lattice:
                 raise ValueError("Sites must belong to the same lattice")
-            for k, v in site.properties.items():
-                if k not in prop_keys:
-                    prop_keys.append(k)
-                    props[k] = [None] * len(sites)
-                props[k][i] = v
-        for k, v in props.items():
-            if any(vv is None for vv in v):
-                warnings.warn(f"Not all sites have property {k}. Missing values are set to None.")
+            for key, val in site.properties.items():
+                if key not in prop_keys:
+                    prop_keys.append(key)
+                    props[key] = [None] * len(sites)
+                props[key][idx] = val
+        for key, val in props.items():
+            if any(vv is None for vv in val):
+                warnings.warn(f"Not all sites have property {key}. Missing values are set to None.")
         return cls(
             lattice,
             [site.species for site in sites],
@@ -1387,12 +1380,13 @@ class IStructure(SiteCollection, MSONable):
             site_coords = np.array([site.coords for site in sites], dtype=float)
             cart_coords = np.ascontiguousarray(np.array(self.cart_coords), dtype=float)
             lattice_matrix = np.ascontiguousarray(np.array(self.lattice.matrix), dtype=float)
+            pbc = np.ascontiguousarray(self.pbc, dtype=int)
             r = float(r)
             center_indices, points_indices, images, distances = find_points_in_spheres(
                 cart_coords,
                 site_coords,
                 r=r,
-                pbc=np.array(self.pbc, dtype=int),
+                pbc=pbc,
                 lattice=lattice_matrix,
                 tol=numerical_tol,
             )
@@ -2275,12 +2269,9 @@ class IStructure(SiteCollection, MSONable):
     def __repr__(self):
         outs = ["Structure Summary", repr(self.lattice)]
         if self._charge:
-            if self._charge >= 0:
-                outs.append(f"Overall Charge: +{self._charge}")
-            else:
-                outs.append(f"Overall Charge: -{self._charge}")
-        for s in self:
-            outs.append(repr(s))
+            outs.append(f"Overall Charge: {self._charge:+}")
+        for site in self:
+            outs.append(repr(site))
         return "\n".join(outs)
 
     def __str__(self):
@@ -2289,24 +2280,21 @@ class IStructure(SiteCollection, MSONable):
             f"Reduced Formula: {self.composition.reduced_formula}",
         ]
 
-        def to_s(x):
-            return f"{x:0.6f}"
+        def to_str(x):
+            return f"{x:>10.6f}"
 
-        outs.append("abc   : " + " ".join(to_s(i).rjust(10) for i in self.lattice.abc))
-        outs.append("angles: " + " ".join(to_s(i).rjust(10) for i in self.lattice.angles))
+        outs.append("abc   : " + " ".join(to_str(i) for i in self.lattice.abc))
+        outs.append("angles: " + " ".join(to_str(i) for i in self.lattice.angles))
         outs.append("pbc   : " + " ".join(str(p).rjust(10) for p in self.lattice.pbc))
         if self._charge:
-            if self._charge >= 0:
-                outs.append(f"Overall Charge: +{self._charge}")
-            else:
-                outs.append(f"Overall Charge: -{self._charge}")
+            outs.append(f"Overall Charge: {self._charge:+}")
         outs.append(f"Sites ({len(self)})")
         data = []
         props = self.site_properties
         keys = sorted(props)
         for i, site in enumerate(self):
             row = [str(i), site.species_string]
-            row.extend([to_s(j) for j in site.frac_coords])
+            row.extend([to_str(j) for j in site.frac_coords])
             for k in keys:
                 row.append(props[k][i])
             data.append(row)
@@ -2363,7 +2351,7 @@ class IStructure(SiteCollection, MSONable):
             return [run_mcsqs(self, **kwargs).bestsqs]
         raise ValueError("Invalid mode!")
 
-    def as_dict(self, verbosity=1, fmt=None, **kwargs):
+    def as_dict(self, verbosity=1, fmt=None, **kwargs) -> dict[str, Any]:
         """
         Dict representation of Structure.
 
@@ -2392,21 +2380,21 @@ class IStructure(SiteCollection, MSONable):
         latt_dict = self._lattice.as_dict(verbosity=verbosity)
         del latt_dict["@module"]
         del latt_dict["@class"]
-
-        d = {
+        sites = []
+        dct = {
             "@module": type(self).__module__,
             "@class": type(self).__name__,
             "charge": self.charge,
             "lattice": latt_dict,
-            "sites": [],
         }
         for site in self:
-            site_dict = site.as_dict(verbosity=verbosity)
+            site_dict = site.as_dict(verbosity=verbosity)  # type: ignore[call-arg]
             del site_dict["lattice"]
             del site_dict["@module"]
             del site_dict["@class"]
-            d["sites"].append(site_dict)
-        return d
+            sites.append(site_dict)
+        dct["sites"] = sites
+        return dct
 
     def as_dataframe(self):
         """
@@ -2493,19 +2481,19 @@ class IStructure(SiteCollection, MSONable):
             from pymatgen.io.cssr import Cssr
 
             writer = Cssr(self)  # type: ignore
-        elif fmt == "json" or fnmatch(filename.lower(), "*.json"):
-            s = json.dumps(self.as_dict())
+        elif fmt == "json" or fnmatch(filename.lower(), "*.json*"):
+            dct = json.dumps(self.as_dict())
             if filename:
-                with zopen(filename, "wt") as f:
-                    f.write(s)
-            return s
+                with zopen(filename, "wt") as file:
+                    file.write(dct)
+            return dct
         elif fmt == "xsf" or fnmatch(filename.lower(), "*.xsf*"):
             from pymatgen.io.xcrysden import XSF
 
             s = XSF(self).to_string()
             if filename:
-                with zopen(filename, "wt", encoding="utf8") as f:
-                    f.write(s)
+                with zopen(filename, "wt", encoding="utf8") as file:
+                    file.write(s)
             return s
         elif (
             fmt == "mcsqs"
@@ -2517,8 +2505,8 @@ class IStructure(SiteCollection, MSONable):
 
             s = Mcsqs(self).to_string()
             if filename:
-                with zopen(filename, "wt", encoding="ascii") as f:
-                    f.write(s)
+                with zopen(filename, "wt", encoding="ascii") as file:
+                    file.write(s)
             return s
         elif fmt == "prismatic" or fnmatch(filename, "*prismatic*"):
             from pymatgen.io.prismatic import Prismatic
@@ -2528,8 +2516,8 @@ class IStructure(SiteCollection, MSONable):
         elif fmt == "yaml" or fnmatch(filename, "*.yaml*") or fnmatch(filename, "*.yml*"):
             yaml = YAML()
             if filename:
-                with zopen(filename, "wt") as f:
-                    yaml.dump(self.as_dict(), f)
+                with zopen(filename, "wt") as file:
+                    yaml.dump(self.as_dict(), file)
                 return None
             sio = StringIO()
             yaml.dump(self.as_dict(), sio)
@@ -2543,8 +2531,8 @@ class IStructure(SiteCollection, MSONable):
 
             s = ResIO.structure_to_str(self)
             if filename:
-                with zopen(filename, "wt", encoding="utf8") as f:
-                    f.write(s)
+                with zopen(filename, "wt", encoding="utf8") as file:
+                    file.write(s)
                 return None
             return s
         else:

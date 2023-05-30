@@ -1109,7 +1109,128 @@ class ORCAPCMOutput(MSONable):
 
 
 class ORCASMDOutput(MSONable):
-    pass
+    """
+    Class to parse ORCA SMD output files (typically *.smd.out)
+    """
+
+    def __init__(self, filename: str):
+        """
+        Args:
+            filename (str): Filename to parse
+        """
+
+        self.filename = filename
+        self.data: Dict[str, Any] = {}
+
+        self.text = ""
+        with zopen(filename, mode="rt", encoding="ISO-8859-1") as f:
+            self.text = f.read()
+
+        self._parse_element_sasa_energy()
+        self._parse_pair_cotsasa_energy()
+
+        # Parse nonaqueous solvent contribution
+        na_solv_contrib_match = read_pattern(
+            self.text,
+            {
+                "key": (
+                    r"NONAQUEOUS SOLVENT CONTRIBUTION \(kcal/mol\):\s+"
+                    r"\(proportional to SASA, atomic number independent\)\s+\-+\s+Subtotal:\s+([0-9\.\-]+)\s+\-+"
+                )
+            }
+        )
+        if na_solv_contrib_match.get("key") is not None:
+            self.data["nonaqueous_solvent_contribution"] = float(na_solv_contrib_match["key"][0][0])
+
+        # Parse total CDS energy
+        cds_total_match = read_pattern(
+            self.text,
+            {
+                "key": r"\s*CDS TOTAL \(kcal/mol\):\s+([0-9\.\-]+)\s+\.+"
+            }
+        )
+        if cds_total_match.get("key") is not None:
+            self.data["cds_total_energy"] = float(cds_total_match[0][0])
+        
+    def _parse_element_sasa_energy(self):
+        sasa_matches = read_pattern(
+            self.text,
+            {
+                "key": (
+                    r"\-+\s+Element\s+SASA\s+Sigma Z\s+Total\s+Z\s+Ang\*\*2\s+cal/Ang\*\*2/mol\s+kcal/mol\s+\-+\s+"
+                    r"((?:\s*[A-za-z]+\s+[0-9\.\-]+\s+[0-9\.\-]+\s+[0-9\.\-]+)+)"
+                    r"\s+Subtotal:\s+([\-\.0-9]+)\s+([0-9\.\-]+)\s+\-+"
+                )
+            }
+        )
+
+        if sasa_matches.get("key") is not None:
+            # There should be only one match
+            match = sasa_matches["key"][0]
+            rows = match[0]
+            row_matches = read_pattern(
+                rows,
+                {
+                    "key": r"\s*([A-Za-z]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s*"
+                }
+            )
+            elem_contribs = dict()
+            for row in row_matches.get("key", list()):
+                element = row[0]
+                sasa = float(row[1])
+                sigma_z = float(row[2])
+                energy = float(row[3])
+                elem_contribs[element] = {
+                    "sasa": sasa,
+                    "sigma_z": sigma_z,
+                    "energy": energy
+                }
+            self.data["single_atom_contributions"] = elem_contribs
+
+            self.data["sasa_total"] = float(match[1])
+
+            self.data["total_single_atom_contribution"] = float(match[2])
+
+    def _parse_pair_cotsasa_energy(self):
+        two_atom_matches = read_pattern(
+            self.text,
+            {
+                "key": (
+                    r"\-+\s+Elements\s+COT\*SASA\s+Sigma Z,Z'\s+Total\s+Z,Z'\s+Ang\*\*2\s+cal/Ang\*\*2/mol\s+kcal/mol\s+\-+\s+"
+                    r"((?:\s*[A-Za-z]+\s+[A-Za-z]+\s+[0-9\.\-]+\s+[0-9\.\-]+\s+[0-9\.\-]+)+)"
+                    r"\s+Subtotal:\s+([0-9\.\-]+)\s+\-+"
+                )
+            }
+        )
+
+        if two_atom_matches.get("key") is not None:
+            # There should be only one match
+            match = two_atom_matches["key"][0]
+            
+            rows = match[0]
+            rows_matches = read_pattern(
+                rows,
+                {
+                    "key": r"\s*([A-Za-z]+)\s+([A-Za-z]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)"
+                }
+            )
+
+            pair_contributions = dict()
+            for row in rows_matches.get("key", list()):
+                elem_1 = row[0]
+                elem_2 = row[1]
+                name = f"{elem_1}-{elem_2}"
+                cotsasa = float(row[2])
+                sigma_zz = float(row[3])
+                energy = float(row[4])
+                pair_contributions[name] = {
+                    "cot_sasa": cotsasa,
+                    "sigma_z_z'": sigma_zz,
+                    "energy": energy
+                }
+            self.data["atom_pair_contributions"] = pair_contributions
+
+            self.data["total_pair_contribution"] = float(match[1])
 
 
 class ORCAPropertyOutput(MSONable):

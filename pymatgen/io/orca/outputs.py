@@ -387,7 +387,7 @@ class ORCAOutput(MSONable):
                 
                 mulliken.append(this_mulliken)
         
-        self.data["mulliken"] = mulliken
+        self.data["mulliken_charges"] = mulliken
 
         # Lowedin population analysis
         loewdin_open_match = read_pattern(
@@ -439,6 +439,7 @@ class ORCAOutput(MSONable):
                     this_loew.append((float(atom[0])))
                 
                 loewdin.append(this_loew)
+        self.data["loewdin_charges"] = loewdin
 
         # Mayer population analysis
         header_pattern = r"ATOM\s+NA\s+ZA\s+QA\s+VA\s+BVA\s+FA\s*"
@@ -468,6 +469,7 @@ class ORCAOutput(MSONable):
                     }
                 )
             mayer.append(this_mayer)
+        self.data["mayer_charges"] = mayer
 
     def _parse_general_warnings(self):
         if "warnings" not in self.data:
@@ -1234,7 +1236,75 @@ class ORCASMDOutput(MSONable):
 
 
 class ORCAPropertyOutput(MSONable):
-    pass
+    """
+    Class to parse ORCA property output files (typically *_property.txt)
+    """
+
+    def __init__(self, filename: str):
+        """
+        Args:
+            filename (str): Filename to parse
+        """
+
+        self.filename = filename
+        self.data: Dict[str, Any] = {}
+
+        self.text = ""
+        with zopen(filename, mode="rt", encoding="ISO-8859-1") as f:
+            self.text = f.read()
+            self.sections = self.text.split("$")
+
+        self._parse_calculation_info()
+        self._parse_SCF_energy()
+        self._parse_DFT_energy()
+        self._parse_solvation_details()
+        self._parse_mayer_pop()
+        self._parse_SCF_electric_properties()
+        self._parse_hessian()
+        self._parse_thermochemistry()
+        self._parse_geometries()
+    
+    def _parse_calculation_info(self):
+        for section in self.sections:
+            sec_match = read_pattern(
+                section,
+                {
+                    "key": r"Calculation_Info"
+                }
+            )
+            if sec_match.get("key") is not None:
+                contents_match = read_pattern(
+                    section,
+                    {
+                        "geom_index": r"geom\. index: (\d+)",
+                        "multiplicity": r"Multiplicity:\s+(\d+)",
+                        ""  # TODO
+                    }
+                )
+
+    def _parse_SCF_energy(self):
+        pass
+
+    def _parse_DFT_energy(self):
+        pass
+
+    def _parse_solvation_details(self):
+        pass
+
+    def _parse_mayer_pop(self):
+        pass
+
+    def _parse_SCF_electric_properties(self):
+        pass
+
+    def _parse_hessian(self):
+        pass
+
+    def _parse_thermochemistry(self):
+        pass
+
+    def _parse_geometries(self):
+        pass
 
 
 class ORCANBOOutput(MSONable):

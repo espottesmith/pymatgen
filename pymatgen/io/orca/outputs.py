@@ -371,7 +371,7 @@ class ORCAOutput(MSONable):
         else:
             header_pattern = r"\-+\s*MULLIKEN ATOMIC CHARGES\s*\-+"
             table_pattern = r"\s*\d+\s+[A-Za-z]+\s*:\s+([0-9\-\.]+)\s*\n"
-            footer_pattern = r"Sum of atomic charges\s+:\s+[0-9\.\-]+"
+            footer_pattern = r"Sum of atomic charges\s*:\s+[0-9\.\-]+"
 
             mull_table_match = read_table_pattern(
                 self.text,

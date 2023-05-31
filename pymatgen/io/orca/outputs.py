@@ -1278,7 +1278,7 @@ class ORCAPropertyOutput(MSONable):
                     {
                         "geom_index": r"geom\. index: (\d+)",
                         "multiplicity": r"Multiplicity:\s+(\d+)",
-                        ""  # TODO
+                        # ""  # TODO
                     }
                 )
 

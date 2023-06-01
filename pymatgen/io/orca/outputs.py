@@ -1256,10 +1256,10 @@ class ORCAPropertyOutput(MSONable):
             self.sections = self.text.split("$")
 
         self._parse_calculation_info()
-        # self._parse_SCF_energy()
-        # self._parse_DFT_energy()
+        self._parse_SCF_energy()
+        self._parse_DFT_energy()
+        self._parse_mayer_pop()
         # self._parse_solvation_details()
-        # self._parse_mayer_pop()
         # self._parse_SCF_electric_properties()
         # self._parse_hessian()
         # self._parse_thermochemistry()
@@ -1312,19 +1312,134 @@ class ORCAPropertyOutput(MSONable):
             sec_match = read_pattern(
                 section,
                 {
-                    "key": r"Calculation_Info"
+                    "key": r"SCF_Energy"
                 }
             )
             if sec_match.get("key") is not None:
-                pass
+                contents_match = read_pattern(
+                    section,
+                    {
+                        "geom_index": r"geom\. index: (\d+)",
+                        "scf_energy": r"SCF Energy:\s+([0-9\.\-]+)"
+                    }
+                )
+
+                if contents_match.get("geom_index") is None:
+                    continue
+
+                geom_index = int(contents_match["geom_index"][0][0])
+
+                if contents_match.get("scf_energy") is not None:
+                    self.data["scf_energy"][geom_index] = float(contents_match["scf_energy"][0][0])
 
     def _parse_DFT_energy(self):
-        pass
+        for section in self.sections:
+            sec_match = read_pattern(
+                section,
+                {
+                    "key": r"DFT_Energy"
+                }
+            )
+            if sec_match.get("key") is not None:
+                contents_match = read_pattern(
+                    section,
+                    {
+                        "geom_index": r"geom\. index: (\d+)",
+                        "alpha_electrons": r"Number of Alpha Electrons\s+([0-9\.]+)",
+                        "beta_electrons": r"Number of Beta\s+Electrons\s+([0-9\.]+)",
+                        "total_electrons": r"Total number of\s+Electrons\s+([0-9\.]+)",
+                        "exchange_energy": r"Exchange energy\s+([\-\.0-9]+)",
+                        "correlation_energy": r"Correlation energy\s+([\-\.0-9]+)",
+                        "nl_correlation_energy": r"Correlation energy NL\s+([\-\.0-9]+)",
+                        "ex_corr_energy": r"Exchange-Correlation energy\s+([\-\.0-9]+)",
+                        "embedding_corr": r"Embedding correction\s+([\-\.0-9]+)",
+                        "total_dft_energy": r"Total DFT Energy \(No VdW correction\)\s+([\-\.0-9]+)",
+                    }
+                )
 
-    def _parse_solvation_details(self):
-        pass
+                if contents_match.get("geom_index") is None:
+                    continue
+
+                geom_index = int(contents_match["geom_index"][0][0])
+                for key in [
+                    "alpha_electrons", "beta_electrons", "total_electrons", "exchange_energy", "correlation_energy",
+                    "nl_correlation_energy", "ex_corr_energy", "embedding_corr", "total_dft_energy",
+                ]:
+                    if contents_match.get(key) is not None:
+                        self.data[key][geom_index] = float(contents_match[key][0][0])
 
     def _parse_mayer_pop(self):
+        # Mayer population analysis
+        for section in self.sections:
+            sec_match = read_pattern(
+                section,
+                {
+                    "key": r"Mayer_Pop"
+                }
+            )
+            if sec_match.get("key") is not None:
+
+                geom_match = read_pattern(
+                    section,
+                    {
+                        "geom_index": r"geom\. index: (\d+)",
+                    }
+                )
+
+                if geom_match.get("geom_index") is None:
+                    continue
+
+                geom_index = int(geom_match["geom_index"][0][0])
+
+                header_pattern = r"ATOM\s+NA\s+ZA\s+QA\s+VA\s+BVA\s+FA\s*"
+                table_pattern = (r"\s*\d+\s+\d+\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+"
+                                r"([0-9\.\-]+)\s+([0-9\.\-]+)\s*\n")
+                footer_pattern = r""
+
+                mayer = list()
+                mayer_match = read_table_pattern(
+                    section,
+                    header_pattern,
+                    table_pattern,
+                    footer_pattern
+                )
+
+                if len(mayer_match) > 0:
+                    table = mayer_match[0]
+                    for atom in table:
+                        mayer.append(
+                            {
+                                "gross_population": float(atom[0]),
+                                "nuclear_charge": float(atom[1]),
+                                "gross_atomic_charge": float(atom[2]),
+                                "mayer_total_valence": float(atom[3]),
+                                "mayer_bonded_valence": float(atom[4]),
+                                "mayer_free_valence": float(atom[5])
+                            }
+                        )
+                    self.data["mayer_charges"][geom_index] = mayer
+
+                # Mayer bond order
+                header_pattern = (r"Bond orders larger than [0-9\.]+\s+Atom A\s+A\.N\. of A\s+Atom B\s+A\.N\. of B\s+"
+                                  r"Bond order\s*")
+                row_pattern = r"(\d+)\s+\d+\s+(\d+)\s+\d+\s+([0-9\.\-]+)\s*"
+                footer_pattern = r"#\s+\-+"
+
+                mayer_bond_match = read_table_pattern(
+                    section,
+                    header_pattern,
+                    row_pattern,
+                    footer_pattern
+                )
+
+                mayer_bonds = list()
+                if len(mayer_bond_match) > 0:
+                    table = mayer_bond_match[0]
+                    for row in table:
+                        mayer_bonds.append((int(row[0]), int(row[1]), float(row[2])))
+                self.data["mayer_bonds"][geom_index] = mayer_bonds
+
+    def _parse_solvation_details(self):
         pass
 
     def _parse_SCF_electric_properties(self):

@@ -1391,6 +1391,7 @@ class ORCAPropertyOutput(MSONable):
 
                 geom_index = int(geom_match["geom_index"][0][0])
 
+                # Mayer charges
                 header_pattern = r"ATOM\s+NA\s+ZA\s+QA\s+VA\s+BVA\s+FA\s*"
                 table_pattern = (r"\s*\d+\s+\d+\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+"
                                 r"([0-9\.\-]+)\s+([0-9\.\-]+)\s*\n")
@@ -1440,7 +1441,45 @@ class ORCAPropertyOutput(MSONable):
                 self.data["mayer_bonds"][geom_index] = mayer_bonds
 
     def _parse_solvation_details(self):
-        pass
+        for section in self.sections:
+            sec_match = read_pattern(
+                section,
+                {
+                    "key": r"Solvation_Details"
+                }
+            )
+            if sec_match.get("key") is not None:
+
+                contents_match = read_pattern(
+                    section,
+                    {
+                        "geom_index": r"geom\. index: (\d+)",
+                        "epsilon": r"Epsilon:\s+([0-9\.]+)",
+                        "refractive_index": r"Refrac:\s+([0-9\.]+)",
+                        "solv_radius": r"RSolv:\s+([0-9\.]+)",
+                        "surface_type": r"Surface Type:\s+(\d+)",
+                        "number_of_points": r"Number of Points:\s+(\d+)",
+                        "surface_area": r"Surface Area:\s+([0-9\.]+)",
+                        "dielectric_energy": r"Dielectric Energy:\s+([0-9\.\-]+)",
+                    }
+                )
+
+                if contents_match.get("geom_index") is None:
+                    continue
+
+                geom_index = int(contents_match["geom_index"][0][0])
+
+                for key in [
+                    "epsilon", "refractive_index", "solv_radius", "surface_area", "dielectric_energy"
+                ]:
+                    if contents_match.get(key) is not None:
+                        self.data[key][geom_index] = float(contents_match[key][0][0])
+
+                for key in [
+                    "surface_type", "number_of_points"
+                ]:
+                    if contents_match.get(key) is not None:
+                        self.data[key][geom_index] = int(contents_match[key][0][0])
 
     def _parse_SCF_electric_properties(self):
         pass

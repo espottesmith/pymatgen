@@ -1482,7 +1482,45 @@ class ORCAPropertyOutput(MSONable):
                         self.data[key][geom_index] = int(contents_match[key][0][0])
 
     def _parse_SCF_electric_properties(self):
-        pass
+        for section in self.sections:
+            sec_match = read_pattern(
+                section,
+                {
+                    "key": r"SCF_Electric_Properties"
+                }
+            )
+            if sec_match.get("key") is not None:
+
+                contents_match = read_pattern(
+                    section,
+                    {
+                        "geom_index": r"geom\. index: (\d+)",
+                        "filename": r"Filename\s+:\s+([A-Za-z0-9\-\._ ]+\.scfp)",
+                        "dipole_magnitude": r"Magnitude of dipole moment \(Debye\) :\s+([0-9\.]+)",
+                        "electronic_dipole": r"Electronic Contribution:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)",
+                        "nuclear_dipole": r"Nuclear Contribution:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)",
+                        "total_dipole": r"Total Dipole moment:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)"
+                    }
+                )
+
+                if contents_match.get("geom_index") is None:
+                    continue
+
+                geom_index = int(contents_match["geom_index"][0][0])
+
+                if contents_match.get("filename") is not None:
+                    self.data["filename"][geom_index] = contents_match["filename"][0][0]
+
+                if contents_match.get("dipole_magnitude") is not None:
+                    self.data["dipole_magnitude"][geom_index] = float(contents_match["dipole_magnitude"][0][0])
+
+                for key in ["electronic_dipole", "nuclear_dipole", "total_dipole"]:
+                    if contents_match.get(key) is not None:
+                        self.data[key][geom_index] = [
+                            float(contents_match[key][0][0]),
+                            float(contents_match[key][0][1]),
+                            float(contents_match[key][0][1]),
+                        ]
 
     def _parse_hessian(self):
         pass

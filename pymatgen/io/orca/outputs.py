@@ -10,6 +10,7 @@ import math
 import os
 import re
 import warnings
+from collections import defaultdict
 from typing import Any, Dict
 
 import networkx as nx
@@ -1247,7 +1248,7 @@ class ORCAPropertyOutput(MSONable):
         """
 
         self.filename = filename
-        self.data: Dict[str, Any] = {}
+        self.data: Dict[str, Any] = defaultdict(dict)
 
         self.text = ""
         with zopen(filename, mode="rt", encoding="ISO-8859-1") as f:
@@ -1278,12 +1279,44 @@ class ORCAPropertyOutput(MSONable):
                     {
                         "geom_index": r"geom\. index: (\d+)",
                         "multiplicity": r"Multiplicity:\s+(\d+)",
-                        # ""  # TODO
+                        "charge": r"Charge:\s+([0-9\-]+)",
+                        "num_atoms": r"number of atoms:\s+(\d+)",
+                        "num_electrons": r"number of electrons:\s+(\d+)",
+                        "num_frozen_core": r"number of frozen core electrons:\s+(\d+)",
+                        "num_correlated": r"number of correlated electrons:\s+(\d+)",
+                        "num_basis": r"number of basis functions:\s+(\d+)",
+                        "num_aux_c_basis": r"number of aux C basis functions:\s+(\d+)",
+                        "num_aux_j_basis": r"number of aux J basis functions:\s+(\d+)",
+                        "num_aux_jk_basis": r"number of aux JK basis functions:\s+(\d+)",
+                        "num_aux_cabs_basis": r"number of aux CABS basis functions:\s+(\d+)",
+                        "total_energy": r"Total Energy\s+([0-9\.\-]+)"
                     }
                 )
 
+                if contents_match.get("geom_index") is None:
+                    continue
+                # Calculation_Info section should only appear once?
+                geom_index = int(contents_match["geom_index"][0][0])
+                for key in [
+                    "multiplicity", "charge", "num_atoms", "num_electrons", "num_frozen_electrons", "num_correlated",
+                    "num_basis", "num_aux_c_basis", "num_aux_j_basis", "num_aux_jk_basis", "num_aux_cabs_basis"
+                ]:
+                    if contents_match.get(key) is not None:
+                        self.data[key] = int(contents_match[key][0][0])
+
+                if contents_match.get("total_energy") is not None:
+                    self.data["total_energy"][geom_index] = float(contents_match["total_energy"][0][0])
+
     def _parse_SCF_energy(self):
-        pass
+        for section in self.sections:
+            sec_match = read_pattern(
+                section,
+                {
+                    "key": r"Calculation_Info"
+                }
+            )
+            if sec_match.get("key") is not None:
+                pass
 
     def _parse_DFT_energy(self):
         pass

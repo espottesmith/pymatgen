@@ -1256,14 +1256,14 @@ class ORCAPropertyOutput(MSONable):
             self.sections = self.text.split("$")
 
         self._parse_calculation_info()
-        self._parse_SCF_energy()
-        self._parse_DFT_energy()
-        self._parse_solvation_details()
-        self._parse_mayer_pop()
-        self._parse_SCF_electric_properties()
-        self._parse_hessian()
-        self._parse_thermochemistry()
-        self._parse_geometries()
+        # self._parse_SCF_energy()
+        # self._parse_DFT_energy()
+        # self._parse_solvation_details()
+        # self._parse_mayer_pop()
+        # self._parse_SCF_electric_properties()
+        # self._parse_hessian()
+        # self._parse_thermochemistry()
+        # self._parse_geometries()
     
     def _parse_calculation_info(self):
         for section in self.sections:

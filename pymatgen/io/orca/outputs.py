@@ -220,7 +220,12 @@ class ORCAOutput(MSONable):
                          r"(?:ITER\s+Energy\s+Delta\-E\s+Grad\s+Rot\s+Max\-DP\s+RMS\-DP)|"
                          r"(\s*\d+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+\s+[\-\.0-9]+"
                          r"\s+[\-\.0-9]+\s+[\-\.0-9]+))\s*")
-        footer_pattern = r"\s+\*+\s+\*\s+SUCCESS\s+\*\s+\*\s+SCF CONVERGED AFTER\s+\d+\s+CYCLES\s+\*\s+\*+"
+        footer_pattern = (
+            r"(?:(?:\s+\*+\s+\*\s+SUCCESS\s+\*\s+\*\s+SCF CONVERGED AFTER\s+\d+\s+CYCLES\s+\*\s+\*+)|"
+            r"(?:WARNING: the maximum gradient error descreased on average only by a factor\s+"
+            r"(?:[0-9\.\-]+)\s+during the last \d+ iterations\s+(?:\*\*\* Initiating the TRAH\-SCF "
+            r"procedure \*\*\*)?))"
+        )
         scf_match = read_table_pattern(self.text, header_pattern, table_pattern, footer_pattern)
 
         scf = list()

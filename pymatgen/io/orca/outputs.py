@@ -262,7 +262,7 @@ class ORCAOutput(MSONable):
             this_trah = list()
             for point in one_trah:
                 trah_type_match = read_pattern(
-                    point,
+                    point[0],
                     {
                         "trah_macro": r"\s*(\d+)\s+([0-9\.\-]+)\s+([0-9eE\.\-]+)\s+([0-9\.\-]+)\s+\(TRAH MAcro\)\s+[A-Za-z]+",
                         "trah_micro": r"\s*(\d+)\s+dE\s+([0-9eE\.\-]+)\s+([0-9eE\.\-]+)\s+([0-9eE\.\-]+)\s+([0-9\.\-]+)\s+\(TRAH MIcro\)",

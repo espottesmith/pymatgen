@@ -251,7 +251,12 @@ class ORCAOutput(MSONable):
             for fe_match in final_energy_match["final_energy"]:
                 sp_energies.append(float(fe_match[0]))
         self.data["sp_energies"] = sp_energies
-        self.data["final_energy"] = sp_energies[-1]
+        if len(sp_energies) > 0:
+            self.data["final_energy"] = sp_energies[-1]
+        else:
+            self.data["final_energy"] = None
+            self.data["warnings"].append("no_final_energy")
+            
 
     def _parse_orbitals(self):
         type_matches = read_pattern(
@@ -309,8 +314,6 @@ class ORCAOutput(MSONable):
                 down_orbitals.append(this_orbitals)
 
             if len(up_orbitals) != len(down_orbitals):
-                if "warnings" not in self.data:
-                    self.data["warnings"] = list()
                 self.data["warnings"].append("up_down_orbitals_dont_match")
             self.data["orbitals"] = list(zip(up_orbitals, down_orbitals))
         # Closed-shell
@@ -473,8 +476,6 @@ class ORCAOutput(MSONable):
         self.data["mayer_charges"] = mayer
 
     def _parse_general_warnings(self):
-        if "warnings" not in self.data:
-            self.data["warnings"] = list()
 
         warning_matches = read_pattern(
             self.text,

@@ -213,6 +213,7 @@ class ORCAOutput(MSONable):
             self.data["runtime"] = total_seconds
 
     def _parse_SCF(self):
+        # Parse normal (DIIS) SCF
         header_pattern = r"\-+\s*SCF ITERATIONS\s*\-+"
         table_pattern = (r"\s*(?:(?:ITER\s+Energy\s+Delta\-E\s+Max\-DP\s+RMS\-DP\s+\[F,P\]\s+Damp)|"
                          r"(?:\s*\*\*\*\*\s*Energy Check signals convergence\s*\*\*\*\*)|"
@@ -242,7 +243,106 @@ class ORCAOutput(MSONable):
             scf.append(this_scf)
         
         self.data["SCF"] = scf
+        
+        # Parse TRAH-SCF
 
+        header_pattern = r"\-+\s+Iter\.\s+energy\s+\|\|Error\|\|_2\s+Shift\s+TRadius\s+Mac/Mic\s+Rej\.\s+\-+\s*"
+        table_pattern = (
+            r"((?:\s*\d+\s+[0-9\.\-]+\s+[0-9eE\.\-]+\s+[0-9\.\-]+\s+\(TRAH MAcro\)\s+[A-Za-z]+)|"
+            r"(?:\s*\d+\s+dE\s+[0-9eE\.\-]+\s+[0-9eE\.\-]+\s+[0-9eE\.\-]+\s+[0-9\.\-]+\s+\(TRAH MIcro\))|"
+            r"(?:\s*\d+\s+[0-9\.\-]+\s+[0-9eE\.\-]+\s+\(NR\s+MAcro\))|"
+            r"(?:\s*\d+\s+dE\s+[0-9Ee\.\-]+\s+[0-9eE\.\-]+\s+\(NR\s+MIcro\)))"
+        )
+        footer_pattern = r"\s*\*+\s+\*\s+SUCCESS\s+\*\s+\*\s+SCF CONVERGED AFTER\s+\d+\s+CYCLES\s+\*\s+\*"
+
+        trah_match = read_table_pattern(self.text, header_pattern, table_pattern, footer_pattern)
+
+        trah = list()
+        for one_trah in trah_match:
+            this_trah = list()
+            for point in one_trah:
+                trah_type_match = read_pattern(
+                    point,
+                    {
+                        "trah_macro": r"\s*(\d+)\s+([0-9\.\-]+)\s+([0-9eE\.\-]+)\s+([0-9\.\-]+)\s+\(TRAH MAcro\)\s+[A-Za-z]+",
+                        "trah_micro": r"\s*(\d+)\s+dE\s+([0-9eE\.\-]+)\s+([0-9eE\.\-]+)\s+([0-9eE\.\-]+)\s+([0-9\.\-]+)\s+\(TRAH MIcro\)",
+                        "nr_macro": r"\s*(\d+)\s+([0-9\.\-]+)\s+([0-9eE\.\-]+)\s+\(NR\s+MAcro\)",
+                        "nr_micro": r"\s*(\d+)\s+dE\s+([0-9Ee\.\-]+)\s+([0-9eE\.\-]+)\s+\(NR\s+MIcro\)"
+                    }
+                )
+
+                if trah_type_match.get("trah_macro") is not None:
+                    match = trah_type_match["trah_macro"][0]
+                    index = int(match[0])
+                    energy = float(match[1])
+                    error = float(match[2])
+                    radius = float(match[3])
+                    this_trah.append(
+                        {
+                            "macro_index": index,
+                            "energy": energy,
+                            "dE": None,
+                            "error": error,
+                            "shift": None,
+                            "trust_radius": radius
+                        }
+                    )
+
+                elif trah_type_match.get("trah_micro") is not None:
+                    match = trah_type_match["trah_micro"][0]
+                    index = int(match[0])
+                    de = float(match[1])
+                    error = float(match[2])
+                    shift = float(match[3])
+                    radius = float(match[4])
+                    this_trah.append(
+                        {
+                            "macro_index": index,
+                            "energy": None,
+                            "dE": de,
+                            "error": error,
+                            "shift": shift,
+                            "trust_radius": radius
+                        }
+                    )
+
+                elif trah_type_match.get("nr_macro") is not None:
+                    match = trah_type_match["nr_macro"][0]
+                    index = int(match[0])
+                    energy = float(match[1])
+                    error = float(match[2])
+                    this_trah.append(
+                        {
+                            "macro_index": index,
+                            "energy": energy,
+                            "dE": None,
+                            "error": error,
+                            "shift": None,
+                            "trust_radius": None
+                        }
+                    )
+
+                elif trah_type_match.get("nr_micro") is not None:
+                    match = trah_type_match["nr_micro"][0]
+                    index = int(match[0])
+                    de = float(match[1])
+                    error = float(match[2])
+                    this_trah.append(
+                        {
+                            "macro_index": index,
+                            "energy": None,
+                            "dE": de,
+                            "error": error,
+                            "shift": None,
+                            "trust_radius": None
+                        }
+                    )
+
+            trah.append(this_trah)
+        
+        self.data["TRAH_SCF"] = trah
+
+        # Parse optimized SCF energy
         final_energy_match = read_pattern(
             self.text,
             {

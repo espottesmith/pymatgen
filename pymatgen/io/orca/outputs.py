@@ -1794,6 +1794,8 @@ class ORCAHessianOutput(MSONable):
         for section in self.sections:
             self.parse_section(section)
 
+        self._parse_misc()
+
     def parse_section(self, section):
         if section.startswith("hessian"):
             self._parse_hessian(section)
@@ -1900,13 +1902,41 @@ class ORCAHessianOutput(MSONable):
         self.data["normal_modes"] = normal_modes.reshape((row_dimension, -1, 3))
 
     def _parse_atoms(self, section):
-        pass
+        parse_atom = read_pattern(
+            section,
+            {"key": r"\s+([A-Za-z]+)\s+[0-9\.]+\s+([0-9\.\-Ee]+)\s+([0-9\.\-Ee]+)\s+([0-9\.\-Ee]+)"}
+        )
 
-    def _parse_misc(self, section):
-        pass
+        if parse_atom.get("key") is None:
+            return
 
+        species = list()
+        coords = list()
+        for atom in parse_atom["key"]:
+            specie = atom[0]
+            coord = [float(atom[1]), float(atom[2]), float(atom[3])]
+            species.append(specie)
+            coords.append(coord)
+        mol = Molecule(species, coords)
+        self.data["molecule_structure"] = mol
+        
     def _parse_dipole_derivatives(self, section):
         pass
 
     def _parse_ir_spectrum(self, section):
         pass
+
+    def _parse_misc(self):
+        matches = read_pattern(
+            self.text,
+            {
+                "temp": r"actual_temperature\s+([0-9\.]+)",
+                "scale": r"frequency_scale_factor\s+([0-9\.]+)"
+            }
+        )
+
+        if matches.get("temp") is not None:
+            self.data["actual_temperature"] = matches["temp"][0][0]
+
+        if matches.get("scale") is not None:
+            self.data["frequency_scale_factor"] = matches["scale"][0][0]

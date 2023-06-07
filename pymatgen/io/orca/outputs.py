@@ -4,27 +4,17 @@ Parsers for ORCA output files.
 
 from __future__ import annotations
 
-import copy
 import logging
-import math
-import os
-import re
-import warnings
 from collections import defaultdict
 from typing import Any, Dict
 
-import networkx as nx
 import numpy as np
-import pandas as pd
 from monty.io import zopen
-from monty.json import MSONable, jsanitize
+from monty.json import MSONable
 
 from pymatgen.core.structure import Molecule
 from pymatgen.io.qchem.outputs import nbo_parser
 from pymatgen.io.qchem.utils import (
-    process_parsed_coords,
-    process_parsed_fock_matrix,
-    read_matrix_pattern,
     read_pattern,
     read_table_pattern,
 )
@@ -1780,14 +1770,143 @@ class ORCAPropertyOutput(MSONable):
                 self.data["molecules"][geom_index] = mol
 
 
-class ORCANBOOutput(MSONable):
-    pass
 
+class ORCAHessianOutput(MSONable):
+    """
+    Class to parse ORCA Hessian output files (typically *.hess)
+    """
 
-class ORCATrajectoryOutput(MSONable):
-    pass
+    def __init__(self, filename: str):
+        """
+        Args:
+            filename (str): Filename to parse
+        """
 
+        self.filename = filename
+        self.data: Dict[str, Any] = defaultdict(dict)
 
-class File47Output(MSONable):
-    pass
+        self.text = ""
+        with zopen(filename, mode="rt", encoding="ISO-8859-1") as f:
+            self.text = f.read()
 
+        self.sections = self.text.split("$")
+
+        for section in self.sections:
+            self.parse_section(section)
+
+    def parse_section(self, section):
+        if section.startswith("hessian"):
+            self._parse_hessian(section)
+        elif section.startswith("vibrational_frequencies"):
+            self._parse_vibrational_frequencies(section)
+        elif section.startswith("normal_modes"):
+            self._parse_normal_modes(section)
+        elif section.startswith("atoms"):
+            self._parse_atoms(section)
+        elif section.startswith("dipole_derivatives"):
+            self._parse_dipole_derivatives(section)
+        elif section.startswith("ir_spectrum"):
+            self._parse_ir_spectrum(section)
+        else:
+            return
+
+    def _parse_hessian(self, section):
+        dimension_match = read_pattern(
+            section,
+            {
+                "key": r"hessian\s+(\d+)"
+            }
+        )
+        if dimension_match.get("key") is None:
+            return
+        
+        dimension = int(dimension_match["key"][0][0])
+        hessian = np.empty((dimension, dimension))
+
+        block_match = read_pattern(
+            section,
+            {
+                "key": r"((?:\s+\d+){1,5})\s*\n((?:\s*\d+(?:\s+[0-9\.\-Ee]+){1,5}\n)+)"
+            }
+        )
+
+        if block_match.get("key") is None:
+            return
+        
+        for block in block_match["key"]:
+            header = block[0]
+            column_indices = [int(i) for i in header.strip().split()]
+            body = block[1]
+            for line in body.split("\n"):
+                contents = line.strip().split()
+                row_index = int(contents[0])
+                for ii, cc in enumerate(contents[1:]):
+                    hessian[row_index, column_indices[ii]] = float(cc)
+        
+        self.data["hessian"] = hessian
+
+    def _parse_vibrational_frequencies(self, section):
+        freq_match = read_pattern(
+            section,
+            {"key": r"\s+[0-9]+\s+([0-9\-]+\.[0-9]+)"}
+        )
+
+        if freq_match.get("key") is None:
+            return
+        
+        freqs = list()
+        for match in freq_match["key"]:
+            freqs.append(float(match[0]))
+        self.data["vibrational_frequencies"] = freqs
+
+    def _parse_normal_modes(self, section):
+        dimension_match = read_pattern(
+            section,
+            {
+                "key": r"normal_modes\s+(\d+) (\d+)"
+            }
+        )
+        if dimension_match.get("key") is None:
+            return
+        
+        row_dimension = int(dimension_match["key"][0][0])
+        column_dimension = int(dimension_match["key"][0][1])
+        normal_modes = np.empty((row_dimension, column_dimension))
+
+        block_match = read_pattern(
+            section,
+            {
+                "key": r"((?:\s+\d+){1,5})\s*\n((?:\s*\d+(?:\s+[0-9\.\-Ee]+){1,5}\n)+)"
+            }
+        )
+
+        if block_match.get("key") is None:
+            return
+        
+        for block in block_match["key"]:
+            header = block[0]
+            column_indices = [int(i) for i in header.strip().split()]
+            body = block[1]
+            for line in body.split("\n"):
+                contents = line.strip().split()
+                row_index = int(contents[0])
+                for ii, cc in enumerate(contents[1:]):
+                    normal_modes[row_index, column_indices[ii]] = float(cc)
+
+        # Reshape so matrix is now N x A x 3
+        # N is the number of frequencies
+        # A is the number of atoms (inferred)
+        # 3 is the x, y, and z coordinates
+        self.data["normal_modes"] = normal_modes.reshape((row_dimension, -1, 3))
+
+    def _parse_atoms(self, section):
+        pass
+
+    def _parse_misc(self, section):
+        pass
+
+    def _parse_dipole_derivatives(self, section):
+        pass
+
+    def _parse_ir_spectrum(self, section):
+        pass

@@ -1361,278 +1361,391 @@ class ORCAPropertyOutput(MSONable):
             self.text = f.read()
             self.sections = self.text.split("$")
 
+
+        for section in self.sections:
+            self.parse_section(section)
         self._parse_calculation_info()
         self._parse_SCF_energy()
         self._parse_DFT_energy()
         self._parse_mayer_pop()
-        # self._parse_solvation_details()
-        # self._parse_SCF_electric_properties()
-        # self._parse_hessian()
+        self._parse_solvation_details()
+        self._parse_SCF_electric_properties()
+        self._parse_hessian()
+        self._parse_vdw_correction()
         # self._parse_thermochemistry()
+
+
         # self._parse_geometries()
-    
-    def _parse_calculation_info(self):
-        for section in self.sections:
-            sec_match = read_pattern(
-                section,
-                {
-                    "key": r"Calculation_Info"
-                }
-            )
-            if sec_match.get("key") is not None:
-                contents_match = read_pattern(
-                    section,
+
+    def parse_section(self, section):
+        """
+        Parse a block in a property file.
+
+        Args:
+            section: a block of text
+
+        Returns:
+            None
+        """
+
+        sec_match = read_pattern(
+            section,
+            {
+                "calc_info": r"Calculation_Info",
+                "scf_energy": r"SCF_Energy",
+                "dft_energy": r"DFT_Energy",
+                "mayer_pop": r"Mayer_Pop",
+                "solv_details": r"Solvation_Details",
+                "elec_prop": r"SCF_Electric_Properties",
+                "hessian": r"Hessian",
+                "vdw_corr": r"VdW_Correction",
+                "thermochem": r"THERMOCHEMISTRY_Energies",
+            }
+        )
+
+        if sec_match.get("calc_info") is not None:
+            self._parse_calculation_info(section)
+        elif sec_match.get("scf_energy") is not None:
+            self._parse_SCF_energy(section)
+        elif sec_match.get("dft_energy") is not None:
+            self._parse_DFT_energy(section)
+        elif sec_match.get("mayer_pop") is not None:
+            self._parse_mayer_pop(section)
+        elif sec_match.get("solv_details") is not None:
+            self._parse_solvation_details(section)
+        elif sec_match.get("elec_prop") is not None:
+            self._parse_SCF_electric_properties(section)
+        elif sec_match.get("hessian") is not None:
+            self._parse_hessian(section)
+        elif sec_match.get("vdw_corr") is not None:
+            self._parse_vdw_correction(section)
+        elif sec_match.get("thermochem") is not None:
+            self._parse_thermochemistry(section)
+
+    def _parse_calculation_info(self, section):
+        contents_match = read_pattern(
+            section,
+            {
+                "geom_index": r"geom\. index: (\d+)",
+                "multiplicity": r"Multiplicity:\s+(\d+)",
+                "charge": r"Charge:\s+([0-9\-]+)",
+                "num_atoms": r"number of atoms:\s+(\d+)",
+                "num_electrons": r"number of electrons:\s+(\d+)",
+                "num_frozen_core": r"number of frozen core electrons:\s+(\d+)",
+                "num_correlated": r"number of correlated electrons:\s+(\d+)",
+                "num_basis": r"number of basis functions:\s+(\d+)",
+                "num_aux_c_basis": r"number of aux C basis functions:\s+(\d+)",
+                "num_aux_j_basis": r"number of aux J basis functions:\s+(\d+)",
+                "num_aux_jk_basis": r"number of aux JK basis functions:\s+(\d+)",
+                "num_aux_cabs_basis": r"number of aux CABS basis functions:\s+(\d+)",
+                "total_energy": r"Total Energy\s+([0-9\.\-]+)"
+            }
+        )
+
+        if contents_match.get("geom_index") is None:
+            return
+        # Calculation_Info section should only appear once?
+        geom_index = int(contents_match["geom_index"][0][0])
+        for key in [
+            "multiplicity", "charge", "num_atoms", "num_electrons", "num_frozen_electrons", "num_correlated",
+            "num_basis", "num_aux_c_basis", "num_aux_j_basis", "num_aux_jk_basis", "num_aux_cabs_basis"
+        ]:
+            if contents_match.get(key) is not None:
+                self.data[key] = int(contents_match[key][0][0])
+
+        if contents_match.get("total_energy") is not None:
+            self.data["total_energy"][geom_index] = float(contents_match["total_energy"][0][0])
+
+    def _parse_SCF_energy(self, section):
+        contents_match = read_pattern(
+            section,
+            {
+                "geom_index": r"geom\. index: (\d+)",
+                "scf_energy": r"SCF Energy:\s+([0-9\.\-]+)"
+            }
+        )
+
+        if contents_match.get("geom_index") is None:
+            return
+
+        geom_index = int(contents_match["geom_index"][0][0])
+
+        if contents_match.get("scf_energy") is not None:
+            self.data["scf_energy"][geom_index] = float(contents_match["scf_energy"][0][0])
+
+    def _parse_DFT_energy(self, section):
+        contents_match = read_pattern(
+            section,
+            {
+                "geom_index": r"geom\. index: (\d+)",
+                "alpha_electrons": r"Number of Alpha Electrons\s+([0-9\.]+)",
+                "beta_electrons": r"Number of Beta\s+Electrons\s+([0-9\.]+)",
+                "total_electrons": r"Total number of\s+Electrons\s+([0-9\.]+)",
+                "exchange_energy": r"Exchange energy\s+([\-\.0-9]+)",
+                "correlation_energy": r"Correlation energy\s+([\-\.0-9]+)",
+                "nl_correlation_energy": r"Correlation energy NL\s+([\-\.0-9]+)",
+                "ex_corr_energy": r"Exchange-Correlation energy\s+([\-\.0-9]+)",
+                "embedding_corr": r"Embedding correction\s+([\-\.0-9]+)",
+                "total_dft_energy": r"Total DFT Energy \(No VdW correction\)\s+([\-\.0-9]+)",
+            }
+        )
+
+        if contents_match.get("geom_index") is None:
+            return
+
+        geom_index = int(contents_match["geom_index"][0][0])
+        for key in [
+            "alpha_electrons", "beta_electrons", "total_electrons", "exchange_energy", "correlation_energy",
+            "nl_correlation_energy", "ex_corr_energy", "embedding_corr", "total_dft_energy",
+        ]:
+            if contents_match.get(key) is not None:
+                self.data[key][geom_index] = float(contents_match[key][0][0])
+
+    def _parse_mayer_pop(self, section):
+        geom_match = read_pattern(
+            section,
+            {
+                "geom_index": r"geom\. index: (\d+)",
+            }
+        )
+
+        if geom_match.get("geom_index") is None:
+            return
+
+        geom_index = int(geom_match["geom_index"][0][0])
+
+        # Mayer charges
+        header_pattern = r"ATOM\s+NA\s+ZA\s+QA\s+VA\s+BVA\s+FA\s*"
+        table_pattern = (r"\s*\d+\s+\d+\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+"
+                        r"([0-9\.\-]+)\s+([0-9\.\-]+)\s*\n")
+        footer_pattern = r""
+
+        mayer = list()
+        mayer_match = read_table_pattern(
+            section,
+            header_pattern,
+            table_pattern,
+            footer_pattern
+        )
+
+        if len(mayer_match) > 0:
+            table = mayer_match[0]
+            for atom in table:
+                mayer.append(
                     {
-                        "geom_index": r"geom\. index: (\d+)",
-                        "multiplicity": r"Multiplicity:\s+(\d+)",
-                        "charge": r"Charge:\s+([0-9\-]+)",
-                        "num_atoms": r"number of atoms:\s+(\d+)",
-                        "num_electrons": r"number of electrons:\s+(\d+)",
-                        "num_frozen_core": r"number of frozen core electrons:\s+(\d+)",
-                        "num_correlated": r"number of correlated electrons:\s+(\d+)",
-                        "num_basis": r"number of basis functions:\s+(\d+)",
-                        "num_aux_c_basis": r"number of aux C basis functions:\s+(\d+)",
-                        "num_aux_j_basis": r"number of aux J basis functions:\s+(\d+)",
-                        "num_aux_jk_basis": r"number of aux JK basis functions:\s+(\d+)",
-                        "num_aux_cabs_basis": r"number of aux CABS basis functions:\s+(\d+)",
-                        "total_energy": r"Total Energy\s+([0-9\.\-]+)"
+                        "gross_population": float(atom[0]),
+                        "nuclear_charge": float(atom[1]),
+                        "gross_atomic_charge": float(atom[2]),
+                        "mayer_total_valence": float(atom[3]),
+                        "mayer_bonded_valence": float(atom[4]),
+                        "mayer_free_valence": float(atom[5])
+                    }
+                )
+            self.data["mayer_charges"][geom_index] = mayer
+
+        # Mayer bond order
+        header_pattern = (r"Bond orders larger than [0-9\.]+\s+Atom A\s+A\.N\. of A\s+Atom B\s+A\.N\. of B\s+"
+                            r"Bond order\s*")
+        row_pattern = r"(\d+)\s+\d+\s+(\d+)\s+\d+\s+([0-9\.\-]+)\s*"
+        footer_pattern = r"#\s+\-+"
+
+        mayer_bond_match = read_table_pattern(
+            section,
+            header_pattern,
+            row_pattern,
+            footer_pattern
+        )
+
+        mayer_bonds = list()
+        if len(mayer_bond_match) > 0:
+            table = mayer_bond_match[0]
+            for row in table:
+                mayer_bonds.append((int(row[0]), int(row[1]), float(row[2])))
+        self.data["mayer_bonds"][geom_index] = mayer_bonds
+
+    def _parse_solvation_details(self, section):
+        contents_match = read_pattern(
+            section,
+            {
+                "geom_index": r"geom\. index: (\d+)",
+                "epsilon": r"Epsilon:\s+([0-9\.]+)",
+                "refractive_index": r"Refrac:\s+([0-9\.]+)",
+                "solv_radius": r"RSolv:\s+([0-9\.]+)",
+                "surface_type": r"Surface Type:\s+(\d+)",
+                "number_of_points": r"Number of Points:\s+(\d+)",
+                "surface_area": r"Surface Area:\s+([0-9\.]+)",
+                "dielectric_energy": r"Dielectric Energy:\s+([0-9\.\-]+)",
+            }
+        )
+
+        if contents_match.get("geom_index") is None:
+            return
+
+        geom_index = int(contents_match["geom_index"][0][0])
+
+        for key in [
+            "epsilon", "refractive_index", "solv_radius", "surface_area", "dielectric_energy"
+        ]:
+            if contents_match.get(key) is not None:
+                self.data[key][geom_index] = float(contents_match[key][0][0])
+
+        for key in [
+            "surface_type", "number_of_points"
+        ]:
+            if contents_match.get(key) is not None:
+                self.data[key][geom_index] = int(contents_match[key][0][0])
+
+    def _parse_SCF_electric_properties(self, section):
+        contents_match = read_pattern(
+            section,
+            {
+                "geom_index": r"geom\. index: (\d+)",
+                "filename": r"Filename\s+:\s+([A-Za-z0-9\-\._ ]+\.scfp)",
+                "dipole_magnitude": r"Magnitude of dipole moment \(Debye\) :\s+([0-9\.]+)",
+                "electronic_dipole": r"Electronic Contribution:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)",
+                "nuclear_dipole": r"Nuclear Contribution:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)",
+                "total_dipole": r"Total Dipole moment:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)"
+            }
+        )
+
+        if contents_match.get("geom_index") is None:
+            return
+
+        geom_index = int(contents_match["geom_index"][0][0])
+
+        if contents_match.get("filename") is not None:
+            self.data["filename"][geom_index] = contents_match["filename"][0][0]
+
+        if contents_match.get("dipole_magnitude") is not None:
+            self.data["dipole_magnitude"][geom_index] = float(contents_match["dipole_magnitude"][0][0])
+
+        for key in ["electronic_dipole", "nuclear_dipole", "total_dipole"]:
+            if contents_match.get(key) is not None:
+                self.data[key][geom_index] = [
+                    float(contents_match[key][0][0]),
+                    float(contents_match[key][0][1]),
+                    float(contents_match[key][0][1]),
+                ]
+
+    def _parse_hessian(self, section):
+        geom_index_match = read_pattern(
+            section,
+            {
+                "key": r"geom\. index: (\d+)"
+            }
+        )
+
+        if geom_index_match.get("key") is None:
+            return
+
+        geom_index = int(geom_index_match["geom_index"][0][0])
+
+        normal_mode_table_match = read_pattern(
+            section,
+            {
+                "key": r"((?:(?:\s*(?:\d+\s*){1,6}\n)|(?:\s*\d+\s+([\-0-9]+\.[0-9]+\s+){1,6}\s*))+)"
+            }
+        )
+
+        if normal_mode_table_match.get("key") is not None:
+            for nmt in normal_mode_table_match["key"]:
+                table = nmt[0]
+                # Separate by chunk of normal modes
+                mode_chunk_match = read_pattern(
+                    table,
+                    {
+                        "key": r"((?:\s*\d+\s+(?:[\-0-9]+\.[0-9]+\s+){1,6}\s*)+)"
                     }
                 )
 
-                if contents_match.get("geom_index") is None:
-                    continue
-                # Calculation_Info section should only appear once?
-                geom_index = int(contents_match["geom_index"][0][0])
-                for key in [
-                    "multiplicity", "charge", "num_atoms", "num_electrons", "num_frozen_electrons", "num_correlated",
-                    "num_basis", "num_aux_c_basis", "num_aux_j_basis", "num_aux_jk_basis", "num_aux_cabs_basis"
-                ]:
-                    if contents_match.get(key) is not None:
-                        self.data[key] = int(contents_match[key][0][0])
+                modes = list()
+                for chunk in mode_chunk_match["key"]:
+                    lines = chunk[0].split("\n")
+                    lines_contents = [line.strip().split() for line in lines]
+                    num_modes = max([len(x) for x in lines_contents]) - 1
+                    these_modes = [[] for i in range(num_modes)]
+                    for contents in lines_contents:
+                        # Edge case - end line of section
+                        if len(contents) < 2:
+                            continue
+                        
+                        for ii, c in enumerate(contents[1:]):
+                            these_modes[ii].append(float(c))
+                    for mode in these_modes:
+                        as_array = np.array(mode).reshape((-1, 3))
+                        modes.append(as_array.tolist())
+                self.data["normal_modes"][geom_index] = modes
 
-                if contents_match.get("total_energy") is not None:
-                    self.data["total_energy"][geom_index] = float(contents_match["total_energy"][0][0])
+    def _parse_vdw_correction(self, section):
+        contents_match = read_pattern(
+            section,
+            {
+                "geom_index": r"geom\. index: (\d+)",
+                "correction": r"\s*Van der Waals Correction:\s+([0-9\.\-]+)"
+            }
+        )
 
-    def _parse_SCF_energy(self):
-        for section in self.sections:
-            sec_match = read_pattern(
-                section,
-                {
-                    "key": r"SCF_Energy"
-                }
-            )
-            if sec_match.get("key") is not None:
-                contents_match = read_pattern(
-                    section,
-                    {
-                        "geom_index": r"geom\. index: (\d+)",
-                        "scf_energy": r"SCF Energy:\s+([0-9\.\-]+)"
-                    }
-                )
+        if contents_match.get("geom_index") is None:
+            return
 
-                if contents_match.get("geom_index") is None:
-                    continue
+        geom_index = int(contents_match["geom_index"][0][0])
 
-                geom_index = int(contents_match["geom_index"][0][0])
+        if contents_match.get("correction") is not None:
+            self.data["vdw_correction"][geom_index] = float(contents_match["correction"][0][0])
 
-                if contents_match.get("scf_energy") is not None:
-                    self.data["scf_energy"][geom_index] = float(contents_match["scf_energy"][0][0])
+    def _parse_thermochemistry(self, section):
+        contents_match = read_pattern(
+            section,
+            {
+                "geom_index": r"geom\. index: (\d+)"
+                "temp": r"Temperature \(Kelvin\)\s+:\s+([0-9\-\.]+)",
+                "pressure": r"Pressure \(atm\)\s+:\s+([0-9\-\.]+)",
+                "total_mass": r"Total Mass \(AMU\)\s+:\s+([0-9\.]+)",
+                "electronic_energy": r"Electronic Energy \(Hartree\)\s+:\s+([0-9\.\-]+)",
+                "translational_energy": r"Translational Energy \(Hartree\)\s+:\s+([0-9\.\-]+)",
+                "rotational_energy": r"Rotational Energy \(Hartree\)\s+:\s+([0-9\.\-]+)",
+                "vibrational_energy": r"Vibrational Energy \(Hartree\)\s+:\s+([0-9\.\-]+)",
+                "frequencies": r"\s+Vibrational frequencies\s+:\s+0\s+((?:\d+\s+(?:[0-9\.\-]+)\s*)+)",
+                "zpe": r"Zero Point Energy \(Hartree\)\s+:\s+([0-9\.\-]+)",
+                "inner_energy": r"Inner Energy \(Hartree\)\s+:\s+([0-9\.\-]+)",
+                "enthalpy": r"Enthalpy \(Hartree\)\s+:\s+([0-9\.\-]+)",
+                "electronic_entropy": r"Electronic entropy\s+:\s+([0-9\.\-]+)",
+                "rotational_entropy": r"Rotational entropy\s+:\s+([0-9\.\-]+)",
+                "vibrational_entropy": r"Vibrational entropy\s+:\s+([0-9\.\-]+)",
+                "translational_entropy": r"Translational entropy\s+:\s+([0-9\.\-]+)",
+                "total_entropy": r"Entropy\s+:\s+([0-9\.\-]+)",
+                "gibbs_free_energy": r"Gibbs Energy \(Hartree\)\s+:\s+([0-9\.\-]+)",
+                "linear": r"Is Linear\s+:\s+((?:true)|(?:false))"
+            }
+        )
 
-    def _parse_DFT_energy(self):
-        for section in self.sections:
-            sec_match = read_pattern(
-                section,
-                {
-                    "key": r"DFT_Energy"
-                }
-            )
-            if sec_match.get("key") is not None:
-                contents_match = read_pattern(
-                    section,
-                    {
-                        "geom_index": r"geom\. index: (\d+)",
-                        "alpha_electrons": r"Number of Alpha Electrons\s+([0-9\.]+)",
-                        "beta_electrons": r"Number of Beta\s+Electrons\s+([0-9\.]+)",
-                        "total_electrons": r"Total number of\s+Electrons\s+([0-9\.]+)",
-                        "exchange_energy": r"Exchange energy\s+([\-\.0-9]+)",
-                        "correlation_energy": r"Correlation energy\s+([\-\.0-9]+)",
-                        "nl_correlation_energy": r"Correlation energy NL\s+([\-\.0-9]+)",
-                        "ex_corr_energy": r"Exchange-Correlation energy\s+([\-\.0-9]+)",
-                        "embedding_corr": r"Embedding correction\s+([\-\.0-9]+)",
-                        "total_dft_energy": r"Total DFT Energy \(No VdW correction\)\s+([\-\.0-9]+)",
-                    }
-                )
+        if contents_match.get("geom_index") is None:
+            return
 
-                if contents_match.get("geom_index") is None:
-                    continue
+        geom_index = int(contents_match["geom_index"][0][0])
 
-                geom_index = int(contents_match["geom_index"][0][0])
-                for key in [
-                    "alpha_electrons", "beta_electrons", "total_electrons", "exchange_energy", "correlation_energy",
-                    "nl_correlation_energy", "ex_corr_energy", "embedding_corr", "total_dft_energy",
-                ]:
-                    if contents_match.get(key) is not None:
-                        self.data[key][geom_index] = float(contents_match[key][0][0])
+        for key in [
+            "temp", "pressure", "total_mass", "electronic_energy", "translational_energy",
+            "rotational_energy", "vibrational_energy", "zpe", "inner_energy", "enthalpy",
+            "electronic_entropy", "rotational_entropy", "vibrational_entropy", "translational_entropy",
+            "total_entropy", "gibbs_free_energy"
+        ]:
+            if contents_match.get(key) is not None:
+                self.data[key][geom_index] = float(contents_match[key][0][0])
 
-    def _parse_mayer_pop(self):
-        # Mayer population analysis
-        for section in self.sections:
-            sec_match = read_pattern(
-                section,
-                {
-                    "key": r"Mayer_Pop"
-                }
-            )
-            if sec_match.get("key") is not None:
+        if contents_match.get("linear") is not None:
+            if contents_match["linear"][0][0] == "false":
+                self.data["is_linear"][geom_index] = False
+            else:
+                self.data["is_linear"][geom_index] = True
 
-                geom_match = read_pattern(
-                    section,
-                    {
-                        "geom_index": r"geom\. index: (\d+)",
-                    }
-                )
-
-                if geom_match.get("geom_index") is None:
-                    continue
-
-                geom_index = int(geom_match["geom_index"][0][0])
-
-                # Mayer charges
-                header_pattern = r"ATOM\s+NA\s+ZA\s+QA\s+VA\s+BVA\s+FA\s*"
-                table_pattern = (r"\s*\d+\s+\d+\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+"
-                                r"([0-9\.\-]+)\s+([0-9\.\-]+)\s*\n")
-                footer_pattern = r""
-
-                mayer = list()
-                mayer_match = read_table_pattern(
-                    section,
-                    header_pattern,
-                    table_pattern,
-                    footer_pattern
-                )
-
-                if len(mayer_match) > 0:
-                    table = mayer_match[0]
-                    for atom in table:
-                        mayer.append(
-                            {
-                                "gross_population": float(atom[0]),
-                                "nuclear_charge": float(atom[1]),
-                                "gross_atomic_charge": float(atom[2]),
-                                "mayer_total_valence": float(atom[3]),
-                                "mayer_bonded_valence": float(atom[4]),
-                                "mayer_free_valence": float(atom[5])
-                            }
-                        )
-                    self.data["mayer_charges"][geom_index] = mayer
-
-                # Mayer bond order
-                header_pattern = (r"Bond orders larger than [0-9\.]+\s+Atom A\s+A\.N\. of A\s+Atom B\s+A\.N\. of B\s+"
-                                  r"Bond order\s*")
-                row_pattern = r"(\d+)\s+\d+\s+(\d+)\s+\d+\s+([0-9\.\-]+)\s*"
-                footer_pattern = r"#\s+\-+"
-
-                mayer_bond_match = read_table_pattern(
-                    section,
-                    header_pattern,
-                    row_pattern,
-                    footer_pattern
-                )
-
-                mayer_bonds = list()
-                if len(mayer_bond_match) > 0:
-                    table = mayer_bond_match[0]
-                    for row in table:
-                        mayer_bonds.append((int(row[0]), int(row[1]), float(row[2])))
-                self.data["mayer_bonds"][geom_index] = mayer_bonds
-
-    def _parse_solvation_details(self):
-        for section in self.sections:
-            sec_match = read_pattern(
-                section,
-                {
-                    "key": r"Solvation_Details"
-                }
-            )
-            if sec_match.get("key") is not None:
-
-                contents_match = read_pattern(
-                    section,
-                    {
-                        "geom_index": r"geom\. index: (\d+)",
-                        "epsilon": r"Epsilon:\s+([0-9\.]+)",
-                        "refractive_index": r"Refrac:\s+([0-9\.]+)",
-                        "solv_radius": r"RSolv:\s+([0-9\.]+)",
-                        "surface_type": r"Surface Type:\s+(\d+)",
-                        "number_of_points": r"Number of Points:\s+(\d+)",
-                        "surface_area": r"Surface Area:\s+([0-9\.]+)",
-                        "dielectric_energy": r"Dielectric Energy:\s+([0-9\.\-]+)",
-                    }
-                )
-
-                if contents_match.get("geom_index") is None:
-                    continue
-
-                geom_index = int(contents_match["geom_index"][0][0])
-
-                for key in [
-                    "epsilon", "refractive_index", "solv_radius", "surface_area", "dielectric_energy"
-                ]:
-                    if contents_match.get(key) is not None:
-                        self.data[key][geom_index] = float(contents_match[key][0][0])
-
-                for key in [
-                    "surface_type", "number_of_points"
-                ]:
-                    if contents_match.get(key) is not None:
-                        self.data[key][geom_index] = int(contents_match[key][0][0])
-
-    def _parse_SCF_electric_properties(self):
-        for section in self.sections:
-            sec_match = read_pattern(
-                section,
-                {
-                    "key": r"SCF_Electric_Properties"
-                }
-            )
-            if sec_match.get("key") is not None:
-
-                contents_match = read_pattern(
-                    section,
-                    {
-                        "geom_index": r"geom\. index: (\d+)",
-                        "filename": r"Filename\s+:\s+([A-Za-z0-9\-\._ ]+\.scfp)",
-                        "dipole_magnitude": r"Magnitude of dipole moment \(Debye\) :\s+([0-9\.]+)",
-                        "electronic_dipole": r"Electronic Contribution:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)",
-                        "nuclear_dipole": r"Nuclear Contribution:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)",
-                        "total_dipole": r"Total Dipole moment:\s+0\s+0\s+([0-9\.\-]+)\s+1\s+([0-9\.\-]+)\s+2\s+([0-9\.\-]+)"
-                    }
-                )
-
-                if contents_match.get("geom_index") is None:
-                    continue
-
-                geom_index = int(contents_match["geom_index"][0][0])
-
-                if contents_match.get("filename") is not None:
-                    self.data["filename"][geom_index] = contents_match["filename"][0][0]
-
-                if contents_match.get("dipole_magnitude") is not None:
-                    self.data["dipole_magnitude"][geom_index] = float(contents_match["dipole_magnitude"][0][0])
-
-                for key in ["electronic_dipole", "nuclear_dipole", "total_dipole"]:
-                    if contents_match.get(key) is not None:
-                        self.data[key][geom_index] = [
-                            float(contents_match[key][0][0]),
-                            float(contents_match[key][0][1]),
-                            float(contents_match[key][0][1]),
-                        ]
-
-    def _parse_hessian(self):
-        pass
-
-    def _parse_thermochemistry(self):
-        pass
+        if contents_match.get("frequencies") is not None:
+            freq_match = contents_match["frequencies"][0][0]
+            this_freqs = list()
+            for line in freq_match.split("\n"):
+                freq = float(line.strip().split()[1])
+                this_freqs.append(freq)
+            self.data["frequencies"][geom_index] = this_freqs
 
     def _parse_geometries(self):
         pass

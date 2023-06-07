@@ -160,11 +160,11 @@ class PeriodicNeighbor(PeriodicSite):
         """
         return 4
 
-    def __getitem__(self, i: int):
+    def __getitem__(self, idx: int | slice):
         """
         Make neighbor Tuple-like to retain backwards compatibility.
         """
-        return (self, self.nn_distance, self.index, self.image)[i]
+        return (self, self.nn_distance, self.index, self.image)[idx]
 
     def as_dict(self) -> dict:  # type: ignore
         """
@@ -232,11 +232,15 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
     def species(self) -> list[Element | Species]:
         """
         Only works for ordered structures.
-        Disordered structures will raise an AttributeError.
+
+        Raises:
+            AttributeError: If structure is disordered.
 
         Returns:
             ([Species]) List of species at each site of the structure.
         """
+        if not self.is_ordered:
+            raise AttributeError("species property only supports ordered structures!")
         return [site.specie for site in self]
 
     @property
@@ -273,9 +277,9 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
 
     def group_by_types(self) -> Iterator[Site | PeriodicSite]:
         """Iterate over species grouped by type"""
-        for t in self.types_of_species:
+        for sp_typ in self.types_of_species:
             for site in self:
-                if site.specie == t:
+                if site.specie == sp_typ:
                     yield site
 
     def indices_from_symbol(self, symbol: str) -> tuple[int, ...]:
@@ -283,7 +287,7 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
         Returns a tuple with the sequential indices of the sites
         that contain an element with the given chemical symbol.
         """
-        return tuple((i for i, specie in enumerate(self.species) if specie.symbol == symbol))
+        return tuple((idx for idx, specie in enumerate(self.species) if specie.symbol == symbol))
 
     @property
     def symbol_set(self) -> tuple[str, ...]:

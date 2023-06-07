@@ -1364,18 +1364,8 @@ class ORCAPropertyOutput(MSONable):
 
         for section in self.sections:
             self.parse_section(section)
-        self._parse_calculation_info()
-        self._parse_SCF_energy()
-        self._parse_DFT_energy()
-        self._parse_mayer_pop()
-        self._parse_solvation_details()
-        self._parse_SCF_electric_properties()
-        self._parse_hessian()
-        self._parse_vdw_correction()
-        # self._parse_thermochemistry()
-
-
-        # self._parse_geometries()
+        
+        self._parse_geometries()
 
     def parse_section(self, section):
         """
@@ -1427,7 +1417,7 @@ class ORCAPropertyOutput(MSONable):
             section,
             {
                 "geom_index": r"geom\. index: (\d+)",
-                "multiplicity": r"Multiplicity:\s+(\d+)",
+                "spin_multiplicity": r"Multiplicity:\s+(\d+)",
                 "charge": r"Charge:\s+([0-9\-]+)",
                 "num_atoms": r"number of atoms:\s+(\d+)",
                 "num_electrons": r"number of electrons:\s+(\d+)",
@@ -1447,7 +1437,7 @@ class ORCAPropertyOutput(MSONable):
         # Calculation_Info section should only appear once?
         geom_index = int(contents_match["geom_index"][0][0])
         for key in [
-            "multiplicity", "charge", "num_atoms", "num_electrons", "num_frozen_electrons", "num_correlated",
+            "spin_multiplicity", "charge", "num_atoms", "num_electrons", "num_frozen_electrons", "num_correlated",
             "num_basis", "num_aux_c_basis", "num_aux_j_basis", "num_aux_jk_basis", "num_aux_cabs_basis"
         ]:
             if contents_match.get(key) is not None:
@@ -1748,7 +1738,46 @@ class ORCAPropertyOutput(MSONable):
             self.data["frequencies"][geom_index] = this_freqs
 
     def _parse_geometries(self):
-        pass
+        coord_match = read_pattern(
+            self.text,
+            {
+                "key": (
+                    r"\-+ !GEOMETRY! \-+\s+Number of atoms:\s+\d+\s+Geometry Index:\s+(\d+)\s+"
+                    r"Coordinates:\s+((?:\d+\s+[A-Za-z]+\s+[0-9\.\-]+\s+[0-9\.\-]+\s+[0-9\.\-]+\s*)+)"
+                )
+            }
+        )
+
+        if coord_match.get("key") is not None:
+            for match in coord_match["key"]:
+                geom_index = int(match[0])
+                atoms = match[1]
+                species = list()
+                coords = list()
+                for line in atoms.split("\n"):
+                    try:
+                        contents = line.strip().split()
+                        element = contents[1]
+                        coord = [float(i) for i in contents[2:]]
+                        species.append(element)
+                        coords.append(coord)
+                    except IndexError:
+                        continue
+                charge = self.data.get("charge")
+                if charge is None:
+                    mol = Molecule(species, coords)
+                else:
+                    spin = self.data.get("spin_multiplicity")
+                    if spin is None:
+                        mol = Molecule(species, coords, charge=int(charge))
+                    else:
+                        mol = Molecule(
+                            species,
+                            coords,
+                            charge=int(charge),
+                            spin_multiplicity=spin
+                        )
+                self.data["molecules"][geom_index] = mol
 
 
 class ORCANBOOutput(MSONable):

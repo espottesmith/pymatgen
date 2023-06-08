@@ -1921,10 +1921,52 @@ class ORCAHessianOutput(MSONable):
         self.data["molecule_structure"] = mol
         
     def _parse_dipole_derivatives(self, section):
-        pass
+        contents_match = read_pattern(
+            section,
+            {
+                "key": r"\s+([0-9\.\-Ee\+]+)\s+([0-9\.\-Ee\+]+)\s+([0-9\.\-Ee\+]+)\s*\n"
+            }
+        )
+
+        if contents_match.get("key") is None:
+            return
+        
+        dipole_der = list()
+        for match in contents_match["key"]:
+            dipole_der.append(
+                [
+                    float(match[0]), float(match[1]), float(match[2])
+                ]
+            )
+        self.data["dipole_derivatives"] = dipole_der
 
     def _parse_ir_spectrum(self, section):
-        pass
+        contents_match = read_pattern(
+            section,
+            {
+                "key": (
+                    r"\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s+([0-9\.\-]+)\s*\n"
+                )
+            }
+        )
+
+        if contents_match.get("key") is None:
+            return
+        
+        spectrum = list()
+        for match in contents_match["key"]:
+            spectrum.append(
+                {
+                    "frequency": float(match[0]),
+                    "eps": float(match[1]),
+                    "intensity": float(match[2]),
+                    "T**2": float(match[3]),
+                    "Tx": float(match[4]),
+                    "Ty": float(match[5]),
+                    "Tz": float(match[6]),
+                }
+            )
+        self.data["ir_spectrum"] = spectrum
 
     def _parse_misc(self):
         matches = read_pattern(

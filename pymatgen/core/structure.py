@@ -485,7 +485,7 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
                 number of sites.
         """
         if len(values) != len(self):
-            raise ValueError("Values must be same length as sites.")
+            raise ValueError(f"Values has length {len(values)} but there are {len(self)} sites! Must be same length.")
         for site, val in zip(self.sites, values):
             site.properties[property_name] = val
 
@@ -496,7 +496,7 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
         Args:
             property_name (str): The name of the property to remove.
         """
-        for site in self.sites:
+        for site in self:
             del site.properties[property_name]
 
     def replace_species(self, species_mapping: dict[SpeciesLike, SpeciesLike | dict[SpeciesLike, float]]) -> None:
@@ -518,42 +518,44 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
                 f"substituted = {sp_to_replace}; Species in structure = {sp_in_structure}"
             )
 
-        for site in self.sites:
+        for site in self:
             if sp_to_replace.intersection(site.species):
-                c = Composition()
+                comp = Composition()
                 for sp, amt in site.species.items():
                     new_sp = sp_mapping.get(sp, sp)
                     try:
-                        c += Composition(new_sp) * amt
+                        comp += Composition(new_sp) * amt
                     except Exception:
-                        c += {new_sp: amt}
-                site.species = c
+                        comp += {new_sp: amt}
+                site.species = comp
 
-    def add_oxidation_state_by_element(self, oxidation_states: dict[str, float]):
+    def add_oxidation_state_by_element(self, oxidation_states: dict[str, float]) -> None:
         """
         Add oxidation states.
 
         Args:
             oxidation_states (dict): Dict of oxidation states.
                 E.g., {"Li":1, "Fe":2, "P":5, "O":-2}
-        """
-        try:
-            for site in self.sites:
-                new_sp = {}
-                for el, occu in site.species.items():
-                    sym = el.symbol
-                    new_sp[Species(sym, oxidation_states[sym])] = occu
-                site.species = Composition(new_sp)
-        except KeyError:
-            raise ValueError("Oxidation state of all elements must be specified in the dictionary.")
 
-    def add_oxidation_state_by_site(self, oxidation_states: list[float]):
+        Raises:
+            ValueError if oxidation states are not specified for all elements.
+        """
+        missing = {el.symbol for el in self.composition} - {*oxidation_states}
+        if missing:
+            raise ValueError(f"Oxidation states not specified for all elements, {missing=}")
+        for site in self:
+            new_sp = {}
+            for el, occu in site.species.items():
+                new_sp[Species(el.symbol, oxidation_states[el.symbol])] = occu
+            site.species = Composition(new_sp)
+
+    def add_oxidation_state_by_site(self, oxidation_states: list[float]) -> None:
         """
         Add oxidation states to a structure by site.
 
         Args:
-            oxidation_states (list): List of oxidation states.
-                E.g., [1, 1, 1, 1, 2, 2, 2, 2, 5, 5, 5, 5, -2, -2, -2, -2]
+            oxidation_states (list[float]): List of oxidation states.
+                E.g. [1, 1, 1, 1, 2, 2, 2, 2, 5, 5, 5, 5, -2, -2, -2, -2]
         """
         if len(oxidation_states) != len(self):
             raise ValueError(
@@ -567,18 +569,18 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
                 new_sp[Species(sym, ox)] = occu
             site.species = Composition(new_sp)
 
-    def remove_oxidation_states(self):
+    def remove_oxidation_states(self) -> None:
         """
         Removes oxidation states from a structure.
         """
-        for site in self.sites:
-            new_sp = collections.defaultdict(float)
+        for site in self:
+            new_sp: dict[Element, float] = collections.defaultdict(float)
             for el, occu in site.species.items():
                 sym = el.symbol
                 new_sp[Element(sym)] += occu
             site.species = Composition(new_sp)
 
-    def add_oxidation_state_by_guess(self, **kwargs):
+    def add_oxidation_state_by_guess(self, **kwargs) -> None:
         """
         Decorates the structure with oxidation state, guessing
         using Composition.oxi_state_guesses()
@@ -590,31 +592,27 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
         oxid_guess = oxid_guess or [{e.symbol: 0 for e in self.composition}]
         self.add_oxidation_state_by_element(oxid_guess[0])
 
-    def add_spin_by_element(self, spins: dict[str, float]):
+    def add_spin_by_element(self, spins: dict[str, float]) -> None:
         """
-        Add spin states to a structure.
+        Add spin states to structure.
 
         Args:
             spins (dict): Dict of spins associated with elements or species,
                 e.g. {"Ni":+5} or {"Ni2+":5}
         """
-        for site in self.sites:
-            new_sp = {}
+        for site in self:
+            new_species = {}
             for sp, occu in site.species.items():
                 sym = sp.symbol
                 oxi_state = getattr(sp, "oxi_state", None)
-                new_sp[
-                    Species(
-                        sym,
-                        oxidation_state=oxi_state,
-                        properties={"spin": spins.get(str(sp), spins.get(sym))},
-                    )
-                ] = occu
-            site.species = Composition(new_sp)
+                props = {"spin": spins.get(str(sp), spins.get(sym))}
+                species = Species(sym, oxidation_state=oxi_state, properties=props)
+                new_species[species] = occu
+            site.species = Composition(new_species)
 
-    def add_spin_by_site(self, spins: list[float]):
+    def add_spin_by_site(self, spins: list[float]) -> None:
         """
-        Add spin states to a structure by site.
+        Add spin states to structure by site.
 
         Args:
             spins (list): List of spins
@@ -624,34 +622,34 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
             raise ValueError(f"Spins for all sites must be specified, expected {len(self)} spins, got {len(spins)}")
 
         for site, spin in zip(self.sites, spins):
-            new_sp = {}
+            new_species = {}
             for sp, occu in site.species.items():
                 sym = sp.symbol
                 oxi_state = getattr(sp, "oxi_state", None)
-                new_sp[Species(sym, oxidation_state=oxi_state, properties={"spin": spin})] = occu
-            site.species = Composition(new_sp)
+                new_species[Species(sym, oxidation_state=oxi_state, properties={"spin": spin})] = occu
+            site.species = Composition(new_species)
 
-    def remove_spin(self):
+    def remove_spin(self) -> None:
         """
-        Removes spin states from a structure.
+        Remove spin states from structure.
         """
-        for site in self.sites:
-            new_sp = collections.defaultdict(float)
+        for site in self:
+            new_sp: dict[Element, float] = collections.defaultdict(float)
             for sp, occu in site.species.items():
                 oxi_state = getattr(sp, "oxi_state", None)
                 new_sp[Species(sp.symbol, oxidation_state=oxi_state)] += occu
-            site.species = new_sp
+            site.species = Composition(new_sp)
 
-    def extract_cluster(self, target_sites: list[Site], **kwargs):
+    def extract_cluster(self, target_sites: list[Site], **kwargs) -> list[Site]:
         """
         Extracts a cluster of atoms based on bond lengths
 
         Args:
-            target_sites ([Site]): List of initial sites to nucleate cluster.
+            target_sites (list[Site]): Initial sites from which to nucleate cluster.
             **kwargs: kwargs passed through to CovalentBond.is_bonded.
 
         Returns:
-            [Site/PeriodicSite] Cluster of atoms.
+            list[Site/PeriodicSite] Cluster of atoms.
         """
         cluster = list(target_sites)
         others = [site for site in self if site not in cluster]
@@ -719,11 +717,11 @@ class IStructure(SiteCollection, MSONable):
             validate_proximity (bool): Whether to check if there are sites
                 that are less than 0.01 Ang apart. Defaults to False.
             to_unit_cell (bool): Whether to map all sites into the unit cell,
-                i.e., fractional coords between 0 and 1. Defaults to False.
+                i.e. fractional coords between 0 and 1. Defaults to False.
             coords_are_cartesian (bool): Set to True if you are providing
                 coordinates in Cartesian coordinates. Defaults to False.
             site_properties (dict): Properties associated with the sites as a
-                dict of sequences, e.g., {"magmom":[5,5,5,5]}. The sequences
+                dict of sequences, e.g. {"magmom":[5, 5, 5, 5]}. The sequences
                 have to be the same length as the atomic species and
                 fractional_coords. Defaults to None for no properties.
         """
@@ -736,7 +734,7 @@ class IStructure(SiteCollection, MSONable):
         for idx, specie in enumerate(species):
             prop = None
             if site_properties:
-                prop = {k: v[idx] for k, v in site_properties.items()}
+                prop = {key: val[idx] for key, val in site_properties.items()}
 
             site = PeriodicSite(
                 specie,
@@ -1215,7 +1213,7 @@ class IStructure(SiteCollection, MSONable):
         Algorithm:
 
         1. place sphere of radius r in crystal and determine minimum supercell
-           (parallelpiped) which would contain a sphere of radius r. for this
+           (parallelepiped) which would contain a sphere of radius r. for this
            we need the projection of a_1 on a unit vector perpendicular
            to a_2 & a_3 (i.e. the unit vector in the direction b_1) to
            determine how many a_1"s it will take to contain the sphere.
@@ -1237,17 +1235,17 @@ class IStructure(SiteCollection, MSONable):
         """
         site_fcoords = np.mod(self.frac_coords, 1)
         neighbors: list[PeriodicNeighbor] = []
-        for fcoord, dist, i, img in self._lattice.get_points_in_sphere(site_fcoords, pt, r):
-            nnsite = PeriodicNeighbor(
+        for frac_coord, dist, i, img in self._lattice.get_points_in_sphere(site_fcoords, pt, r):
+            nn_site = PeriodicNeighbor(
                 self[i].species,
-                fcoord,
+                frac_coord,
                 self._lattice,
                 properties=self[i].properties,
                 nn_distance=dist,
                 image=img,  # type: ignore
                 index=i,
             )
-            neighbors.append(nnsite)
+            neighbors.append(nn_site)
         return neighbors
 
     def get_neighbors(
@@ -1382,14 +1380,13 @@ class IStructure(SiteCollection, MSONable):
             if sites is None:
                 sites = self.sites
             site_coords = np.array([site.coords for site in sites], dtype=float)
-            cart_coords = np.ascontiguousarray(np.array(self.cart_coords), dtype=float)
-            lattice_matrix = np.ascontiguousarray(np.array(self.lattice.matrix), dtype=float)
-            pbc = np.ascontiguousarray(self.pbc, dtype=int)
-            r = float(r)
+            cart_coords = np.array(self.cart_coords, dtype=float)
+            lattice_matrix = np.array(self.lattice.matrix, dtype=float)
+            pbc = np.array(self.pbc, dtype=int)
             center_indices, points_indices, images, distances = find_points_in_spheres(
                 cart_coords,
                 site_coords,
-                r=r,
+                r=float(r),
                 pbc=pbc,
                 lattice=lattice_matrix,
                 tol=numerical_tol,
@@ -1398,12 +1395,7 @@ class IStructure(SiteCollection, MSONable):
             if exclude_self:
                 self_pair = (center_indices == points_indices) & (distances <= numerical_tol)
                 cond = ~self_pair
-            return (
-                center_indices[cond],
-                points_indices[cond],
-                images[cond],
-                distances[cond],
-            )
+            return (center_indices[cond], points_indices[cond], images[cond], distances[cond])
 
     def get_symmetric_neighbor_list(
         self,
@@ -1453,9 +1445,8 @@ class IStructure(SiteCollection, MSONable):
         if sg is None:
             ops = SpaceGroup(self.get_space_group_info()[0]).symmetry_ops
         else:
-            try:
-                i = int(sg)
-                sgp = SpaceGroup.from_int_number(i)
+            try:  # first assume sg is int
+                sgp = SpaceGroup.from_int_number(int(sg))
             except ValueError:
                 sgp = SpaceGroup(sg)
             ops = sgp.symmetry_ops
@@ -1503,7 +1494,7 @@ class IStructure(SiteCollection, MSONable):
 
         # Again, compare all neighbors pairwise. For each pair of neighbors, all the symmetry operations of the provided
         # space group are iterated over. If an operation is found that connects the two bonds, it is assigned the same
-        # symmetry index it is compared to, and the symmetry operation that connets the two is saved. To compare two
+        # symmetry index it is compared to, and the symmetry operation that connects the two is saved. To compare two
         # neighbors 'SymmOp.are_symmetrically_related_vectors' is used. It is also checked whether applying the
         # connecting symmetry operation generates the neighbor-pair itself, or the equivalent version with the
         # sites exchanged and R reversed. The output is always reordered such that the former case is true.
@@ -1537,12 +1528,7 @@ class IStructure(SiteCollection, MSONable):
 
         # the bonds are ordered by their symmetry index
         idcs_symid = np.argsort(symmetry_indices)
-        bonds = (
-            bonds[0][idcs_symid],
-            bonds[1][idcs_symid],
-            bonds[2][idcs_symid],
-            bonds[3][idcs_symid],
-        )
+        bonds = (bonds[0][idcs_symid], bonds[1][idcs_symid], bonds[2][idcs_symid], bonds[3][idcs_symid])
         symmetry_indices = symmetry_indices[idcs_symid]
         symmetry_ops = symmetry_ops[idcs_symid]
 

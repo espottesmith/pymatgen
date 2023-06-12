@@ -6,20 +6,25 @@ periodic structure.
 from __future__ import annotations
 
 import collections
+import contextlib
 import functools
+import io
 import itertools
 import json
 import math
 import os
 import random
 import re
+import sys
 import warnings
 from abc import ABCMeta, abstractmethod
 from fnmatch import fnmatch
+from inspect import isclass
 from io import StringIO
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, Sequence, SupportsIndex, cast
 
 import numpy as np
+from ase.optimize.optimize import Optimizer
 from monty.dev import deprecated
 from monty.io import zopen
 from monty.json import MSONable
@@ -38,7 +43,9 @@ from pymatgen.symmetry.maggroups import MagneticSpaceGroup
 from pymatgen.util.coord import all_distances, get_angle, lattice_points_in_supercell
 
 if TYPE_CHECKING:
-    from m3gnet.models._dynamics import TrajectoryObserver
+    from ase.calculators.calculator import Calculator
+    from ase.io.trajectory import Trajectory
+    from matgl.ext.ase import TrajectoryObserver
     from numpy.typing import ArrayLike
 
     from pymatgen.util.typing import CompositionLike, SpeciesLike
@@ -666,6 +673,193 @@ class SiteCollection(collections.abc.Sequence, metaclass=ABCMeta):
                     new_others.append(site)
             others = new_others
         return cluster
+
+    def _calculate(
+        self, struct: Structure | Molecule, calculator: str | Calculator, verbose: bool = False
+    ) -> Structure | Molecule:
+        """
+        Performs an ASE calculation.
+
+        Args:
+            struct: Structure or Molecule to run ASE calculation on.
+            calculator: An ASE Calculator or a string from the following options: "m3gnet",
+                "gfn2-xtb".
+            verbose (bool): whether to print stdout. Defaults to False.
+
+        Returns:
+            Structure: Structure or Molelcule following ASE calculation.
+        """
+        from pymatgen.io.ase import AseAtomsAdaptor
+
+        is_molecule = isinstance(struct, Molecule)
+        if is_molecule and calculator == "m3gnet":
+            raise ValueError(f"Can't use {calculator=} for a Molecule.")
+        calculator = self._prep_calculator(calculator)
+
+        # Get Atoms object
+        adaptor = AseAtomsAdaptor()
+        atoms = adaptor.get_atoms(struct)
+
+        # Set calculator
+        atoms.calc = calculator
+
+        # Run calculation
+        stream = sys.stdout if verbose else io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            atoms.get_potential_energy()
+
+        # Ensure Calculator state is preserved because it contains parameters and results
+        calc = atoms.calc
+
+        # Get Molecule/Structure object
+        struct = adaptor.get_molecule(atoms) if is_molecule else adaptor.get_structure(atoms)
+
+        # Attach important ASE results
+        struct.calc = calc
+
+        return struct
+
+    def _relax(
+        self,
+        calculator: str | Calculator,
+        relax_cell: bool = True,
+        optimizer: str | Optimizer = "FIRE",
+        steps: int = 500,
+        fmax: float = 0.1,
+        stress_weight: float = 0.01,
+        opt_kwargs: dict = None,
+        return_trajectory: bool = False,
+        verbose: bool = False,
+    ) -> Structure | Molecule | tuple[Structure | Molecule, TrajectoryObserver | Trajectory]:
+        """
+        Performs a structure relaxation using an ASE calculator.
+
+        Args:
+            calculator: An ASE Calculator or a string from the following options: "M3GNet",
+                "gfn2-xtb".
+            relax_cell (bool): whether to relax the lattice cell. Defaults to True.
+            optimizer (str): name of the ASE optimizer class to use
+            steps (int): max number of steps for relaxation. Defaults to 500.
+            fmax (float): total force tolerance for relaxation convergence.
+                Here fmax is a sum of force and stress forces. Defaults to 0.1.
+            stress_weight (float): the stress weight for relaxation with M3GNet.
+                Defaults to 0.01.
+            opt_kwargs (dict): kwargs for the ASE optimizer class.
+            return_trajectory (bool): Whether to return the trajectory of relaxation.
+                Defaults to False.
+            verbose (bool): whether to print stdout. Defaults to False.
+
+        Returns:
+            Structure | Molecule: Relaxed structure or molecule
+        """
+        from ase import optimize
+        from ase.constraints import ExpCellFilter
+        from ase.io import read
+
+        from pymatgen.io.ase import AseAtomsAdaptor
+
+        opt_kwargs = opt_kwargs or {}
+        is_molecule = isinstance(self, Molecule)
+        run_m3gnet = isinstance(calculator, str) and calculator.lower() == "m3gnet"
+
+        if isinstance(calculator, str):
+            if run_m3gnet:
+                calculator = self._prep_calculator(calculator, stress_weight=stress_weight)
+            else:
+                calculator = self._prep_calculator(calculator)
+
+        # check str is valid optimizer key
+        def is_ase_optimizer(key):
+            return isclass(obj := getattr(optimize, key)) and issubclass(obj, Optimizer)
+
+        valid_keys = [key for key in dir(optimize) if is_ase_optimizer(key)]
+        if optimizer not in valid_keys:
+            raise ValueError(f"Unknown {optimizer=}, must be one of {valid_keys}")
+        opt_class = getattr(optimize, optimizer)
+
+        # Get Atoms object
+        adaptor = AseAtomsAdaptor()
+        atoms = adaptor.get_atoms(self)
+
+        # Use a TrajectoryObserver if running m3gnet; otherwise, write a .traj file
+        if return_trajectory:
+            if run_m3gnet:
+                from matgl.ext.ase import TrajectoryObserver
+
+                traj_observer = TrajectoryObserver(atoms)
+            elif "trajectory" not in opt_kwargs:
+                opt_kwargs["trajectory"] = "opt.traj"
+
+        # Attach calculator
+        atoms.calc = calculator
+
+        # Run relaxation
+        stream = sys.stdout if verbose else io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            if relax_cell:
+                if is_molecule:
+                    raise ValueError("Can't relax cell for a Molecule.")
+                ecf = ExpCellFilter(atoms)
+                dyn = opt_class(ecf, **opt_kwargs)
+            else:
+                dyn = opt_class(atoms, **opt_kwargs)
+            dyn.run(fmax=fmax, steps=steps)
+
+        # Get pymatgen Structure or Molecule
+        system: Structure | Molecule = adaptor.get_molecule(atoms) if is_molecule else adaptor.get_structure(atoms)
+
+        # Attach important ASE results
+        system.calc = atoms.calc
+        system.dynamics = dyn.todict()
+
+        if return_trajectory:
+            if run_m3gnet:
+                traj_observer()  # save properties of the Atoms during the relaxation
+            else:
+                traj_file = opt_kwargs["trajectory"]
+                traj_observer = read(traj_file, index=":")
+            return system, traj_observer
+
+        return system
+
+    def _prep_calculator(self, calculator: Literal["m3gnet", "gfn2-xtb"] | Calculator, **params) -> Calculator:
+        """
+        Convert string name of special ASE calculators into ASE calculator objects.
+
+        Args:
+            calculator: An ASE Calculator or a string from the following options: "m3gnet",
+                "gfn2-xtb".
+            **params: Parameters for the calculator.
+
+        Returns:
+            Calculator: ASE calculator object.
+        """
+        from ase.calculators.calculator import Calculator
+
+        if isinstance(calculator, Calculator):
+            return calculator
+
+        if calculator.lower() == "m3gnet":
+            try:
+                import matgl
+                from matgl.ext.ase import M3GNetCalculator
+            except ImportError:
+                raise ImportError("matgl not installed. Try `pip install matgl`.")
+            potential = matgl.load_model("M3GNet-MP-2021.2.8-PES")
+            return M3GNetCalculator(potential=potential, **params)
+
+        if calculator.lower() == "gfn2-xtb":
+            try:
+                from tblite.ase import TBLite
+            except ImportError:
+                raise ImportError(
+                    "Must install tblite[ase]. Try `pip install tblite[ase]` (Linux)"
+                    "or `conda install -c conda-forge tblite-python` on (Mac/Windows)."
+                )
+
+            return TBLite(method="GFN2-xTB", **params)
+
+        raise ValueError(f"Unknown {calculator=}.")
 
 
 class IStructure(SiteCollection, MSONable):
@@ -3966,68 +4160,67 @@ class Structure(IStructure, collections.abc.MutableSequence):
 
     def relax(
         self,
-        calculator: str = "m3gnet",
+        calculator: str | Calculator = "m3gnet",
         relax_cell: bool = True,
-        stress_weight: float = 0.01,
+        optimizer: str | Optimizer = "FIRE",
         steps: int = 500,
         fmax: float = 0.1,
+        stress_weight: float = 0.01,
+        opt_kwargs: dict = None,
         return_trajectory: bool = False,
         verbose: bool = False,
-    ) -> Structure | tuple[Structure, TrajectoryObserver]:
+    ) -> Structure | tuple[Structure, TrajectoryObserver | Trajectory]:
         """
-        Performs a crystal structure relaxation using some algorithm.
+        Performs a crystal structure relaxation using an ASE calculator.
 
         Args:
-            calculator: A string or an ASE calculator. Defaults to 'm3gnet', i.e. the M3GNet universal potential.
+            calculator: An ASE Calculator or a string from the following options: "m3gnet".
+                Defaults to 'm3gnet', i.e. the M3GNet universal potential.
             relax_cell (bool): whether to relax the lattice cell. Defaults to True.
-            stress_weight (float): the stress weight for relaxation. Defaults to 0.01.
+            optimizer (str): name of the ASE optimizer class to use
             steps (int): max number of steps for relaxation. Defaults to 500.
             fmax (float): total force tolerance for relaxation convergence.
                 Here fmax is a sum of force and stress forces. Defaults to 0.1.
+            stress_weight (float): the stress weight for relaxation with M3GNet.
+                Defaults to 0.01.
+            opt_kwargs (dict): kwargs for the ASE optimizer class.
             return_trajectory (bool): Whether to return the trajectory of relaxation.
                 Defaults to False.
             verbose (bool): whether to print out relaxation steps. Defaults to False.
 
         Returns:
-            Structure: IAP-relaxed structure
+            Structure | tuple[Structure, Trajectory]: Relaxed structure or 2-tuple of Structure
+                and ASE/M3GNet TrajectoryObserver if return_trajectory=True.
         """
-        import contextlib
-        import io
-        import sys
+        return self._relax(
+            calculator,
+            relax_cell=relax_cell,
+            optimizer=optimizer,
+            steps=steps,
+            fmax=fmax,
+            stress_weight=stress_weight,
+            opt_kwargs=opt_kwargs,
+            return_trajectory=return_trajectory,
+            verbose=verbose,
+        )
 
-        from ase.constraints import ExpCellFilter
-        from ase.optimize.fire import FIRE
-        from m3gnet.models import M3GNet, M3GNetCalculator, Potential
-        from m3gnet.models._dynamics import TrajectoryObserver
+    def calculate(
+        self,
+        calculator: str | Calculator = "m3gnet",
+        verbose: bool = False,
+    ):
+        """
+        Performs an ASE calculation.
 
-        from pymatgen.io.ase import AseAtomsAdaptor
+        Args:
+            calculator: An ASE Calculator or a string from the following options: "m3gnet".
+                Defaults to 'm3gnet', i.e. the M3GNet universal potential.
+            verbose (bool): whether to print stdout. Defaults to False.
 
-        if calculator == "m3gnet":
-            potential = Potential(M3GNet.load())
-            calculator = M3GNetCalculator(potential=potential, stress_weight=stress_weight)
-
-        adaptor = AseAtomsAdaptor()
-        atoms = adaptor.get_atoms(self)
-
-        if return_trajectory:
-            # monitor the relaxation
-            traj_observer = TrajectoryObserver(atoms)
-
-        atoms.set_calculator(calculator)
-        stream = sys.stdout if verbose else io.StringIO()
-        with contextlib.redirect_stdout(stream):
-            if relax_cell:
-                atoms = ExpCellFilter(atoms)
-            optimizer = FIRE(atoms)
-            optimizer.run(fmax=fmax, steps=steps)
-        if isinstance(atoms, ExpCellFilter):
-            atoms = atoms.atoms
-
-        struct = adaptor.get_structure(atoms)
-        if return_trajectory:
-            traj_observer()  # save properties of the Atoms during the relaxation
-            return struct, traj_observer
-        return struct
+        Returns:
+            Structure: Structure following ASE calculation.
+        """
+        return self._calculate(self, calculator, verbose=verbose)
 
     @classmethod
     def from_prototype(cls, prototype: str, species: Sequence, **kwargs) -> Structure:
@@ -4440,28 +4633,28 @@ class Molecule(IMolecule, collections.abc.MutableSequence):
         # Pass value of functional group--either from user-defined or from
         # functional.json
         if isinstance(func_group, Molecule):
-            func_grp = func_group
+            functional_group = func_group
         else:
             # Check to see whether the functional group is in database.
             if func_group not in FunctionalGroups:
                 raise RuntimeError("Can't find functional group in list. Provide explicit coordinate instead")
-            func_grp = FunctionalGroups[func_group]
+            functional_group = FunctionalGroups[func_group]
 
         # If a bond length can be found, modify func_grp so that the X-group
         # bond length is equal to the bond length.
-        bl = get_bond_length(non_terminal_nn.specie, func_grp[1].specie, bond_order=bond_order)
-        if bl is not None:
-            func_grp = func_grp.copy()
-            vec = func_grp[0].coords - func_grp[1].coords
+        bond_len = get_bond_length(non_terminal_nn.specie, functional_group[1].specie, bond_order=bond_order)
+        if bond_len is not None:
+            functional_group = functional_group.copy()
+            vec = functional_group[0].coords - functional_group[1].coords
             vec /= np.linalg.norm(vec)
-            func_grp[0] = "X", func_grp[1].coords + float(bl) * vec
+            functional_group[0] = "X", functional_group[1].coords + float(bond_len) * vec
 
         # Align X to the origin.
-        x = func_grp[0]
-        func_grp.translate_sites(list(range(len(func_grp))), origin - x.coords)
+        x = functional_group[0]
+        functional_group.translate_sites(list(range(len(functional_group))), origin - x.coords)
 
         # Find angle between the attaching bond and the bond to be replaced.
-        v1 = func_grp[1].coords - origin
+        v1 = functional_group[1].coords - origin
         v2 = self[index].coords - origin
         angle = get_angle(v1, v2)
 
@@ -4471,18 +4664,76 @@ class Molecule(IMolecule, collections.abc.MutableSequence):
             # bonds.
             axis = np.cross(v1, v2)
             op = SymmOp.from_origin_axis_angle(origin, axis, angle)
-            func_grp.apply_operation(op)
+            functional_group.apply_operation(op)
         elif abs(abs(angle) - 180) < 1:
             # We have a 180 degree angle. Simply do an inversion about the
             # origin
-            for i, fg in enumerate(func_grp):
-                func_grp[i] = (fg.species, origin - (fg.coords - origin))
+            for i, fg in enumerate(functional_group):
+                functional_group[i] = (fg.species, origin - (fg.coords - origin))
 
         # Remove the atom to be replaced, and add the rest of the functional
         # group.
         del self[index]
-        for site in func_grp[1:]:
+        for site in functional_group[1:]:
             self._sites.append(site)
+
+    def relax(
+        self,
+        calculator: str | Calculator = "gfn2-xtb",
+        optimizer: str | Optimizer = "FIRE",
+        steps: int = 500,
+        fmax: float = 0.1,
+        opt_kwargs: dict = None,
+        return_trajectory: bool = False,
+        verbose: bool = False,
+    ) -> Molecule | tuple[Molecule, TrajectoryObserver | Trajectory]:
+        """
+        Performs a molecule relaxation using an ASE calculator.
+
+        Args:
+            calculator: An ASE Calculator or a string from the following options: "gfn2-xtb".
+                Defaults to 'gfn2-xtb'.
+            optimizer (str): name of the ASE optimizer class to use
+            steps (int): max number of steps for relaxation. Defaults to 500.
+            fmax (float): total force tolerance for relaxation convergence.
+                Defaults to 0.1 eV/A.
+            opt_kwargs (dict): kwargs for the ASE optimizer class.
+            return_trajectory (bool): Whether to return the trajectory of relaxation.
+                Defaults to False.
+            verbose (bool): whether to print out relaxation steps. Defaults to False.
+
+        Returns:
+            Molecule | tuple[Molecule, Trajectory]: Relaxed Molecule or 2-tuple of Molecule
+                and ASE/M3GNet TrajectoryObserver if return_trajectory=True.
+        """
+        return self._relax(
+            calculator,
+            relax_cell=False,
+            optimizer=optimizer,
+            steps=steps,
+            fmax=fmax,
+            opt_kwargs=opt_kwargs,
+            return_trajectory=return_trajectory,
+            verbose=verbose,
+        )
+
+    def calculate(
+        self,
+        calculator: str | Calculator = "gfn2-xtb",
+        verbose: bool = False,
+    ) -> Molecule:
+        """
+        Performs an ASE calculation.
+
+        Args:
+            calculator: An ASE Calculator or a string from the following options: "gfn2-xtb".
+                Defaults to 'gfn2-xtb'.
+            verbose (bool): whether to print stdout. Defaults to False.
+
+        Returns:
+            Molecule: Molecule following ASE calculation.
+        """
+        return self._calculate(self, calculator, verbose=verbose)
 
 
 class StructureError(Exception):

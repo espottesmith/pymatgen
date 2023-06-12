@@ -92,4 +92,34 @@ class ORCASet(InputSet):
             optional_files (dict | None): Optional files to read in addition to the 
                 input file, in the form of {filename: object class}. 
         """
-        pass
+        
+        directory = Path(directory)
+        if input_file_name is None:
+            input_file_name = "orca.inp"
+        if (directory / input_file_name).exists():
+            orca_input = ORCAInput.from_file(directory / input_file_name)
+        else:
+            raise FileNotFoundError("Input file is not present!")
+        
+        optional = dict()
+        if optional_files is not None:
+            for filename, interp_class in optional_files.items():
+                optional[filename] = {
+                    "filename": filename,
+                    "object": interp_class.from_file(directory / filename)
+                }
+        
+        return ORCASet(orca_input=orca_input, optional_files=optional)
+
+    # TODO Validation
+    @property
+    def is_valid(self) -> bool:
+        """
+        Whether the input set is valid.
+
+        Returns
+        -------
+        bool
+            Whether the input set is valid.
+        """
+        return True

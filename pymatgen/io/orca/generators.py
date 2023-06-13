@@ -19,6 +19,7 @@ from pkg_resources import resource_filename
 from pymatgen.io.core import InputGenerator
 from pymatgen.core.structure import Molecule
 from pymatgen.io.orca.inputs import ORCAInput
+from pymatgen.io.orca.outputs import ORCAOutput
 from pymatgen.io.orca.sets import ORCASet
 
 
@@ -134,41 +135,43 @@ class ORCAInputGenerator(InputGenerator):
         raise NotImplementedError
 
     
-    def _get_previous(self, structure: Structure = None, prev_dir: str | Path = None):
+    def _get_previous(
+            self,
+            molecule: Molecule | None = None,
+            prev_dir: str | Path | None = None,
+            input_filename: str | None = None,
+            output_filename: str | None = None
+    ):
         """Load previous calculation outputs and decide which structure to use."""
-        if structure is None and prev_dir is None:
-            raise ValueError("Either structure or prev_dir must be set.")
+        if molecule is None and prev_dir is None:
+            raise ValueError("Either molecule or prev_dir must be set.")
 
-        prev_input = {}
+        prev_input = dict()
         prev_structure = None
-        cp2k_output = None
+
         if prev_dir:
-            cp2k_output = Cp2kOutput(Path(prev_dir) / "cp2k.out")
-            prev_input = cp2k_output.input
-            prev_structure = cp2k_output.final_structure
+            if input_filename is None:
+                input_filename = "orca.inp"
+            if output_filename is None:
+                output_filename = "orca.out"
+            prev_input = ORCAInput(Path(prev_dir) / input_filename)
+            orca_output = ORCAOutput(Path(prev_dir) / output_filename)
+            prev_structure = orca_output.data["molecule_from_final_geometry"]
 
-        structure = structure if structure is not None else prev_structure
-        structure = self._get_structure(structure)
+        molecule = molecule if molecule is not None else prev_structure
 
-        return structure, prev_input, cp2k_output
-
-    def _get_structure(self, structure):
-        """Get the standardized structure."""
-        if self.sort_structure and hasattr(structure, "get_sorted_structure"):
-            structure = structure.get_sorted_structure()
-        return structure
+        return molecule, prev_input, orca_output
 
     def _get_input(
         self,
-        structure: Structure | Molecule,
-        kpoints: Kpoints | None = None,
-        previous_input: Cp2kInput = None,
-        input_updates: dict = None,
+        molecule: Molecule,
+        previous_input: ORCAInput | None = None,
+        input_updates: dict | None = None,
     ):
         """Get the input."""
-        previous_input = {} if previous_input is None else previous_input
-        input_updates = {} if input_updates is None else input_updates
-        input_settings = dict(self.config_dict["cp2k_input"])
+        previous_input = dict() if previous_input is None else previous_input
+        input_updates = dict() if input_updates is None else input_updates
+        input_settings = dict(self.config_dict["orca_input"])
 
         # Generate base input but override with user input settings
         input_settings = recursive_update(input_settings, input_updates)
@@ -193,3 +196,35 @@ class ORCAInputGenerator(InputGenerator):
 
         cp2k_input.update(overrides)
         return cp2k_input
+
+
+
+def recursive_update(d: dict, u: dict):
+    """
+    Update a dictionary recursively and return it.
+
+    Parameters
+    ----------
+        d: Dict
+            Input dictionary to modify
+        u: Dict
+            Dictionary of updates to apply
+
+    Returns
+    -------
+    Dict
+        The updated dictionary.
+
+    Example
+    ----------
+        d = {'activate_hybrid': {"hybrid_functional": "HSE06"}}
+        u = {'activate_hybrid': {"cutoff_radius": 8}}
+
+        yields {'activate_hybrid': {"hybrid_functional": "HSE06", "cutoff_radius": 8}}}
+    """
+    for k, v in u.items():
+        if isinstance(v, dict):
+            d[k] = recursive_update(d.get(k, {}), v)
+        else:
+            d[k] = v
+    return d

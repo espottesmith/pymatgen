@@ -36,9 +36,9 @@ class TransformedStructureTest(PymatgenTest):
         coords.append([0, 0, 0])
         coords.append([0.75, 0.5, 0.75])
         lattice = [
-            [3.8401979337, 0.00, 0.00],
-            [1.9200989668, 3.3257101909, 0.00],
-            [0.00, -2.2171384943, 3.1355090603],
+            [3.8401979337, 0, 0],
+            [1.9200989668, 3.3257101909, 0],
+            [0, -2.2171384943, 3.1355090603],
         ]
         struct = Structure(lattice, ["Si4+", "Si4+"], coords)
         ts = TransformedStructure(struct, [])
@@ -82,13 +82,13 @@ class TransformedStructureTest(PymatgenTest):
         assert ts.final_structure.composition.reduced_formula == "NaFePO4"
         ts.undo_last_change()
         assert ts.final_structure.composition.reduced_formula == "LiFePO4"
-        with pytest.raises(IndexError):
+        with pytest.raises(IndexError, match="No more changes to undo"):
             ts.undo_last_change()
         ts.redo_next_change()
         assert ts.final_structure.composition.reduced_formula == "NaFePO4"
         ts.redo_next_change()
         assert ts.final_structure.composition.reduced_formula == "NaMnPO4"
-        with pytest.raises(IndexError):
+        with pytest.raises(IndexError, match="No more changes to redo"):
             ts.redo_next_change()
         # Make sure that this works with filters.
         f3 = ContainsSpecieFilter(["O2-"], strict_compare=True, AND=False)

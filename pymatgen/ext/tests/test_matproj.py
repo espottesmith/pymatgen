@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 import requests
+from pytest import approx
 from ruamel.yaml import YAML
 
 from pymatgen.analysis.phase_diagram import PhaseDiagram
@@ -66,8 +67,8 @@ class MPResterOldTest(PymatgenTest):
         # Test getting XAS data
         data = self.rester.get_xas_data("mp-19017", "Li")
         assert data["mid_and_el"] == "mp-19017,Li"
-        assert data["spectrum"]["x"][0] == pytest.approx(55.178)
-        assert data["spectrum"]["y"][0] == pytest.approx(0.0164634)
+        assert data["spectrum"]["x"][0] == approx(55.178)
+        assert data["spectrum"]["y"][0] == approx(0.0164634)
 
     def test_get_data(self):
         props = {
@@ -103,7 +104,7 @@ class MPResterOldTest(PymatgenTest):
                 val = self.rester.get_data(mp_id, prop=prop)[0][prop]
                 if prop in ["energy", "energy_per_atom"]:
                     prop = "final_" + prop
-                assert expected_vals[prop] == pytest.approx(val), f"Failed with property {prop}"
+                assert expected_vals[prop] == approx(val), f"Failed with property {prop}"
             elif prop in ["elements", "icsd_ids", "task_ids"]:
                 upstream_vals = set(self.rester.get_data(mp_id, prop=prop)[0][prop])
                 assert set(expected_vals[prop]) <= upstream_vals
@@ -271,15 +272,14 @@ class MPResterOldTest(PymatgenTest):
         assert Ni.lattice.gamma == 90
 
         # Test case where convs are different from initial and final
-        # th = self.rester.get_structure_by_material_id(
-        #     "mp-37", conventional_unit_cell=True)
-        # th_entry = self.rester.get_entry_by_material_id(
-        #     "mp-37", inc_structure=True, conventional_unit_cell=True)
+        # th = self.rester.get_structure_by_material_id("mp-37", conventional_unit_cell=True)
+        # th_entry = self.rester.get_entry_by_material_id("mp-37", inc_structure=True, conventional_unit_cell=True)
         # th_entry_initial = self.rester.get_entry_by_material_id(
-        #     "mp-37", inc_structure="initial", conventional_unit_cell=True)
-        # self.assertEqual(th, th_entry.structure)
-        # self.assertEqual(len(th_entry.structure), 4)
-        # self.assertEqual(len(th_entry_initial.structure), 2)
+        #     "mp-37", inc_structure="initial", conventional_unit_cell=True
+        # )
+        # assert th == th_entry.structure
+        # assert len(th_entry.structure) == 4
+        # assert len(th_entry_initial.structure) == 2
 
         # Test if the polymorphs of Fe are properly sorted
         # by e_above_hull when sort_by_e_above_hull=True
@@ -298,15 +298,15 @@ class MPResterOldTest(PymatgenTest):
             assert isinstance(pbx_entry, PourbaixEntry)
 
         # fe_two_plus = [e for e in pbx_entries if e.entry_id == "ion-0"][0]
-        # self.assertAlmostEqual(fe_two_plus.energy, -1.12369, places=3)
-        #
+        # assert fe_two_plus.energy == approx(-1.12369, abs=1e-3)
+
         # feo2 = [e for e in pbx_entries if e.entry_id == "mp-25332"][0]
-        # self.assertAlmostEqual(feo2.energy, 3.56356, places=3)
-        #
+        # assert feo2.energy == approx(3.56356, abs=1e-3)
+
         # # Test S, which has Na in reference solids
         # pbx_entries = self.rester.get_pourbaix_entries(["S"])
         # so4_two_minus = pbx_entries[9]
-        # self.assertAlmostEqual(so4_two_minus.energy, 0.301511, places=3)
+        # assert so4_two_minus.energy == approx(0.301511, abs=1e-3)
 
         # Ensure entries are Pourbaix compatible
         PourbaixDiagram(pbx_entries)
@@ -316,17 +316,17 @@ class MPResterOldTest(PymatgenTest):
         assert entry.energy == -825.5
 
     # def test_submit_query_delete_snl(self):
-    # s = Structure([[5, 0, 0], [0, 5, 0], [0, 0, 5]], ["Fe"], [[0, 0, 0]])
-    # d = self.rester.submit_snl(
-    #     [s, s], remarks=["unittest"],
-    #     authors="Test User <test@materialsproject.com>")
-    # self.assertEqual(len(d), 2)
-    # data = self.rester.query_snl({"about.remarks": "unittest"})
-    # self.assertEqual(len(data), 2)
-    # snlids = [d["_id"] for d in data]
-    # self.rester.delete_snl(snlids)
-    # data = self.rester.query_snl({"about.remarks": "unittest"})
-    # self.assertEqual(len(data), 0)
+    #     struct = Structure([[5, 0, 0], [0, 5, 0], [0, 0, 5]], ["Fe"], [[0, 0, 0]])
+    #     d = self.rester.submit_snl(
+    #         [struct, struct], remarks=["unittest"], authors="Test User <test@materialsproject.com>"
+    #     )
+    #     assert len(d) == 2
+    #     data = self.rester.query_snl({"about.remarks": "unittest"})
+    #     assert len(data) == 2
+    #     snl_ids = [d["_id"] for d in data]
+    #     self.rester.delete_snl(snl_ids)
+    #     data = self.rester.query_snl({"about.remarks": "unittest"})
+    #     assert len(data) == 0
 
     def test_get_stability(self):
         entries = self.rester.get_entries_in_chemsys(["Fe", "O"])
@@ -354,7 +354,7 @@ class MPResterOldTest(PymatgenTest):
                     if d["entry_id"] == e.entry_id:
                         data = d
                         break
-                assert pd.get_e_above_hull(e) == pytest.approx(data["e_above_hull"])
+                assert pd.get_e_above_hull(e) == approx(data["e_above_hull"])
 
     def test_get_reaction(self):
         rxn = self.rester.get_reaction(["Li", "O"], ["Li2O"])
@@ -368,7 +368,7 @@ class MPResterOldTest(PymatgenTest):
     def test_get_surface_data(self):
         data = self.rester.get_surface_data("mp-126")  # Pt
         one_surf = self.rester.get_surface_data("mp-129", miller_index=[-2, -3, 1])
-        assert one_surf["surface_energy"] == pytest.approx(2.99156963)
+        assert one_surf["surface_energy"] == approx(2.99156963)
         self.assert_all_close(one_surf["miller_index"], [3, 2, 1])
         assert "surfaces" in data
         surfaces = data["surfaces"]
@@ -402,13 +402,13 @@ class MPResterOldTest(PymatgenTest):
         assert len(mo_s3_112) == 1
         gb_f = mo_s3_112[0]["final_structure"]
         self.assert_all_close(gb_f.rotation_axis, [1, 1, 0])
-        assert gb_f.rotation_angle == pytest.approx(109.47122)
-        assert mo_s3_112[0]["gb_energy"] == pytest.approx(0.47965, rel=1e-4)
-        assert mo_s3_112[0]["work_of_separation"] == pytest.approx(6.318144)
+        assert gb_f.rotation_angle == approx(109.47122)
+        assert mo_s3_112[0]["gb_energy"] == approx(0.47965, rel=1e-4)
+        assert mo_s3_112[0]["work_of_separation"] == approx(6.318144)
         assert "Mo24" in gb_f.formula
         hcp_s7 = self.rester.get_gb_data(material_id="mp-87", gb_plane=[0, 0, 0, 1], include_work_of_separation=True)
-        assert hcp_s7[0]["gb_energy"] == pytest.approx(1.1206, rel=1e-4)
-        assert hcp_s7[0]["work_of_separation"] == pytest.approx(2.4706, rel=1e-4)
+        assert hcp_s7[0]["gb_energy"] == approx(1.1206, rel=1e-4)
+        assert hcp_s7[0]["work_of_separation"] == approx(2.4706, rel=1e-4)
 
     def test_get_interface_reactions(self):
         kinks = self.rester.get_interface_reactions("LiCoO2", "Li3PS4")

@@ -86,7 +86,7 @@ class CollinearMagneticStructureAnalyzer:
         make_primitive: bool = True,
         default_magmoms: dict | None = None,
         set_net_positive: bool = True,
-        threshold: float = 0.00,
+        threshold: float = 0,
         threshold_nonmag: float = 0.1,
     ):
         """
@@ -1045,8 +1045,7 @@ class MagneticStructureEnumerator:
         # if our input structure isn't in our generated structures,
         # let's add it manually and also keep a note of which structure
         # is our input: this is mostly for book-keeping/benchmarking
-        self.input_index = None
-        self.input_origin = None
+        self.input_index = self.input_origin = None
         if self.input_analyzer.ordering != Ordering.NM:
             matches = [self.input_analyzer.matches_ordering(s) for s in ordered_structures]
             if not any(matches):

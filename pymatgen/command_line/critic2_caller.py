@@ -216,9 +216,7 @@ class Critic2Caller:
 
         input_script = "\n".join(input_script)
 
-        with ScratchDir(".") as temp_dir:
-            os.chdir(temp_dir)
-
+        with ScratchDir("."):
             structure.to(filename="POSCAR")
 
             if chgcar and isinstance(chgcar, VolumetricData):
@@ -702,8 +700,7 @@ class Critic2Analysis(MSONable):
 
     @staticmethod
     def _annotate_structure_with_yt(yt, structure: Structure, zpsp):
-        volume_idx = None
-        charge_idx = None
+        volume_idx = charge_idx = None
 
         for prop in yt["integration"]["properties"]:
             if prop["label"] == "Volume":

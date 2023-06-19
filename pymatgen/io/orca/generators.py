@@ -43,11 +43,13 @@ class ORCAInputGenerator(InputGenerator):
             3 (meta-GGA): B97M-V
             4 (hybrid): wB97M-V
             5 (double hybrid): wB97X-2
+            other: no default will be applied (user must supply functional in user_settings)
     basis_set (str):
         Basis set to use. If not provided, then the minimally augmented split-valence basis
-        ma-def2-SVP will be used
-    approximations (List[str | ORCAApproximation]):
-        Which approximations, if any, should be used to accelerate SCF calculations?
+        ma-def2-SVP will be used. NOTE: if a custom basis set is desired, input "custom" (not case
+        sensitive).
+    approximation (str | ORCAApproximation):
+        Which approximation, if any, should be used to accelerate SCF calculations?
     pcm_settings (dict | None):
         Settings to use with the polarizable continuum model (PCM). A minimal input dictionary will
         contain two keys: "epsilon" for the solvent's relative dielectric constant and "refrac" for
@@ -71,9 +73,9 @@ class ORCAInputGenerator(InputGenerator):
         The config dictionary to use containing the base input set settings.
     """
 
-    dft_rung: int = 4
-    basis_set: str = "ma-def2-SVP"
-    approximations: List[str | ORCAApproximation] = field(default_factory=list)
+    dft_rung: int | None = 4
+    basis_set: str | None = "ma-def2-SVP"
+    approximation: str | ORCAApproximation | None = None
     pcm_settings: dict | None = None
     smd_settings: dict | None = None
     user_settings: dict = field(default_factory=dict)
@@ -108,7 +110,6 @@ class ORCAInputGenerator(InputGenerator):
 
         orca_input = self._get_input(
             molecule,
-            prev_input,
             input_updates,
         )
 
@@ -165,38 +166,70 @@ class ORCAInputGenerator(InputGenerator):
     def _get_input(
         self,
         molecule: Molecule,
-        previous_input: ORCAInput | None = None,
         input_updates: dict | None = None,
     ):
         """Get the input."""
-        previous_input = dict() if previous_input is None else previous_input
         input_updates = dict() if input_updates is None else input_updates
-        input_settings = dict(self.config_dict["orca_input"])
+        input_settings = dict(self.config_dict.get("orca_input", dict()))
+
+        simple_input = list()
+
+        # Add exchange-correlation functional to simple input section
+        if self.dft_rung == 1:
+            simple_input.append("VWN5")
+        elif self.dft_rung == 2:
+            simple_input.append("PBE")
+        elif self.dft_rung == 3:
+            simple_input.append("B97M-V")
+        elif self.dft_rung == 4:
+            simple_input.append("wB97M-V")
+        elif self.dft_rung == 5:
+            simple_input.append("wB97X-2")
+
+        # Add basis set to simple input section
+        if self.basis_set.lower() != "custom":
+            simple_input.append(self.basis_set)
+
+        if self.approximation is None:
+            simple_input.append("NORI")
+        else:
+            if isinstance(approx, ORCAApproximation):
+                approx = approx.value
+                
+            if approx == "ri":
+                simple_input.append("RI")
+            elif approx == "rijcosx":
+                simple_input.append("RIJCOSX")
+            elif approx == "rijk":
+                simple_input.append("RI-JK")
+
+        if self.pcm_settings is not None and self.smd_settings is not None:
+            raise ValueError("Cannot provide settings for PCM and SMD!")
+        elif self.pcm_settings is not None or self.smd_settings is not None:
+            simple_input.append("CPCM")
 
         # Generate base input but override with user input settings
         input_settings = recursive_update(input_settings, input_updates)
-        input_settings = recursive_update(input_settings, self.user_input_settings)
-        overrides = (
-            input_settings.pop("override_default_params")
-            if "override_default_params" in input_settings
-            else {}
-        )
-        cp2k_input = DftSet(structure=structure, kpoints=kpoints, **input_settings)
+        input_settings = recursive_update(input_settings, self.user_settings["orca_input"])
+        
+        if self.pcm_settings is not None:
+            input_settings["cpcm"] = recursive_update(input_settings["cpcm"], self.pcm_settings)
+        elif self.smd_settings is not None:
+            input_settings["cpcm"] = recursive_update(input_settings["cpcm"], self.smd_settings)
 
-        for setting in input_settings:
-            if (
-                hasattr(cp2k_input, setting)
-                and input_settings[setting]
-                and callable(getattr(cp2k_input, setting))
-            ):
-                subsettings = input_settings.get(setting)
-                getattr(cp2k_input, setting)(
-                    **subsettings if isinstance(subsettings, dict) else {}
-                )
+        if "simple_input" not in input_settings:
+            input_settings["simple_input"] = simple_input
+        else:
+            si = input_settings["simple_input"]
+            if isinstance(si, str):
+                si = si.split()
+            for this_si in simple_input:
+                if this_si not in si:
+                    # TODO: should have some kind of validation
+                    # Right now, we simply assume that there are no conflicting options in the input
+                    si.insert(0, this_si)
 
-        cp2k_input.update(overrides)
-        return cp2k_input
-
+        return ORCAInput(molecule=molecule, **input_settings)
 
 
 def recursive_update(d: dict, u: dict):

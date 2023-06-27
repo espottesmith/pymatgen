@@ -1,6 +1,4 @@
-"""
-Classes and methods related to the Structure Notation Language (SNL)
-"""
+"""Classes and methods related to the Structure Notation Language (SNL)."""
 
 from __future__ import annotations
 
@@ -35,7 +33,7 @@ MAX_BIBTEX_CHARS = 20000  # maximum number of characters for BibTeX reference
 
 def is_valid_bibtex(reference: str) -> bool:
     """
-    Use pybtex to validate that a reference is in proper BibTeX format
+    Use pybtex to validate that a reference is in proper BibTeX format.
 
     Args:
         reference: A String reference in BibTeX format.
@@ -79,17 +77,17 @@ class HistoryNode(namedtuple("HistoryNode", ["name", "url", "description"])):
         Structure (dict).
     """
 
+    __slots__ = ()
+
     def as_dict(self) -> dict[str, str]:
-        """
-        Returns: Dict
-        """
+        """Returns: Dict."""
         return {"name": self.name, "url": self.url, "description": self.description}
 
     @staticmethod
     def from_dict(h_node: dict[str, str]) -> HistoryNode:
         """
         Args:
-            d (dict): Dict representation
+            d (dict): Dict representation.
 
         Returns:
             HistoryNode
@@ -129,23 +127,21 @@ class Author(namedtuple("Author", ["name", "email"])):
         Email of author (String)
     """
 
+    __slots__ = ()
+
     def __str__(self):
-        """
-        String representation of an Author
-        """
+        """String representation of an Author."""
         return f"{self.name} <{self.email}>"
 
     def as_dict(self):
-        """
-        Returns: MSONable dict.
-        """
+        """Returns: MSONable dict."""
         return {"name": self.name, "email": self.email}
 
     @staticmethod
     def from_dict(d):
         """
         Args:
-            d (dict): Dict representation
+            d (dict): Dict representation.
 
         Returns:
             Author
@@ -155,7 +151,7 @@ class Author(namedtuple("Author", ["name", "email"])):
     @staticmethod
     def parse_author(author):
         """
-        Parses an Author object from either a String, dict, or tuple
+        Parses an Author object from either a String, dict, or tuple.
 
         Args:
             author: A String formatted as "NAME <email@domain.com>",
@@ -220,7 +216,7 @@ class StructureNL:
             data: A free form dict. Namespaced at the root level with an
                 underscore, e.g. {"_materialsproject": <custom data>}
             history: List of dicts - [{'name':'', 'url':'', 'description':{}}]
-            created_at: A datetime object
+            created_at: A datetime object.
         """
         # initialize root-level structure keys
         self.structure = struct_or_mol
@@ -250,9 +246,9 @@ class StructureNL:
         self.remarks = [remarks] if isinstance(remarks, str) else remarks
 
         # check remarks limit
-        for r in self.remarks:
-            if len(r) > 140:
-                raise ValueError(f"The remark exceeds the maximum size of 140 characters: {r}")
+        for remark in self.remarks:
+            if len(remark) > 140:
+                raise ValueError(f"The remark exceeds the maximum size of 140 characters: {remark}")
 
         # check data limit
         self.data = data or {}
@@ -262,11 +258,11 @@ class StructureNL:
                 f"bytes (you have {sys.getsizeof(data)})"
             )
 
-        for k in self.data:
-            if not k.startswith("_"):
+        for key in self.data:
+            if not key.startswith("_"):
                 raise ValueError(
                     "data must contain properly namespaced data with keys starting with an underscore. "
-                    f"The key {k} does not start with an underscore."
+                    f"{key=} does not start with an underscore."
                 )
 
         # check for valid history nodes
@@ -280,9 +276,7 @@ class StructureNL:
         self.created_at = created_at or datetime.datetime.utcnow()
 
     def as_dict(self):
-        """
-        Returns: MSONable dict
-        """
+        """Returns: MSONable dict."""
         d = self.structure.as_dict()
         d["@module"] = type(self).__module__
         d["@class"] = type(self).__name__
@@ -301,7 +295,7 @@ class StructureNL:
     def from_dict(cls, d):
         """
         Args:
-            d (dict): Dict representation
+            d (dict): Dict representation.
 
         Returns:
             Class
@@ -383,8 +377,8 @@ class StructureNL:
     def __str__(self):
         return "\n".join(
             [
-                f"{k}\n{getattr(self, k)}"
-                for k in (
+                f"{key}\n{getattr(self, key)}"
+                for key in (
                     "structure",
                     "authors",
                     "projects",

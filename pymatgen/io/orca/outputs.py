@@ -111,11 +111,15 @@ class ORCAOutput(MSONable):
         ).get("key") is not None:
             self._parse_geometry_optimization()
 
-        if read_pattern(
+        ran_freq = read_pattern(
             self.text,
-            {"hess": r"\-+\s+ORCA SCF HESSIAN\s+\-+",
-             "numfreq": r"\-+\s+ORCA NUMERICAL FREQUENCIES\s+\(\d+\-process run\)\s+\-+"}
-        ).get("key") is not None:
+            {
+                "hess": r"\-+\s+ORCA SCF HESSIAN\s+\-+",
+                "numfreq": r"\-+\s+ORCA NUMERICAL FREQUENCIES\s+\(\d+\-process run\)\s+\-+"
+            }
+        )
+
+        if ran_freq.get("hess") is not None or ran_freq.get("numfreq") is not None:
             # Parse vibrational frequency analysis
             self._parse_frequency_analysis()
             self._parse_thermo()
@@ -1678,7 +1682,7 @@ class ORCAPropertyOutput(MSONable):
         contents_match = read_pattern(
             section,
             {
-                "geom_index": r"geom\. index: (\d+)"
+                "geom_index": r"geom\. index: (\d+)",
                 "temp": r"Temperature \(Kelvin\)\s+:\s+([0-9\-\.]+)",
                 "pressure": r"Pressure \(atm\)\s+:\s+([0-9\-\.]+)",
                 "total_mass": r"Total Mass \(AMU\)\s+:\s+([0-9\.]+)",

@@ -113,7 +113,8 @@ class ORCAOutput(MSONable):
 
         if read_pattern(
             self.text,
-            {"key": r"\-+\s+ORCA SCF HESSIAN\s+\-+"}
+            {"hess": r"\-+\s+ORCA SCF HESSIAN\s+\-+",
+             "numfreq": r"\-+\s+ORCA NUMERICAL FREQUENCIES\s+\(\d+\-process run\)\s+\-+"}
         ).get("key") is not None:
             # Parse vibrational frequency analysis
             self._parse_frequency_analysis()

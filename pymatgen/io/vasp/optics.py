@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -17,6 +16,8 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.outputs import Vasprun, Waveder
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from numpy.typing import ArrayLike, NDArray
 
 __author__ = "Jimmy-Xuan Shen"
@@ -111,20 +112,19 @@ class DielectricFunctionCalculator(MSONable):
     @classmethod
     def from_directory(cls, directory: Path | str):
         """Construct a DielectricFunction from a directory containing vasprun.xml and WAVEDER files."""
-        d_ = Path(directory)
 
         def _try_reading(dtypes):
             """Return None if failed."""
             for dtype in dtypes:
                 try:
-                    return Waveder.from_binary(d_ / "WAVEDER", data_type=dtype)
+                    return Waveder.from_binary(f"{directory}/WAVEDER", data_type=dtype)
                 except ValueError as e:
                     if "reshape" in str(e):
                         continue
                     raise e
             return None
 
-        vrun = Vasprun(d_ / "vasprun.xml")
+        vrun = Vasprun(f"{directory}/vasprun.xml")
         if "gamma" in vrun.generator["subversion"].lower():
             waveder = _try_reading(["float64", "float32"])  # large one first should give value error
         else:
@@ -308,9 +308,8 @@ def get_delta(x0: float, sigma: float, nx: int, dx: float, ismear: int = 3):
 
     Return:
         np.array: Array of size `nx` with delta function on the desired outputgrid.
-
     """
-    xgrid = np.arange(0, nx * dx, dx)
+    xgrid = np.linspace(0, nx * dx, nx, endpoint=False)
     xgrid -= x0
     x_scaled = (xgrid + (dx / 2)) / sigma
     sfun = step_func(x_scaled, ismear)
@@ -334,7 +333,7 @@ def get_step(x0, sigma, nx, dx, ismear):
     Return:
         np.array: Array of size `nx` with step function on the desired outputgrid.
     """
-    xgrid = np.arange(0, nx * dx, dx)
+    xgrid = np.linspace(0, nx * dx, nx, endpoint=False)
     xgrid -= x0
     x_scaled = (xgrid + (dx / 2)) / sigma
     return step_func(x_scaled, ismear)
@@ -370,10 +369,9 @@ def epsilon_imag(
 
     Return:
         np.array: Array of size `nedos` with the imaginary part of the dielectric function.
-
     """
     norm_kweights = np.array(kweights) / np.sum(kweights)
-    egrid = np.arange(0, nedos * deltae, deltae)
+    egrid = np.linspace(0, nedos * deltae, nedos, endpoint=False)
     eigs_shifted = eigs - efermi
     # np.subtract.outer results in a matrix of shape (nband, nband)
     rspin = 3 - cder.shape[3]
@@ -402,7 +400,6 @@ def epsilon_imag(
     num_ = (max_band0 - min_band0) * (max_band1 - min_band1) * nk * nspin
     epsdd = np.zeros_like(egrid, dtype=np.complex128)
     for ib, jb, ik, ispin in tqdm(itertools.product(*iter_idx), total=num_):
-        # print(f"{ib=}, {jb=}, {ik=}, {ispin=}")
         fermi_w_i = step_func((eigs_shifted[ib, ik, ispin]) / sigma, ismear)
         fermi_w_j = step_func((eigs_shifted[jb, ik, ispin]) / sigma, ismear)
         weight = (fermi_w_j - fermi_w_i) * rspin * norm_kweights[ik]

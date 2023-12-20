@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING
 
 import numpy as np
 from tabulate import tabulate
@@ -10,19 +10,20 @@ from tabulate import tabulate
 from pymatgen.core.structure import PeriodicSite, Structure
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from pymatgen.symmetry.analyzer import SpacegroupOperations
 
 
 class SymmetrizedStructure(Structure):
-    """
-    This class represents a symmetrized structure, i.e. a structure
+    """This class represents a symmetrized structure, i.e. a structure
     where the spacegroup and symmetry operations are defined. This class is
     typically not called but instead is typically obtained by calling
     pymatgen.symmetry.analyzer.SpacegroupAnalyzer.get_symmetrized_structure.
 
-    .. attribute: equivalent_indices
-
-        indices of structure grouped by equivalency
+    Attributes:
+        equivalent_indices (list[List[int]]): A list of lists of indices of the sites in the structure that are
+            considered equivalent based on the symmetry operations of the space group.
     """
 
     def __init__(
@@ -48,6 +49,8 @@ class SymmetrizedStructure(Structure):
             [site.species for site in structure],
             structure.frac_coords,
             site_properties=structure.site_properties,
+            properties=structure.properties,
+            labels=structure.labels,
         )
 
         equivalent_indices: list[list[int]] = [[] for _ in range(len(uniq))]
@@ -63,7 +66,7 @@ class SymmetrizedStructure(Structure):
         self.wyckoff_symbols = [f"{len(symb)}{symb[0]}" for symb in wyckoff_symbols]
 
     def copy(self):
-        """:return: Copy of structure."""
+        """Copy of structure."""
         return SymmetrizedStructure(
             self,
             spacegroup=self.spacegroup,
@@ -72,8 +75,7 @@ class SymmetrizedStructure(Structure):
         )
 
     def find_equivalent_sites(self, site: PeriodicSite) -> list[PeriodicSite]:
-        """
-        Finds all symmetrically equivalent sites for a particular site.
+        """Finds all symmetrically equivalent sites for a particular site.
 
         Args:
             site (PeriodicSite): A site in the structure
@@ -82,7 +84,7 @@ class SymmetrizedStructure(Structure):
             ValueError: if site is not in the structure.
 
         Returns:
-            ([PeriodicSite]): List of all symmetrically equivalent sites.
+            list[PeriodicSite]: all symmetrically equivalent sites.
         """
         for sites in self.equivalent_sites:
             if site in sites:
@@ -94,18 +96,18 @@ class SymmetrizedStructure(Structure):
         return str(self)
 
     def __str__(self) -> str:
+        def to_str(x):
+            return f"{x:>10.6f}"
+
         outs = [
             "SymmetrizedStructure",
             f"Full Formula ({self.composition.formula})",
             f"Reduced Formula: {self.composition.reduced_formula}",
             f"Spacegroup: {self.spacegroup.int_symbol} ({self.spacegroup.int_number})",
+            f"abc   : {' '.join(to_str(val) for val in self.lattice.abc)}",
+            f"angles: {' '.join(to_str(val) for val in self.lattice.angles)}",
         ]
 
-        def to_str(x):
-            return f"{x:>10.6f}"
-
-        outs.append(f"abc   : {' '.join(to_str(val) for val in self.lattice.abc)}")
-        outs.append(f"angles: {' '.join(to_str(val) for val in self.lattice.angles)}")
         if self._charge:
             outs.append(f"Overall Charge: {self._charge:+}")
         outs.append(f"Sites ({len(self)})")
@@ -124,7 +126,7 @@ class SymmetrizedStructure(Structure):
         return "\n".join(outs)
 
     def as_dict(self):
-        """:return: MSONable dict"""
+        """MSONable dict."""
         structure = Structure.from_sites(self.sites)
         return {
             "structure": structure.as_dict(),
@@ -136,8 +138,11 @@ class SymmetrizedStructure(Structure):
     @classmethod
     def from_dict(cls, dct):
         """
-        :param d: Dict representation
-        :return: SymmetrizedStructure
+        Args:
+            dct (dict): Dict representation.
+
+        Returns:
+            SymmetrizedStructure
         """
         return cls(
             Structure.from_dict(dct["structure"]),

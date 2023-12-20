@@ -8,10 +8,8 @@ import re
 import sys
 from collections import namedtuple
 from io import StringIO
-from typing import Sequence
 
 from monty.json import MontyDecoder, MontyEncoder
-from monty.string import remove_non_ascii
 
 try:
     from pybtex import errors
@@ -19,21 +17,25 @@ try:
 except ImportError:
     pybtex = bibtex = None
 
+from typing import TYPE_CHECKING
+
 from pymatgen.core.structure import Molecule, Structure
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 __author__ = "Anubhav Jain, Shyue Ping Ong"
 __credits__ = "Dan Gunter"
 
 
-MAX_HNODE_SIZE = 64000  # maximum size (bytes) of SNL HistoryNode
-MAX_DATA_SIZE = 256000  # maximum size (bytes) of SNL data field
+MAX_HNODE_SIZE = 64_000  # maximum size (bytes) of SNL HistoryNode
+MAX_DATA_SIZE = 256_000  # maximum size (bytes) of SNL data field
 MAX_HNODES = 100  # maximum number of HistoryNodes in SNL file
-MAX_BIBTEX_CHARS = 20000  # maximum number of characters for BibTeX reference
+MAX_BIBTEX_CHARS = 20_000  # maximum number of characters for BibTeX reference
 
 
 def is_valid_bibtex(reference: str) -> bool:
-    """
-    Use pybtex to validate that a reference is in proper BibTeX format.
+    """Use pybtex to validate that a reference is in proper BibTeX format.
 
     Args:
         reference: A String reference in BibTeX format.
@@ -43,16 +45,15 @@ def is_valid_bibtex(reference: str) -> bool:
     """
     # str is necessary since pybtex seems to have an issue with unicode. The
     # filter expression removes all non-ASCII characters.
-    sio = StringIO(remove_non_ascii(reference))
+    sio = StringIO(reference.encode("ascii", "ignore").decode("ascii"))
     parser = bibtex.Parser()
-    errors.set_strict_mode(False)
+    errors.set_strict_mode(enable=False)
     bib_data = parser.parse_stream(sio)
     return len(bib_data.entries) > 0
 
 
 class HistoryNode(namedtuple("HistoryNode", ["name", "url", "description"])):
-    """
-    A HistoryNode represents a step in the chain of events that lead to a
+    """A HistoryNode represents a step in the chain of events that lead to a
     Structure. HistoryNodes leave 'breadcrumbs' so that you can trace back how
     a Structure was created. For example, a HistoryNode might represent pulling
     a Structure from an external database such as the ICSD or CSD. Or, it might
@@ -62,19 +63,10 @@ class HistoryNode(namedtuple("HistoryNode", ["name", "url", "description"])):
 
     A HistoryNode contains three fields:
 
-    .. attribute:: name
-
-        The name of a code or resource that this Structure encountered in
-        its history (String)
-
-    .. attribute:: url
-
-        The URL of that code/resource (String)
-
-    .. attribute:: description
-
-        A free-form description of how the code/resource is related to the
-        Structure (dict).
+    Attributes:
+        name (str): The name of a code or resource that this Structure encountered in its history.
+        url (str): The URL of that code/resource.
+        description (dict): A free-form description of how the code/resource is related to the Structure.
     """
 
     __slots__ = ()
@@ -84,20 +76,19 @@ class HistoryNode(namedtuple("HistoryNode", ["name", "url", "description"])):
         return {"name": self.name, "url": self.url, "description": self.description}
 
     @staticmethod
-    def from_dict(h_node: dict[str, str]) -> HistoryNode:
+    def from_dict(dct: dict[str, str]) -> HistoryNode:
         """
         Args:
-            d (dict): Dict representation.
+            dct (dict): Dict representation.
 
         Returns:
             HistoryNode
         """
-        return HistoryNode(h_node["name"], h_node["url"], h_node["description"])
+        return HistoryNode(dct["name"], dct["url"], dct["description"])
 
     @staticmethod
     def parse_history_node(h_node):
-        """
-        Parses a History Node object from either a dict or a tuple.
+        """Parses a History Node object from either a dict or a tuple.
 
         Args:
             h_node: A dict with name/url/description fields or a 3-element
@@ -115,16 +106,8 @@ class HistoryNode(namedtuple("HistoryNode", ["name", "url", "description"])):
 
 
 class Author(namedtuple("Author", ["name", "email"])):
-    """
-    An Author contains two fields:
-
-    .. attribute:: name
-
-        Name of author (String)
-
-    .. attribute:: email
-
-        Email of author (String)
+    """An Author contains two fields: name and email. It is meant to represent
+    the author of a Structure or the author of a code that was applied to a Structure.
     """
 
     __slots__ = ()
@@ -150,8 +133,7 @@ class Author(namedtuple("Author", ["name", "email"])):
 
     @staticmethod
     def parse_author(author):
-        """
-        Parses an Author object from either a String, dict, or tuple.
+        """Parses an Author object from either a String, dict, or tuple.
 
         Args:
             author: A String formatted as "NAME <email@domain.com>",
@@ -175,22 +157,20 @@ class Author(namedtuple("Author", ["name", "email"])):
 
 
 class StructureNL:
-    """
-    The Structure Notation Language (SNL, pronounced 'snail') is a container
-    for a pymatgen Structure/Molecule object with some additional fields for
-    enhanced provenance. It is meant to be imported/exported in a JSON file
-    format with the following structure:
+    """The Structure Notation Language (SNL, pronounced 'snail') is a container for a pymatgen
+    Structure/Molecule object with some additional fields for enhanced provenance.
 
-    - about
-        - created_at
-        - authors
-        - projects
-        - references
-        - remarks
-        - data
-        - history
-    - lattice (optional)
-    - sites
+    It is meant to be imported/exported in a JSON file format with the following structure:
+        - sites
+        - lattice (optional)
+        - about
+            - created_at
+            - authors
+            - projects
+            - references
+            - remarks
+            - data
+            - history
     """
 
     def __init__(
@@ -206,7 +186,7 @@ class StructureNL:
     ):
         """
         Args:
-            struct_or_mol: A pymatgen.core.structure Structure/Molecule object
+            struct_or_mol: A pymatgen Structure/Molecule object
             authors: *List* of {"name":'', "email":''} dicts,
                 *list* of Strings as 'John Doe <johndoe@gmail.com>',
                 or a single String with commas separating authors
@@ -248,7 +228,7 @@ class StructureNL:
         # check remarks limit
         for remark in self.remarks:
             if len(remark) > 140:
-                raise ValueError(f"The remark exceeds the maximum size of 140 characters: {remark}")
+                raise ValueError(f"The remark exceeds the maximum size of 140 characters: {len(remark)}")
 
         # check data limit
         self.data = data or {}
@@ -277,10 +257,10 @@ class StructureNL:
 
     def as_dict(self):
         """Returns: MSONable dict."""
-        d = self.structure.as_dict()
-        d["@module"] = type(self).__module__
-        d["@class"] = type(self).__name__
-        d["about"] = {
+        dct = self.structure.as_dict()
+        dct["@module"] = type(self).__module__
+        dct["@class"] = type(self).__name__
+        dct["about"] = {
             "authors": [a.as_dict() for a in self.authors],
             "projects": self.projects,
             "references": self.references,
@@ -288,8 +268,8 @@ class StructureNL:
             "history": [h.as_dict() for h in self.history],
             "created_at": json.loads(json.dumps(self.created_at, cls=MontyEncoder)),
         }
-        d["about"].update(json.loads(json.dumps(self.data, cls=MontyEncoder)))
-        return d
+        dct["about"].update(json.loads(json.dumps(self.data, cls=MontyEncoder)))
+        return dct
 
     @classmethod
     def from_dict(cls, d):
@@ -331,8 +311,7 @@ class StructureNL:
         histories=None,
         created_at=None,
     ):
-        """
-        A convenience method for getting a list of StructureNL objects by
+        """A convenience method for getting a list of StructureNL objects by
         specifying structures and metadata separately. Some of the metadata
         is applied to all of the structures for ease of use.
 
@@ -359,15 +338,15 @@ class StructureNL:
         histories = [[]] * len(structures) if histories is None else histories
 
         snl_list = []
-        for i, struct in enumerate(structures):
+        for idx, struct in enumerate(structures):
             snl = StructureNL(
                 struct,
                 authors,
                 projects=projects,
                 references=references,
                 remarks=remarks,
-                data=data[i],
-                history=histories[i],
+                data=data[idx],
+                history=histories[idx],
                 created_at=created_at,
             )
             snl_list.append(snl)

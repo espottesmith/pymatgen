@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 if TYPE_CHECKING:
     from pymatgen.core import Structure
 
@@ -23,10 +25,15 @@ class Prismatic:
         self.structure = structure
         self.comment = comment
 
-    def to_string(self) -> str:
+    @np.deprecate(message="Use to_str instead")
+    def to_string(cls, *args, **kwargs):
+        return cls.to_str(*args, **kwargs)
+
+    def to_str(self) -> str:
         """
-        Returns: Prismatic XYZ file. This is similar to XYZ format
-        but has specific requirements for extra fields, headers, etc.
+        Returns:
+            str: Prismatic XYZ file. This is similar to XYZ format
+                but has specific requirements for extra fields, headers, etc.
         """
         lattice = self.structure.lattice
         lines = [self.comment, " ".join(map(str, lattice.lengths))]

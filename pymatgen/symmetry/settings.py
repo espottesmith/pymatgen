@@ -24,8 +24,7 @@ class JonesFaithfulTransformation:
     """Transformation for space-groups defined in a non-standard setting."""
 
     def __init__(self, P, p):
-        """
-        Transform between settings using matrix P and origin shift vector p,
+        """Transform between settings using matrix P and origin shift vector p,
         using same notation as reference.
 
         Should initialize using `from_transformation_string` in Jones
@@ -38,7 +37,7 @@ class JonesFaithfulTransformation:
           hexagonal setting)
         * `a,b,c;-1/4,-1/4,-1/4` is Pnnn:1 to Pnnn:2 (change in origin
           choice)
-        * `b,c,a;-1/2,-1/2,-1/2` is Bbab:1 to Ccca:2 (change settin
+        * `b,c,a;-1/2,-1/2,-1/2` is Bbab:1 to Ccca:2 (change setting
           and origin)
 
         Can transform points (coords), lattices and symmetry operations.
@@ -56,7 +55,12 @@ class JonesFaithfulTransformation:
         self._P, self._p = P, p
 
     @classmethod
-    def from_transformation_string(cls, transformation_string="a,b,c;0,0,0"):
+    @np.deprecate(message="Use from_transformation_str instead")
+    def from_transformation_string(cls, *args, **kwargs):  # noqa: D102
+        return cls.from_transformation_str(*args, **kwargs)
+
+    @classmethod
+    def from_transformation_str(cls, transformation_string="a,b,c;0,0,0"):
         """Construct SpaceGroupTransformation from its transformation string.
 
         Args:
@@ -97,21 +101,14 @@ class JonesFaithfulTransformation:
             tuple[list[list[float]] | np.ndarray, list[float]]: transformation matrix & vector
         """
         try:
-            a = np.array([1, 0, 0])
-            b = np.array([0, 1, 0])
-            c = np.array([0, 0, 1])
+            a, b, c = np.eye(3)
             b_change, o_shift = transformation_string.split(";")
             basis_change = b_change.split(",")
             origin_shift = o_shift.split(",")
             # add implicit multiplication symbols
             basis_change = [
-                re.sub(
-                    r"(?<=\w|\))(?=\() | (?<=\))(?=\w) | (?<=(\d|a|b|c))(?=([abc]))",
-                    r"*",
-                    x,
-                    flags=re.X,
-                )
-                for x in basis_change
+                re.sub(r"(?<=\w|\))(?=\() | (?<=\))(?=\w) | (?<=(\d|a|b|c))(?=([abc]))", r"*", string, flags=re.X)
+                for string in basis_change
             ]
             # should be fine to use eval here but be mindful for security
             # reasons
@@ -126,23 +123,23 @@ class JonesFaithfulTransformation:
 
     @property
     def P(self) -> list[list[float]]:
-        """:return: transformation matrix"""
+        """Transformation matrix."""
         return self._P
 
     @property
     def p(self) -> list[float]:
-        """:return: translation vector"""
+        """Translation vector."""
         return self._p
 
     @property
     def inverse(self) -> JonesFaithfulTransformation:
-        """:return: JonesFaithfulTransformation"""
+        """JonesFaithfulTransformation."""
         Q = np.linalg.inv(self.P)
         return JonesFaithfulTransformation(Q, -np.matmul(Q, self.p))
 
     @property
     def transformation_string(self) -> str:
-        """:return: transformation string"""
+        """Transformation string."""
         return self._get_transformation_string_from_Pp(self.P, self.p)
 
     @staticmethod
@@ -175,9 +172,8 @@ class JonesFaithfulTransformation:
         """Takes a list of coordinates and transforms them."""
         new_coords = []
         for x in coords:
-            x = np.array(x)
             Q = np.linalg.inv(self.P)
-            x_ = np.matmul(Q, (x - self.p))
+            x_ = np.matmul(Q, (np.array(x) - self.p))
             new_coords.append(x_.tolist())
         return new_coords
 

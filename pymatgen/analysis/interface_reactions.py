@@ -156,7 +156,7 @@ class InterfacialReactivity(MSONable):
             num_atoms = [(x * self.comp1.num_atoms + (1 - x) * self.comp2.num_atoms) for x in x_kink]
             energy_per_rxt_formula = [
                 energy_kink[i]
-                * self._get_elmt_amt_in_rxn(react_kink[i])
+                * self._get_elem_amt_in_rxn(react_kink[i])
                 / num_atoms[i]
                 * InterfacialReactivity.EV_TO_KJ_PER_MOL
                 for i in range(2)
@@ -180,7 +180,7 @@ class InterfacialReactivity(MSONable):
                 # Gets balanced reaction at kinks
                 rxt = self._get_reaction(x)
                 react_kink.append(rxt)
-                rxt_energy = normalized_energy * self._get_elmt_amt_in_rxn(rxt) / n_atoms
+                rxt_energy = normalized_energy * self._get_elem_amt_in_rxn(rxt) / n_atoms
                 energy_per_rxt_formula.append(rxt_energy * self.EV_TO_KJ_PER_MOL)
 
         index_kink = range(1, len(critical_comp) + 1)
@@ -316,7 +316,7 @@ class InterfacialReactivity(MSONable):
 
         return reaction
 
-    def _get_elmt_amt_in_rxn(self, rxn: Reaction) -> int:
+    def _get_elem_amt_in_rxn(self, rxn: Reaction) -> int:
         """
         Computes total number of atoms in a reaction formula for elements
         not in external reservoir. This method is used in the calculation
@@ -395,7 +395,7 @@ class InterfacialReactivity(MSONable):
 
     def _get_matplotlib_figure(self) -> plt.Figure:
         """Returns a matplotlib figure of reaction kinks diagram."""
-        pretty_plot(8, 5)
+        ax = pretty_plot(8, 5)
         plt.xlim([-0.05, 1.05])  # plot boundary is 5% wider on each side
 
         kinks = list(zip(*self.get_kinks()))
@@ -418,17 +418,13 @@ class InterfacialReactivity(MSONable):
                 arrowprops={"arrowstyle": "->", "connectionstyle": "arc3,rad=0"},
             )
 
-        if self.norm:
-            plt.ylabel("Energy (eV/atom)")
-        else:
-            plt.ylabel("Energy (eV/f.u.)")
+        plt.ylabel(f"Energy (eV/{'atom' if self.norm else 'f.u.'})")
 
         plt.xlabel(self._get_xaxis_title())
         plt.ylim(self.minimum[1] + 0.05 * self.minimum[1])  # plot boundary is 5% lower
 
-        fig = plt.gcf()
+        fig = ax.figure
         plt.close(fig)
-
         return fig
 
     def _get_xaxis_title(self, latex: bool = True) -> str:
@@ -478,10 +474,9 @@ class InterfacialReactivity(MSONable):
 
         if not candidate:
             warnings.warn(
-                "The reactant " + composition.reduced_formula + " has no matching entry with negative formation"
+                f"The reactant {composition.reduced_formula} has no matching entry with negative formation"
                 " energy, instead convex hull energy for this"
-                " composition will be used for reaction energy "
-                "calculation. "
+                " composition will be used for reaction energy calculation. "
             )
             return pd.get_hull_energy(composition)
         min_entry_energy = min(candidate)
@@ -585,8 +580,7 @@ class InterfacialReactivity(MSONable):
                3: 'x= 1 energy = 0 O2 -> O2'}.
         """
         return {
-            j: "x= " + str(round(x, 4)) + " energy in eV/atom = " + str(round(energy, 4)) + " " + str(reaction)
-            for j, x, energy, reaction, _ in self.get_kinks()
+            j: f"x= {x:.4} energy in eV/atom = {energy:.4} {reaction}" for j, x, energy, reaction, _ in self.get_kinks()
         }
 
     @property
@@ -598,7 +592,7 @@ class InterfacialReactivity(MSONable):
         Returns:
             Tuple (x_min, E_min).
         """
-        return min(((x, energy) for _, x, energy, _, _ in self.get_kinks()), key=lambda i: i[1])
+        return min(((x, energy) for _, x, energy, _, _ in self.get_kinks()), key=lambda tup: tup[1])
 
     @property
     def products(self):

@@ -66,7 +66,7 @@ from pymatgen.io.cp2k.inputs import (
 )
 from pymatgen.io.cp2k.utils import get_truncated_coulomb_cutoff, get_unique_site_indices
 from pymatgen.io.vasp.inputs import Kpoints as VaspKpoints
-from pymatgen.io.vasp.inputs import Kpoints_supported_modes
+from pymatgen.io.vasp.inputs import KpointsSupportedModes
 
 __author__ = "Nicholas Winner"
 __version__ = "2.0"
@@ -100,7 +100,7 @@ class DftSet(Cp2kInput):
         linesearch: str = "2PNT",
         rotation: bool = True,
         occupation_preconditioner: bool = False,
-        cutoff: int | float | None = None,
+        cutoff: float | None = None,
         rel_cutoff: int = 50,
         ngrids: int = 5,
         progression_factor: int = 3,
@@ -214,10 +214,10 @@ class DftSet(Cp2kInput):
             # 0,0,0 will disable certain features. So, you have to drop it all together to
             # get full support
             if (
-                self.kpoints.style in [Kpoints_supported_modes.Gamma, Kpoints_supported_modes.Monkhorst]
+                self.kpoints.style in [KpointsSupportedModes.Gamma, KpointsSupportedModes.Monkhorst]
                 and np.array_equal(self.kpoints.kpts[0], (1, 1, 1))
             ) or (
-                self.kpoints.style in [Kpoints_supported_modes.Reciprocal, Kpoints_supported_modes.Cartesian]
+                self.kpoints.style in [KpointsSupportedModes.Reciprocal, KpointsSupportedModes.Cartesian]
                 and np.array_equal(self.kpoints.kpts[0], (0, 0, 0))
             ):
                 self.kpoints = None
@@ -459,13 +459,13 @@ class DftSet(Cp2kInput):
                     desired_basis = GaussianTypeOrbitalBasisSet(
                         element=Element(el),
                         potential=potential_type,
-                        info=BasisInfo.from_string(f"{basis_type}-{functional}"),
+                        info=BasisInfo.from_str(f"{basis_type}-{functional}"),
                     )
                     desired_potential = GthPotential(
                         element=Element(el), potential=potential_type, info=PotentialInfo(xc=functional)
                     )
                 if aux_basis_type and have_element_file:
-                    desired_aux_basis = GaussianTypeOrbitalBasisSet(info=BasisInfo.from_string(aux_basis_type))
+                    desired_aux_basis = GaussianTypeOrbitalBasisSet(info=BasisInfo.from_str(aux_basis_type))
 
             # If basis/potential are not explicit, match the desired ones to available ones in the element file
             if desired_basis:
@@ -507,11 +507,10 @@ class DftSet(Cp2kInput):
                     break
 
             if basis is None:
-                if basis_and_potential.get(el, {}).get("basis"):
-                    warnings.warn(f"Unable to validate basis for {el}. Exact name provided will be put in input file.")
-                    basis = basis_and_potential[el].get("basis")
-                else:
-                    raise ValueError("No explicit basis found and matching has failed.")
+                if not basis_and_potential.get(el, {}).get("basis"):
+                    raise ValueError(f"No explicit basis found for {el} and matching has failed.")
+                warnings.warn(f"Unable to validate basis for {el}. Exact name provided will be put in input file.")
+                basis = basis_and_potential[el].get("basis")
 
             if aux_basis is None and basis_and_potential.get(el, {}).get("aux_basis"):
                 warnings.warn(
@@ -528,7 +527,7 @@ class DftSet(Cp2kInput):
                 else:
                     raise ValueError("No explicit potential found and matching has failed.")
 
-            if basis.filename:
+            if hasattr(basis, "filename"):
                 data["basis_filenames"].append(basis.filename)
             pfn1 = data.get("potential_filename")
             pfn2 = potential.filename
@@ -539,15 +538,11 @@ class DftSet(Cp2kInput):
                 )
             data["potential_filename"] = pfn2
 
-            data[el] = {
-                "basis": basis,
-                "aux_basis": aux_basis,
-                "potential": potential,
-            }
+            data[el] = {"basis": basis, "aux_basis": aux_basis, "potential": potential}
         return data
 
     @staticmethod
-    def get_cutoff_from_basis(basis_sets, rel_cutoff) -> int | float:
+    def get_cutoff_from_basis(basis_sets, rel_cutoff) -> float:
         """Given a basis and a relative cutoff. Determine the ideal cutoff variable."""
         for basis in basis_sets:
             if not basis.exponents:
@@ -645,8 +640,8 @@ class DftSet(Cp2kInput):
         """
         if not self.check("FORCE_EVAL/DFT/PRINT/PDOS"):
             self["FORCE_EVAL"]["DFT"]["PRINT"].insert(PDOS(nlumo=nlumo))
-        for i in range(self.structure.num_sites):
-            self["FORCE_EVAL"]["DFT"]["PRINT"]["PDOS"].insert(LDOS(i + 1, alias=f"LDOS {i + 1}", verbose=False))
+        for idx in range(len(self.structure)):
+            self["FORCE_EVAL"]["DFT"]["PRINT"]["PDOS"].insert(LDOS(idx + 1, alias=f"LDOS {idx + 1}", verbose=False))
 
     def print_mo_cubes(self, write_cube: bool = False, nlumo: int = -1, nhomo: int = -1) -> None:
         """
@@ -949,7 +944,7 @@ class DftSet(Cp2kInput):
         # Unlikely for users to override
         load_balance = Section(
             "LOAD_BALANCE",
-            keywords={"RANDOMIZE": Keyword("RANDOMIZE", True)},
+            keywords={"RANDOMIZE": Keyword("RANDOMIZE", True)},  # noqa: FBT003
             subsections={},
         )
 
@@ -988,8 +983,8 @@ class DftSet(Cp2kInput):
         trust_radius: float = 0.25,
         line_search: str = "2PNT",
         ensemble: str = "NVE",
-        temperature: float | int = 300,
-        timestep: float | int = 0.5,
+        temperature: float = 300,
+        timestep: float = 0.5,
         nsteps: int = 3,
         thermostat: str = "NOSE",
         nproc_rep: int = 1,
@@ -1209,7 +1204,6 @@ class DftSet(Cp2kInput):
     def activate_very_strict_minimization(self) -> None:
         """
         Method to modify the set to use very strict SCF minimization scheme
-        :return:
         """
         ot = OrbitalTransformation(
             minimizer="CG",

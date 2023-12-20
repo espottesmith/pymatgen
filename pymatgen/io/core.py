@@ -26,13 +26,19 @@ If you want to implement a new InputGenerator, please take note of the following
 from __future__ import annotations
 
 import abc
+import copy
 import os
-from collections.abc import MutableMapping
+from collections.abc import Iterator, MutableMapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 from zipfile import ZipFile
 
+import numpy as np
 from monty.io import zopen
 from monty.json import MSONable
+
+if TYPE_CHECKING:
+    from os import PathLike
 
 __author__ = "Ryan Kingsbury"
 __email__ = "RKingsbury@lbl.gov"
@@ -42,22 +48,27 @@ __date__ = "October 2021"
 
 class InputFile(MSONable):
     """
-    Abstract base class to represent a single input file. Note that use
-    of this class is optional; it is possible create an InputSet that
-    does not rely on underlying Inputfile objects.
+    Abstract base class to represent a single input file. Note that use of this class
+    is optional; it is possible create an InputSet that does not rely on underlying
+    InputFile objects.
 
-    All InputFile classes must implement a get_string method, which
-    is called by write_file.
+    All InputFile classes must implement a get_string method, which is called by
+    write_file.
 
-    If InputFile classes implement an __init__ method, they must assign all
-    arguments to __init__ as attributes.
+    If InputFile classes implement an __init__ method, they must assign all arguments
+    to __init__ as attributes.
     """
 
+    @abc.abstractmethod
+    def get_str(self) -> str:
+        """Return a string representation of an entire input file."""
+
+    @np.deprecate(message="Use get_str instead")
     @abc.abstractmethod
     def get_string(self) -> str:
         """Return a string representation of an entire input file."""
 
-    def write_file(self, filename: str | Path) -> None:
+    def write_file(self, filename: str | PathLike) -> None:
         """
         Write the input file.
 
@@ -65,12 +76,26 @@ class InputFile(MSONable):
             filename: The filename to output to, including path.
         """
         filename = filename if isinstance(filename, Path) else Path(filename)
-        with zopen(filename, "wt") as f:
-            f.write(self.get_string())
+        with zopen(filename, "wt") as file:
+            file.write(self.get_str())
+
+    @classmethod
+    @np.deprecate(message="Use from_str instead")
+    @abc.abstractmethod
+    def from_string(cls, contents: str) -> InputFile:
+        """
+        Create an InputFile object from a string.
+
+        Args:
+            contents: The contents of the file as a single string
+
+        Returns:
+            InputFile
+        """
 
     @classmethod
     @abc.abstractmethod
-    def from_string(cls, contents: str):
+    def from_str(cls, contents: str) -> InputFile:
         """
         Create an InputFile object from a string.
 
@@ -94,10 +119,10 @@ class InputFile(MSONable):
         """
         filename = path if isinstance(path, Path) else Path(path)
         with zopen(filename, "rt") as f:
-            return cls.from_string(f.read())
+            return cls.from_str(f.read())
 
-    def __str__(self):
-        return self.get_string()
+    def __str__(self) -> str:
+        return self.get_str()
 
 
 class InputSet(MSONable, MutableMapping):
@@ -132,11 +157,11 @@ class InputSet(MSONable, MutableMapping):
         self._kwargs = kwargs
         self.__dict__.update(**kwargs)
 
-    def __getattr__(self, k):
+    def __getattr__(self, key):
         # allow accessing keys as attributes
-        if k in self._kwargs:
-            return self.get(k)
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute {k!r}")
+        if key in self._kwargs:
+            return self.get(key)
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute {key!r}")
 
     def __copy__(self) -> InputSet:
         cls = self.__class__
@@ -148,8 +173,6 @@ class InputSet(MSONable, MutableMapping):
         return new_instance
 
     def __deepcopy__(self, memo: dict[int, InputSet]) -> InputSet:
-        import copy
-
         cls = self.__class__
         new_instance = cls.__new__(cls)
         memo[id(self)] = new_instance
@@ -159,19 +182,19 @@ class InputSet(MSONable, MutableMapping):
 
         return new_instance
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.inputs)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str | Path]:
         return iter(self.inputs)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> str | InputFile | slice:
         return self.inputs[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str | Path, value: str | InputFile) -> None:
         self.inputs[key] = value
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: str | Path) -> None:
         del self.inputs[key]
 
     def write_input(
@@ -255,3 +278,7 @@ class InputGenerator(MSONable):
         Generate an InputSet object. Typically the first argument to this method
         will be a Structure or other form of atomic coordinates.
         """
+
+
+class ParseError(SyntaxError):
+    """This exception indicates a problem was encountered during parsing due to unexpected formatting."""

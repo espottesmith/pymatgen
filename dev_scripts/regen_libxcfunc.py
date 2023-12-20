@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from copy import deepcopy
 
 
 def parse_libxc_docs(path):
@@ -46,8 +47,6 @@ def parse_libxc_docs(path):
 
 def write_libxc_docs_json(xcfuncs, jpath):
     """Write json file with libxc metadata to path jpath."""
-    from copy import deepcopy
-
     xcfuncs = deepcopy(xcfuncs)
 
     # Remove XC_FAMILY from Family and XC_ from Kind to make strings more human-readable.
@@ -87,9 +86,9 @@ def main():
     xc_funcs = parse_libxc_docs(path)
 
     # Generate new json file in pycore
-    pycore = os.path.abspath("../pymatgen/core/")
-    jpath = os.path.join(pycore, "libxc_docs.json")
-    write_libxc_docs_json(xc_funcs, jpath)
+    pmg_core = os.path.abspath("../pymatgen/core/")
+    json_path = f"{pmg_core}/libxc_docs.json"
+    write_libxc_docs_json(xc_funcs, json_path)
 
     # Build new enum list.
     enum_list = []
@@ -101,8 +100,8 @@ def main():
 
     # Re-generate enumerations.
     # [0] read py module.
-    xcfuncpy_path = os.path.join(pycore, "libxcfunc.py")
-    with open(xcfuncpy_path) as fh:
+    xc_funcpy_path = f"{pmg_core}/libxcfunc.py"
+    with open(xc_funcpy_path) as fh:
         lines = fh.readlines()
 
     # [1] insert new enum values in list
@@ -112,7 +111,7 @@ def main():
     del lines[start + 1 : stop]
 
     # [2] write new py module
-    with open(xcfuncpy_path, "w") as fh:
+    with open(xc_funcpy_path, "w") as fh:
         fh.writelines(lines)
 
     print("Files have been regenerated")

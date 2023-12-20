@@ -11,6 +11,7 @@ import re
 import warnings
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from glob import glob
 from io import StringIO
@@ -22,11 +23,9 @@ from monty.io import reverse_readfile, zopen
 from monty.json import MSONable, jsanitize
 from monty.os.path import zpath
 from monty.re import regrep
+from numpy.testing import assert_allclose
 
-from pymatgen.core.composition import Composition
-from pymatgen.core.lattice import Lattice
-from pymatgen.core.periodic_table import Element
-from pymatgen.core.structure import Structure
+from pymatgen.core import Composition, Element, Lattice, Structure
 from pymatgen.core.units import unitized
 from pymatgen.electronic_structure.bandstructure import (
     BandStructure,
@@ -37,6 +36,7 @@ from pymatgen.electronic_structure.core import Magmom, Orbital, OrbitalType, Spi
 from pymatgen.electronic_structure.dos import CompleteDos, Dos
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.common import VolumetricData as BaseVolumetricData
+from pymatgen.io.core import ParseError
 from pymatgen.io.vasp.inputs import Incar, Kpoints, Poscar, Potcar
 from pymatgen.io.wannier90 import Unk
 from pymatgen.util.io_utils import clean_lines, micro_pyawk
@@ -80,6 +80,7 @@ def _parse_v_parameters(val_type, val, filename, param_name):
     Returns:
         Parsed value.
     """
+    err = ValueError("Error in parsing vasprun.xml")
     if val_type == "logical":
         val = [i == "T" for i in val.split()]
     elif val_type == "int":
@@ -90,7 +91,7 @@ def _parse_v_parameters(val_type, val, filename, param_name):
             # LDAUL/J as 2****
             val = _parse_from_incar(filename, param_name)
             if val is None:
-                raise OSError("Error in parsing vasprun.xml")
+                raise err
     elif val_type == "string":
         val = val.split()
     else:
@@ -101,19 +102,17 @@ def _parse_v_parameters(val_type, val, filename, param_name):
             # MAGMOM as 2****
             val = _parse_from_incar(filename, param_name)
             if val is None:
-                raise OSError("Error in parsing vasprun.xml")
+                raise err
     return val
 
 
-def _parse_varray(elem):
+def _parse_vasp_array(elem) -> list[list[float]]:
     if elem.get("type") == "logical":
-        m = [[i == "T" for i in v.text.split()] for v in elem]
-    else:
-        m = [[_vasprun_float(i) for i in v.text.split()] for v in elem]
-    return m
+        return [[i == "T" for i in v.text.split()] for v in elem]
+    return [[_vasprun_float(i) for i in v.text.split()] for v in elem]
 
 
-def _parse_from_incar(filename, key):
+def _parse_from_incar(filename: str, key: str) -> str | None:
     """Helper function to parse a parameter from the INCAR."""
     dirname = os.path.dirname(filename)
     for f in os.listdir(dirname):
@@ -126,19 +125,19 @@ def _parse_from_incar(filename, key):
     return None
 
 
-def _vasprun_float(f):
+def _vasprun_float(flt: float | str) -> float:
     """
     Large numbers are often represented as ********* in the vasprun.
     This function parses these values as np.nan.
     """
     try:
-        return float(f)
-    except ValueError as e:
-        f = f.strip()
-        if f == "*" * len(f):
+        return float(flt)
+    except ValueError as exc:
+        flt = flt.strip()  # type: ignore[union-attr]
+        if flt == "*" * len(flt):
             warnings.warn("Float overflow (*******) encountered in vasprun")
             return np.nan
-        raise e
+        raise exc
 
 
 class Vasprun(MSONable):
@@ -150,161 +149,66 @@ class Vasprun(MSONable):
 
     **VASP results**
 
-    .. attribute:: ionic_steps
-
-        All ionic steps in the run as a list of
-        {"structure": structure at end of run,
-        "electronic_steps": {All electronic step data in vasprun file},
-        "stresses": stress matrix}
-
-    .. attribute:: tdos
-
-        Total dos calculated at the end of run.
-
-    .. attribute:: idos
-
-        Integrated dos calculated at the end of run.
-
-    .. attribute:: pdos
-
-        List of list of PDos objects. Access as pdos[atomindex][orbitalindex]
-
-    .. attribute:: efermi
-
-        Fermi energy
-
-    .. attribute:: eigenvalues
-
-        Available only if parse_eigen=True. Final eigenvalues as a dict of
-        {(spin, kpoint index):[[eigenvalue, occu]]}.
-        This representation is based on actual ordering in VASP and is meant as
-        an intermediate representation to be converted into proper objects. The
-        kpoint index is 0-based (unlike the 1-based indexing in VASP).
-
-    .. attribute:: projected_eigenvalues
-
-        Final projected eigenvalues as a dict of {spin: nd-array}. To access
-        a particular value, you need to do
-        Vasprun.projected_eigenvalues[spin][kpoint index][band index][atom index][orbital_index]
-        This representation is based on actual ordering in VASP and is meant as
-        an intermediate representation to be converted into proper objects. The
-        kpoint, band and atom indices are 0-based (unlike the 1-based indexing
-        in VASP).
-
-    .. attribute:: projected_magnetisation
-
-        Final projected magnetisation as a numpy array with the shape (nkpoints, nbands,
-        natoms, norbitals, 3). Where the last axis is the contribution in the 3
-        Cartesian directions. This attribute is only set if spin-orbit coupling
-        (LSORBIT = True) or non-collinear magnetism (LNONCOLLINEAR = True) is turned
-        on in the INCAR.
-
-    .. attribute:: other_dielectric
-
-        Dictionary, with the tag comment as key, containing other variants of
-        the real and imaginary part of the dielectric constant (e.g., computed
-        by RPA) in function of the energy (frequency). Optical properties (e.g.
-        absorption coefficient) can be obtained through this.
-        The data is given as a tuple of 3 values containing each of them
-        the energy, the real part tensor, and the imaginary part tensor
-        ([energies],[[real_partxx,real_partyy,real_partzz,real_partxy,
-        real_partyz,real_partxz]],[[imag_partxx,imag_partyy,imag_partzz,
-        imag_partxy, imag_partyz, imag_partxz]])
-
-    .. attribute:: nionic_steps
-
-        The total number of ionic steps. This number is always equal
-        to the total number of steps in the actual run even if
-        ionic_step_skip is used.
-
-    .. attribute:: force_constants
-
-        Force constants computed in phonon DFPT run(IBRION = 8).
-        The data is a 4D numpy array of shape (natoms, natoms, 3, 3).
-
-    .. attribute:: normalmode_eigenvals
-
-        Normal mode frequencies.
-        1D numpy array of size 3*natoms.
-
-    .. attribute:: normalmode_eigenvecs
-
-        Normal mode eigen vectors.
-        3D numpy array of shape (3*natoms, natoms, 3).
-
-    .. attribute:: md_data
-
-        Available only for ML MD runs, i.e., INCAR with ML_LMLFF = .TRUE.
-        md_data is a list of dict with the following format:
-
-        [
-            {
-                'energy': {
-                    'e_0_energy': -525.07195568,
-                    'e_fr_energy': -525.07195568,
-                    'e_wo_entrp': -525.07195568,
-                    'kinetic': 3.17809233,
-                    'lattice kinetic': 0.0,
-                    'nosekinetic': 1.323e-05,
-                    'nosepot': 0.0,
-                    'total': -521.89385012
-                    },
-                'forces': [[0.17677989, 0.48309874, 1.85806696], ...],
-                'structure': Structure object
-            }
-        ]
-
-    **VASP inputs**
-
-    .. attribute:: incar
-
-        Incar object for parameters specified in INCAR file.
-
-    .. attribute:: parameters
-
-        Incar object with parameters that vasp actually used, including all
-        defaults.
-
-    .. attribute:: kpoints
-
-        Kpoints object for KPOINTS specified in run.
-
-    .. attribute:: actual_kpoints
-
-        List of actual kpoints, e.g.,
-        [[0.25, 0.125, 0.08333333], [-0.25, 0.125, 0.08333333],
-        [0.25, 0.375, 0.08333333], ....]
-
-    .. attribute:: actual_kpoints_weights
-
-        List of kpoint weights, E.g.,
-        [0.04166667, 0.04166667, 0.04166667, 0.04166667, 0.04166667, ....]
-
-    .. attribute:: atomic_symbols
-
-        List of atomic symbols, e.g., ["Li", "Fe", "Fe", "P", "P", "P"]
-
-    .. attribute:: potcar_symbols
-
-        List of POTCAR symbols. e.g.,
-        ["PAW_PBE Li 17Jan2003", "PAW_PBE Fe 06Sep2000", ..]
+    Attributes:
+        ionic_steps (list): All ionic steps in the run as a list of {"structure": structure at end of run,
+            "electronic_steps": {All electronic step data in vasprun file}, "stresses": stress matrix}.
+        tdos (Dos): Total dos calculated at the end of run.
+        idos (Dos): Integrated dos calculated at the end of run.
+        pdos (list): List of list of PDos objects. Access as pdos[atomindex][orbitalindex].
+        efermi (float): Fermi energy.
+        eigenvalues (dict): Final eigenvalues as a dict of {(spin, kpoint index):[[eigenvalue, occu]]}.
+            The kpoint index is 0-based (unlike the 1-based indexing in VASP).
+        projected_eigenvalues (dict): Final projected eigenvalues as a dict of {spin: nd-array}.
+            To access a particular value, you need to do
+            Vasprun.projected_eigenvalues[spin][kpoint index][band index][atom index][orbital_index].
+            The kpoint, band and atom indices are 0-based (unlike the 1-based indexing in VASP).
+        projected_magnetisation (numpy.ndarray): Final projected magnetization as a numpy array with the
+            shape (nkpoints, nbands, natoms, norbitals, 3). Where the last axis is the contribution in the
+            3 Cartesian directions. This attribute is only set if spin-orbit coupling (LSORBIT = True) or
+            non-collinear magnetism (LNONCOLLINEAR = True) is turned on in the INCAR.
+        other_dielectric (dict): Dictionary, with the tag comment as key, containing other variants of
+            the real and imaginary part of the dielectric constant (e.g., computed by RPA) in function of
+            the energy (frequency). Optical properties (e.g. absorption coefficient) can be obtained through this.
+            The data is given as a tuple of 3 values containing each of them the energy, the real part tensor,
+            and the imaginary part tensor ([energies],[[real_partxx,real_partyy,real_partzz,real_partxy,
+            real_partyz,real_partxz]],[[imag_partxx,imag_partyy,imag_partzz,imag_partxy, imag_partyz, imag_partxz]]).
+        nionic_steps (int): The total number of ionic steps. This number is always equal to the total number
+            of steps in the actual run even if ionic_step_skip is used.
+        force_constants (numpy.ndarray): Force constants computed in phonon DFPT run(IBRION = 8).
+            The data is a 4D numpy array of shape (natoms, natoms, 3, 3).
+        normalmode_eigenvals (numpy.ndarray): Normal mode frequencies. 1D numpy array of size 3*natoms.
+        normalmode_eigenvecs (numpy.ndarray): Normal mode eigen vectors. 3D numpy array of shape (3*natoms, natoms, 3).
+        md_data (list): Available only for ML MD runs, i.e., INCAR with ML_LMLFF = .TRUE. md_data is a list of
+            dict with the following format: [{'energy': {'e_0_energy': -525.07195568, 'e_fr_energy': -525.07195568,
+            'e_wo_entrp': -525.07195568, 'kinetic': 3.17809233, 'lattice kinetic': 0.0, 'nosekinetic': 1.323e-5,
+            'nosepot': 0.0, 'total': -521.89385012}, 'forces': [[0.17677989, 0.48309874, 1.85806696], ...],
+            'structure': Structure object}].
+        incar (Incar): Incar object for parameters specified in INCAR file.
+        parameters (Incar): Incar object with parameters that vasp actually used, including all defaults.
+        kpoints (Kpoints): Kpoints object for KPOINTS specified in run.
+        actual_kpoints (list): List of actual kpoints, e.g., [[0.25, 0.125, 0.08333333], [-0.25, 0.125, 0.08333333],
+            [0.25, 0.375, 0.08333333], ....].
+        actual_kpoints_weights (list): List of kpoint weights, E.g., [0.04166667, 0.04166667, 0.04166667, 0.04166667,
+            0.04166667, ....].
+        atomic_symbols (list): List of atomic symbols, e.g., ["Li", "Fe", "Fe", "P", "P", "P"].
+        potcar_symbols (list): List of POTCAR symbols. e.g., ["PAW_PBE Li 17Jan2003", "PAW_PBE Fe 06Sep2000", ..].
 
     Author: Shyue Ping Ong
     """
 
     def __init__(
         self,
-        filename,
-        ionic_step_skip=None,
-        ionic_step_offset=0,
-        parse_dos=True,
-        parse_eigen=True,
-        parse_projected_eigen=False,
-        parse_potcar_file=True,
-        occu_tol=1e-8,
-        separate_spins=False,
-        exception_on_bad_xml=True,
-    ):
+        filename: str | Path,
+        ionic_step_skip: int | None = None,
+        ionic_step_offset: int = 0,
+        parse_dos: bool = True,
+        parse_eigen: bool = True,
+        parse_projected_eigen: bool = False,
+        parse_potcar_file: bool = True,
+        occu_tol: float = 1e-8,
+        separate_spins: bool = False,
+        exception_on_bad_xml: bool = True,
+    ) -> None:
         """
         Args:
             filename (str): Filename to parse
@@ -329,15 +233,15 @@ class Vasprun(MSONable):
                 True. Set to False to shave off significant time from the
                 parsing if you are not interested in getting those data.
             parse_projected_eigen (bool): Whether to parse the projected
-                eigenvalues and magnetisation. Defaults to False. Set to True to obtain
-                projected eigenvalues and magnetisation. **Note that this can take an
+                eigenvalues and magnetization. Defaults to False. Set to True to obtain
+                projected eigenvalues and magnetization. **Note that this can take an
                 extreme amount of time and memory.** So use this wisely.
             parse_potcar_file (bool/str): Whether to parse the potcar file to read
                 the potcar hashes for the potcar_spec attribute. Defaults to True,
                 where no hashes will be determined and the potcar_spec dictionaries
                 will read {"symbol": ElSymbol, "hash": None}. By Default, looks in
                 the same directory as the vasprun.xml, with same extensions as
-                 Vasprun.xml. If a string is provided, looks at that filepath.
+                Vasprun.xml. If a string is provided, looks at that filepath.
             occu_tol (float): Sets the minimum tol for the determination of the
                 vbm and cbm. Usually the default of 1e-8 works well enough,
                 but there may be pathological cases.
@@ -366,7 +270,7 @@ class Vasprun(MSONable):
                 # The text before the first <calculation> is the preamble!
                 preamble = steps.pop(0)
                 self.nionic_steps = len(steps)
-                new_steps = steps[ionic_step_offset :: int(ionic_step_skip)]
+                new_steps = steps[ionic_step_offset :: int(ionic_step_skip or 1)]
                 # add the tailing information in the last step from the run
                 to_parse = "<calculation>".join(new_steps)
                 if steps[-1] != new_steps[-1]:
@@ -422,9 +326,12 @@ class Vasprun(MSONable):
                         self.parameters = self._parse_params(elem)
                     elif tag == "structure" and elem.attrib.get("name") == "initialpos":
                         self.initial_structure = self._parse_structure(elem)
+                        self.final_structure = self.initial_structure
                     elif tag == "atominfo":
                         self.atomic_symbols, self.potcar_symbols = self._parse_atominfo(elem)
-                        self.potcar_spec = [{"titel": p, "hash": None} for p in self.potcar_symbols]
+                        self.potcar_spec = [
+                            {"titel": p, "hash": None, "summary_stats": {}} for p in self.potcar_symbols
+                        ]
                 if tag == "calculation":
                     parsed_header = True
                     if not self.parameters.get("LCHIMAG", False):
@@ -445,8 +352,8 @@ class Vasprun(MSONable):
                 elif tag == "dielectricfunction":
                     if (
                         "comment" not in elem.attrib
-                        or elem.attrib["comment"] == "INVERSE MACROSCOPIC DIELECTRIC TENSOR (including "
-                        "local field effects in RPA (Hartree))"
+                        or elem.attrib["comment"]
+                        == "INVERSE MACROSCOPIC DIELECTRIC TENSOR (including local field effects in RPA (Hartree))"
                     ):
                         if "density" not in self.dielectric_data:
                             self.dielectric_data["density"] = self._parse_diel(elem)
@@ -468,7 +375,7 @@ class Vasprun(MSONable):
                             self.other_dielectric[comment] = self._parse_diel(elem)
 
                 elif tag == "varray" and elem.attrib.get("name") == "opticaltransitions":
-                    self.optical_transition = np.array(_parse_varray(elem))
+                    self.optical_transition = np.array(_parse_vasp_array(elem))
                 elif tag == "structure" and elem.attrib.get("name") == "finalpos":
                     self.final_structure = self._parse_structure(elem)
                 elif tag == "dynmat":
@@ -491,7 +398,9 @@ class Vasprun(MSONable):
                         md_data.append({})
                         md_data[-1]["structure"] = self._parse_structure(elem)
                     elif tag == "varray" and elem.attrib.get("name") == "forces":
-                        md_data[-1]["forces"] = _parse_varray(elem)
+                        md_data[-1]["forces"] = _parse_vasp_array(elem)
+                    elif tag == "varray" and elem.attrib.get("name") == "stress":
+                        md_data[-1]["stress"] = _parse_vasp_array(elem)
                     elif tag == "energy":
                         d = {i.attrib["name"]: float(i.text) for i in elem.findall("i")}
                         if "kinetic" in d:
@@ -508,15 +417,15 @@ class Vasprun(MSONable):
         self.vasp_version = self.generator["version"]
 
     @property
-    def structures(self):
+    def structures(self) -> list[Structure]:
         """
         Returns:
-             List of Structure objects for the structure at each ionic step.
+            List of Structure objects for the structure at each ionic step.
         """
         return [step["structure"] for step in self.ionic_steps]
 
     @property
-    def epsilon_static(self):
+    def epsilon_static(self) -> list[float]:
         """
         Property only available for DFPT calculations.
 
@@ -527,7 +436,7 @@ class Vasprun(MSONable):
         return self.ionic_steps[-1].get("epsilon", [])
 
     @property
-    def epsilon_static_wolfe(self):
+    def epsilon_static_wolfe(self) -> list[float]:
         """
         Property only available for DFPT calculations.
 
@@ -538,7 +447,7 @@ class Vasprun(MSONable):
         return self.ionic_steps[-1].get("epsilon_rpa", [])
 
     @property
-    def epsilon_ionic(self):
+    def epsilon_ionic(self) -> list[float]:
         """
         Property only available for DFPT calculations and when IBRION=5, 6, 7 or 8.
 
@@ -564,14 +473,14 @@ class Vasprun(MSONable):
         return self.dielectric_data["density"]
 
     @property
-    def optical_absorption_coeff(self):
+    def optical_absorption_coeff(self) -> list[float]:
         """
         Calculate the optical absorption coefficient
         from the dielectric constants. Note that this method is only
         implemented for optical properties calculated with GGA and BSE.
 
         Returns:
-            optical absorption coefficient in list
+            list[float]: optical absorption coefficient
         """
         if self.dielectric_data["density"]:
             real_avg = [
@@ -597,38 +506,43 @@ class Vasprun(MSONable):
         return absorption_coeff
 
     @property
-    def converged_electronic(self):
+    def converged_electronic(self) -> bool:
         """
         Returns:
-            True if electronic step convergence has been reached in the final
-            ionic step.
+            bool: True if electronic step convergence has been reached in the final ionic step.
         """
-        final_esteps = self.ionic_steps[-1]["electronic_steps"] if self.incar not in ["CHI"] else 0
+        final_elec_steps = (
+            self.ionic_steps[-1]["electronic_steps"] if self.incar.get("ALGO", "").lower() != "chi" else 0
+        )
         # In a response function run there is no ionic steps, there is no scf step
-        if "LEPSILON" in self.incar and self.incar["LEPSILON"]:
-            i = 1
+        if self.incar.get("LEPSILON"):
+            idx = 1
             to_check = {"e_wo_entrp", "e_fr_energy", "e_0_energy"}
-            while set(final_esteps[i]) == to_check:
-                i += 1
-            return i + 1 != self.parameters["NELM"]
-        return len(final_esteps) < self.parameters["NELM"]
+            while set(final_elec_steps[idx]) == to_check:
+                idx += 1
+            return idx + 1 != self.parameters["NELM"]
+        return len(final_elec_steps) < self.parameters["NELM"]
 
     @property
-    def converged_ionic(self):
+    def converged_ionic(self) -> bool:
         """
         Returns:
-            True if ionic step convergence has been reached, i.e. that vasp
-            exited before reaching the max ionic steps for a relaxation run.
+            bool: True if ionic step convergence has been reached, i.e. that vasp
+                exited before reaching the max ionic steps for a relaxation run.
+                In case IBRION=0 (MD) True if the max ionic steps are reached.
         """
         nsw = self.parameters.get("NSW", 0)
+        ibrion = self.parameters.get("IBRION", -1 if nsw in (-1, 0) else 0)
+        if ibrion == 0:
+            return nsw <= 1 or self.md_n_steps == nsw
+
         return nsw <= 1 or len(self.ionic_steps) < nsw
 
     @property
-    def converged(self):
+    def converged(self) -> bool:
         """
         Returns:
-            True if a relaxation run is converged both ionically and
-            electronically.
+            bool: True if a relaxation run is both ionically and electronically converged.
         """
         return self.converged_electronic and self.converged_ionic
 
@@ -669,17 +583,17 @@ class Vasprun(MSONable):
     @property
     def complete_dos_normalized(self) -> CompleteDos:
         """
-        A CompleteDos object which incorporates the total DOS and all
-        projected DOS. Normalized by the volume of the unit cell with
-        units of states/eV/unit cell volume.
+        A CompleteDos object which incorporates the total DOS and all projected DOS.
+        Normalized by the volume of the unit cell with units of states/eV/unit cell
+        volume.
         """
         final_struct = self.final_structure
         pdoss = {final_struct[i]: pdos for i, pdos in enumerate(self.pdos)}
         return CompleteDos(self.final_structure, self.tdos, pdoss, normalize=True)
 
     @property
-    def hubbards(self):
-        """Hubbard U values used if a vasprun is a GGA+U run. {} otherwise."""
+    def hubbards(self) -> dict[str, float]:
+        """Hubbard U values used if a vasprun is a GGA+U run. Otherwise an empty dict."""
         symbols = [s.split()[1] for s in self.potcar_symbols]
         symbols = [re.split(r"_", s)[0] for s in symbols]
         if not self.incar.get("LDAU", False):
@@ -689,10 +603,10 @@ class Vasprun(MSONable):
         if len(js) != len(us):
             js = [0] * len(us)
         if len(us) == len(symbols):
-            return {symbols[i]: us[i] - js[i] for i in range(len(symbols))}
+            return {symbols[idx]: us[idx] - js[idx] for idx in range(len(symbols))}
         if sum(us) == 0 and sum(js) == 0:
             return {}
-        raise VaspParserError("Length of U value parameters and atomic symbols are mismatched")
+        raise VaspParseError("Length of U value parameters and atomic symbols are mismatched")
 
     @property
     def run_type(self):
@@ -789,6 +703,14 @@ class Vasprun(MSONable):
         """True if run is spin-polarized."""
         return self.parameters.get("ISPIN", 1) == 2
 
+    @property
+    def md_n_steps(self) -> int:
+        """Number of steps for md runs."""
+        # if ML enabled count all the actual MD steps
+        if self.md_data:
+            return len(self.md_data)
+        return self.nionic_steps
+
     def get_computed_entry(self, inc_structure=True, parameters=None, data=None, entry_id: str | None = None):
         """
         Returns a ComputedEntry or ComputedStructureEntry from the Vasprun.
@@ -875,7 +797,7 @@ class Vasprun(MSONable):
         if not kpoints_filename:
             kpoints_filename = zpath(os.path.join(os.path.dirname(self.filename), "KPOINTS"))
         if kpoints_filename and not os.path.exists(kpoints_filename) and line_mode is True:
-            raise VaspParserError("KPOINTS not found but needed to obtain band structure along symmetry lines.")
+            raise VaspParseError("KPOINTS not found but needed to obtain band structure along symmetry lines.")
 
         if efermi == "smart":
             e_fermi = self.calculate_efermi()
@@ -1046,7 +968,7 @@ class Vasprun(MSONable):
             return np.max(all_eigs[all_eigs < fermi]), np.min(all_eigs[all_eigs > fermi])
 
         if not crosses_band(self.efermi):
-            # Fermi doesn't cross a band; safe to use VASP fermi level
+            # Fermi doesn't cross a band; safe to use VASP Fermi level
             return self.efermi
 
         # if the Fermi level crosses a band, check if we are very close to band gap;
@@ -1066,10 +988,15 @@ class Vasprun(MSONable):
         # it is actually a metal
         return self.efermi
 
-    def get_potcars(self, path):
+    def get_potcars(self, path: str | Path) -> Potcar | None:
         """
-        :param path: Path to search for POTCARs
-        :return: Potcar from path.
+        Returns the POTCAR from the specified path.
+
+        Args:
+            path (str): The path to search for POTCARs.
+
+        Returns:
+            Potcar | None: The POTCAR from the specified path.
         """
 
         def get_potcar_in_path(p):
@@ -1102,14 +1029,16 @@ class Vasprun(MSONable):
         representation of self.structures into a single object. Forces are
         added to the Trajectory as site properties.
 
-        Returns: a Trajectory
+        Returns:
+            Trajectory: from pymatgen.core.trajectory
         """
         # required due to circular imports
         # TODO: fix pymatgen.core.trajectory so it does not load from io.vasp(!)
         from pymatgen.core.trajectory import Trajectory
 
         structs = []
-        for step in self.ionic_steps:
+        steps_list = self.md_data or self.ionic_steps
+        for step in steps_list:
             struct = step["structure"].copy()
             struct.add_site_property("forces", step["forces"])
             structs.append(struct)
@@ -1117,12 +1046,15 @@ class Vasprun(MSONable):
 
     def update_potcar_spec(self, path):
         """
-        :param path: Path to search for POTCARs
-        :return: Potcar spec from path.
+        Args:
+            path: Path to search for POTCARs
+
+        Returns:
+            Potcar spec from path.
         """
         if potcar := self.get_potcars(path):
             self.potcar_spec = [
-                {"titel": sym, "hash": ps.get_potcar_hash()}
+                {"titel": sym, "hash": ps.md5_header_hash, "summary_stats": ps._summary_stats}
                 for sym in self.potcar_symbols
                 for ps in potcar
                 if ps.symbol == sym.split()[1]
@@ -1156,25 +1088,25 @@ class Vasprun(MSONable):
 
     def as_dict(self):
         """JSON-serializable dict representation."""
-        d = {
+        dct = {
             "vasp_version": self.vasp_version,
             "has_vasp_completed": self.converged,
             "nsites": len(self.final_structure),
         }
         comp = self.final_structure.composition
-        d["unit_cell_formula"] = comp.as_dict()
-        d["reduced_cell_formula"] = Composition(comp.reduced_formula).as_dict()
-        d["pretty_formula"] = comp.reduced_formula
+        dct["unit_cell_formula"] = comp.as_dict()
+        dct["reduced_cell_formula"] = Composition(comp.reduced_formula).as_dict()
+        dct["pretty_formula"] = comp.reduced_formula
         symbols = [s.split()[1] for s in self.potcar_symbols]
         symbols = [re.split(r"_", s)[0] for s in symbols]
-        d["is_hubbard"] = self.is_hubbard
-        d["hubbards"] = self.hubbards
+        dct["is_hubbard"] = self.is_hubbard
+        dct["hubbards"] = self.hubbards
 
         unique_symbols = sorted(set(self.atomic_symbols))
-        d["elements"] = unique_symbols
-        d["nelements"] = len(unique_symbols)
+        dct["elements"] = unique_symbols
+        dct["nelements"] = len(unique_symbols)
 
-        d["run_type"] = self.run_type
+        dct["run_type"] = self.run_type
 
         vin = {
             "incar": dict(self.incar.items()),
@@ -1195,15 +1127,15 @@ class Vasprun(MSONable):
         vin["potcar_type"] = [s.split(" ")[0] for s in self.potcar_symbols]
         vin["parameters"] = dict(self.parameters.items())
         vin["lattice_rec"] = self.final_structure.lattice.reciprocal_lattice.as_dict()
-        d["input"] = vin
+        dct["input"] = vin
 
-        nsites = len(self.final_structure)
+        n_sites = len(self.final_structure)
 
         try:
             vout = {
                 "ionic_steps": self.ionic_steps,
                 "final_energy": self.final_energy,
-                "final_energy_per_atom": self.final_energy / nsites,
+                "final_energy_per_atom": self.final_energy / n_sites,
                 "crystal": self.final_structure.as_dict(),
                 "efermi": self.efermi,
             }
@@ -1233,8 +1165,8 @@ class Vasprun(MSONable):
         vout["epsilon_static"] = self.epsilon_static
         vout["epsilon_static_wolfe"] = self.epsilon_static_wolfe
         vout["epsilon_ionic"] = self.epsilon_ionic
-        d["output"] = vout
-        return jsanitize(d, strict=True)
+        dct["output"] = vout
+        return jsanitize(dct, strict=True)
 
     def _parse_params(self, elem):
         params = {}
@@ -1293,22 +1225,22 @@ class Vasprun(MSONable):
         if elem.find("generation"):
             e = elem.find("generation")
         k = Kpoints("Kpoints from vasprun.xml")
-        k.style = Kpoints.supported_modes.from_string(e.attrib["param"] if "param" in e.attrib else "Reciprocal")
+        k.style = Kpoints.supported_modes.from_str(e.attrib.get("param", "Reciprocal"))
         for v in e.findall("v"):
             name = v.attrib.get("name")
-            toks = v.text.split()
+            tokens = v.text.split()
             if name == "divisions":
-                k.kpts = [[int(i) for i in toks]]
+                k.kpts = [[int(i) for i in tokens]]
             elif name == "usershift":
-                k.kpts_shift = [float(i) for i in toks]
+                k.kpts_shift = [float(i) for i in tokens]
             elif name in {"genvec1", "genvec2", "genvec3", "shift"}:
-                setattr(k, name, [float(i) for i in toks])
+                setattr(k, name, [float(i) for i in tokens])
         for va in elem.findall("varray"):
             name = va.attrib["name"]
             if name == "kpointlist":
-                actual_kpoints = _parse_varray(va)
+                actual_kpoints = _parse_vasp_array(va)
             elif name == "weights":
-                weights = [i[0] for i in _parse_varray(va)]
+                weights = [i[0] for i in _parse_vasp_array(va)]
         elem.clear()
         if k.style == Kpoints.supported_modes.Reciprocal:
             k = Kpoints(
@@ -1321,12 +1253,12 @@ class Vasprun(MSONable):
         return k, actual_kpoints, weights
 
     def _parse_structure(self, elem):
-        latt = _parse_varray(elem.find("crystal").find("varray"))
-        pos = _parse_varray(elem.find("varray"))
+        latt = _parse_vasp_array(elem.find("crystal").find("varray"))
+        pos = _parse_vasp_array(elem.find("varray"))
         struct = Structure(latt, self.atomic_symbols, pos)
         sdyn = elem.find("varray/[@name='selective']")
         if sdyn:
-            struct.add_site_property("selective_dynamics", _parse_varray(sdyn))
+            struct.add_site_property("selective_dynamics", _parse_vasp_array(sdyn))
         return struct
 
     @staticmethod
@@ -1346,9 +1278,9 @@ class Vasprun(MSONable):
     def _parse_optical_transition(elem):
         for va in elem.findall("varray"):
             if va.attrib.get("name") == "opticaltransitions":
-                # opticaltransitions array contains oscillator strength and probability of transition
-                oscillator_strength = np.array(_parse_varray(va))[0:]
-                probability_transition = np.array(_parse_varray(va))[0:, 1]
+                # optical transitions array contains oscillator strength and probability of transition
+                oscillator_strength = np.array(_parse_vasp_array(va))[0:]
+                probability_transition = np.array(_parse_vasp_array(va))[0:, 1]
         return oscillator_strength, probability_transition
 
     def _parse_chemical_shielding_calculation(self, elem):
@@ -1359,7 +1291,7 @@ class Vasprun(MSONable):
         except AttributeError:  # not all calculations have a structure
             struct = None
         for va in elem.findall("varray"):
-            istep[va.attrib["name"]] = _parse_varray(va)
+            istep[va.attrib["name"]] = _parse_vasp_array(va)
         istep["structure"] = struct
         istep["electronic_steps"] = []
         calculation.append(istep)
@@ -1383,7 +1315,7 @@ class Vasprun(MSONable):
 
     def _parse_calculation(self, elem):
         try:
-            istep = {i.attrib["name"]: float(i.text) for i in elem.find("energy").findall("i")}
+            istep = {i.attrib["name"]: _vasprun_float(i.text) for i in elem.find("energy").findall("i")}
         except AttributeError:  # not all calculations have an energy
             istep = {}
         esteps = []
@@ -1398,7 +1330,7 @@ class Vasprun(MSONable):
         except AttributeError:  # not all calculations have a structure
             struct = None
         for va in elem.findall("varray"):
-            istep[va.attrib["name"]] = _parse_varray(va)
+            istep[va.attrib["name"]] = _parse_vasp_array(va)
         istep["electronic_steps"] = esteps
         istep["structure"] = struct
         elem.clear()
@@ -1412,7 +1344,7 @@ class Vasprun(MSONable):
         idensities = {}
 
         for s in elem.find("total").find("array").find("set").findall("set"):
-            data = np.array(_parse_varray(s))
+            data = np.array(_parse_vasp_array(s))
             energies = data[:, 0]
             spin = Spin.up if s.attrib["comment"] == "spin 1" else Spin.down
             tdensities[spin] = data[:, 1]
@@ -1429,8 +1361,8 @@ class Vasprun(MSONable):
 
                 for ss in s.findall("set"):
                     spin = Spin.up if ss.attrib["comment"] == "spin 1" else Spin.down
-                    data = np.array(_parse_varray(ss))
-                    nrow, ncol = data.shape
+                    data = np.array(_parse_vasp_array(ss))
+                    _nrow, ncol = data.shape
                     for j in range(1, ncol):
                         orb = Orbital(j - 1) if lm else OrbitalType(j - 1)
                         pdos[orb][spin] = data[:, j]
@@ -1448,7 +1380,7 @@ class Vasprun(MSONable):
         for s in elem.find("array").find("set").findall("set"):
             spin = Spin.up if s.attrib["comment"] == "spin 1" else Spin.down
             for ss in s.findall("set"):
-                eigenvalues[spin].append(_parse_varray(ss))
+                eigenvalues[spin].append(_parse_vasp_array(ss))
         eigenvalues = {spin: np.array(v) for spin, v in eigenvalues.items()}
         elem.clear()
         return eigenvalues
@@ -1464,14 +1396,14 @@ class Vasprun(MSONable):
             for ss in s.findall("set"):
                 dk = []
                 for sss in ss.findall("set"):
-                    db = _parse_varray(sss)
+                    db = _parse_vasp_array(sss)
                     dk.append(db)
                 proj_eigen[spin].append(dk)
         proj_eigen = {spin: np.array(v) for spin, v in proj_eigen.items()}
 
         if len(proj_eigen) > 2:
             # non-collinear magentism (also spin-orbit coupling) enabled, last three
-            # "spin channels" are the projected magnetisation of the orbitals in the
+            # "spin channels" are the projected magnetization of the orbitals in the
             # x, y, and z Cartesian coordinates
             proj_mag = np.stack([proj_eigen.pop(i) for i in range(2, 5)], axis=-1)
             proj_eigen = {Spin.up: proj_eigen[1]}
@@ -1527,7 +1459,7 @@ class BSVasprun(Vasprun):
                 where no hashes will be determined and the potcar_spec dictionaries
                 will read {"symbol": ElSymbol, "hash": None}. By Default, looks in
                 the same directory as the vasprun.xml, with same extensions as
-                 Vasprun.xml. If a string is provided, looks at that filepath.
+                Vasprun.xml. If a string is provided, looks at that filepath.
             occu_tol: Sets the minimum tol for the determination of the
                 vbm and cbm. Usually the default of 1e-8 works well enough,
                 but there may be pathological cases.
@@ -1561,17 +1493,16 @@ class BSVasprun(Vasprun):
                         self.parameters = self._parse_params(elem)
                     elif tag == "atominfo":
                         self.atomic_symbols, self.potcar_symbols = self._parse_atominfo(elem)
-                        self.potcar_spec = [{"titel": p, "hash": None} for p in self.potcar_symbols]
+                        self.potcar_spec = [
+                            {"titel": p, "hash": None, "summary_stats": {}} for p in self.potcar_symbols
+                        ]
                         parsed_header = True
                 elif tag == "i" and elem.attrib.get("name") == "efermi":
                     self.efermi = float(elem.text)
                 elif tag == "eigenvalues":
                     self.eigenvalues = self._parse_eigen(elem)
                 elif parse_projected_eigen and tag == "projected":
-                    (
-                        self.projected_eigenvalues,
-                        self.projected_magnetisation,
-                    ) = self._parse_projected_eigen(elem)
+                    self.projected_eigenvalues, self.projected_magnetisation = self._parse_projected_eigen(elem)
                 elif tag == "structure" and elem.attrib.get("name") == "finalpos":
                     self.final_structure = self._parse_structure(elem)
         self.vasp_version = self.generator["version"]
@@ -1580,23 +1511,23 @@ class BSVasprun(Vasprun):
 
     def as_dict(self):
         """JSON-serializable dict representation."""
-        d = {
+        dct = {
             "vasp_version": self.vasp_version,
             "has_vasp_completed": True,
             "nsites": len(self.final_structure),
         }
         comp = self.final_structure.composition
-        d["unit_cell_formula"] = comp.as_dict()
-        d["reduced_cell_formula"] = Composition(comp.reduced_formula).as_dict()
-        d["pretty_formula"] = comp.reduced_formula
-        d["is_hubbard"] = self.is_hubbard
-        d["hubbards"] = self.hubbards
+        dct["unit_cell_formula"] = comp.as_dict()
+        dct["reduced_cell_formula"] = Composition(comp.reduced_formula).as_dict()
+        dct["pretty_formula"] = comp.reduced_formula
+        dct["is_hubbard"] = self.is_hubbard
+        dct["hubbards"] = self.hubbards
 
         unique_symbols = sorted(set(self.atomic_symbols))
-        d["elements"] = unique_symbols
-        d["nelements"] = len(unique_symbols)
+        dct["elements"] = unique_symbols
+        dct["nelements"] = len(unique_symbols)
 
-        d["run_type"] = self.run_type
+        dct["run_type"] = self.run_type
 
         vin = {
             "incar": dict(self.incar),
@@ -1616,7 +1547,7 @@ class BSVasprun(Vasprun):
         vin["potcar_type"] = [s.split(" ")[0] for s in self.potcar_symbols]
         vin["parameters"] = dict(self.parameters)
         vin["lattice_rec"] = self.final_structure.lattice.reciprocal_lattice.as_dict()
-        d["input"] = vin
+        dct["input"] = vin
 
         vout = {"crystal": self.final_structure.as_dict(), "efermi": self.efermi}
 
@@ -1637,8 +1568,8 @@ class BSVasprun(Vasprun):
                             peigen[kpoint_index][str(spin)] = vv
                 vout["projected_eigenvalues"] = peigen
 
-        d["output"] = vout
-        return jsanitize(d, strict=True)
+        dct["output"] = vout
+        return jsanitize(dct, strict=True)
 
 
 class Outcar:
@@ -1652,138 +1583,46 @@ class Outcar:
     Creating the OUTCAR class with a filename reads "regular parameters" that
     are always present.
 
-    .. attribute:: magnetization
-
-        Magnetization on each ion as a tuple of dict, e.g.,
-        ({"d": 0.0, "p": 0.003, "s": 0.002, "tot": 0.005}, ... )
-        Note that this data is not always present. LORBIT must be set to some
-        other value than the default.
-
-    .. attribute:: chemical_shielding
-
-        chemical shielding on each ion as a dictionary with core and valence contributions
-
-    .. attribute:: unsym_cs_tensor
-
-        Unsymmetrized chemical shielding tensor matrixes on each ion as a list.
-        e.g.,
-        [[[sigma11, sigma12, sigma13],
-          [sigma21, sigma22, sigma23],
-          [sigma31, sigma32, sigma33]],
-          ...
-         [[sigma11, sigma12, sigma13],
-          [sigma21, sigma22, sigma23],
-          [sigma31, sigma32, sigma33]]]
-
-    .. attribute:: cs_g0_contribution
-
-        G=0 contribution to chemical shielding. 2D rank 3 matrix
-
-    .. attribute:: cs_core_contribution
-
-        Core contribution to chemical shielding. dict. e.g.,
-        {'Mg': -412.8, 'C': -200.5, 'O': -271.1}
-
-    .. attribute:: efg
-
-        Electric Field Gradient (EFG) tensor on each ion as a tuple of dict, e.g.,
-        ({"cq": 0.1, "eta", 0.2, "nuclear_quadrupole_moment": 0.3},
-         {"cq": 0.7, "eta", 0.8, "nuclear_quadrupole_moment": 0.9},
-         ...)
-
-    .. attribute:: charge
-
-        Charge on each ion as a tuple of dict, e.g.,
-        ({"p": 0.154, "s": 0.078, "d": 0.0, "tot": 0.232}, ...)
-        Note that this data is not always present. LORBIT must be set to some
-        other value than the default.
-
-    .. attribute:: is_stopped
-
-        True if OUTCAR is from a stopped run (using STOPCAR, see VASP Manual).
-
-    .. attribute:: run_stats
-
-        Various useful run stats as a dict including "System time (sec)",
-        "Total CPU time used (sec)", "Elapsed time (sec)",
-        "Maximum memory used (kb)", "Average memory used (kb)",
-        "User time (sec)", "cores"
-
-    .. attribute:: elastic_tensor
-
-        Total elastic moduli (Kbar) is given in a 6x6 array matrix.
-
-    .. attribute:: drift
-
-        Total drift for each step in eV/Atom
-
-    .. attribute:: ngf
-
-        Dimensions for the Augementation grid
-
-    .. attribute: sampling_radii
-
-        Size of the sampling radii in VASP for the test charges for
-        the electrostatic potential at each atom. Total array size is the number
-        of elements present in the calculation
-
-    .. attribute: electrostatic_potential
-
-        Average electrostatic potential at each atomic position in order
-        of the atoms in POSCAR.
-
-    ..attribute: final_energy_contribs
-
-        Individual contributions to the total final energy as a dictionary.
-        Include contirbutions from keys, e.g.:
-        {'DENC': -505778.5184347, 'EATOM': 15561.06492564, 'EBANDS': -804.53201231,
-        'EENTRO': -0.08932659, 'EXHF': 0.0, 'Ediel_sol': 0.0,
-        'PAW double counting': 664.6726974100002, 'PSCENC': 742.48691646,
-        'TEWEN': 489742.86847338, 'XCENC': -169.64189814}
-
-    .. attribute:: efermi
-
-        Fermi energy
-
-    .. attribute:: filename
-
-        Filename
-
-     .. attribute:: final_energy
-
-        Final energy after extrapolation of sigma back to 0, i.e. energy(sigma->0).
-
-    .. attribute:: final_energy_wo_entrp
-
-        Final energy before extrapolation of sigma, i.e. energy without entropy.
-
-    .. attribute:: final_fr_energy
-
-        Final "free energy", i.e. free energy TOTEN
-
-    .. attribute:: has_onsite_density_matrices
-
-        Boolean for if onsite density matrices have been set
-
-    .. attribute:: lcalcpol
-
-        If LCALCPOL has been set
-
-    .. attribute:: lepsilon
-
-        If LEPSILON has been set
-
-    .. attribute:: nelect
-
-        Returns the number of electrons in the calculation
-
-    .. attribute:: spin
-
-        If spin-polarization was enabled via ISPIN
-
-    .. attribute:: total_mag
-
-        Total magnetization (in terms of the number of unpaired electrons)
+    Attributes:
+        magnetization (tuple): Magnetization on each ion as a tuple of dict, e.g.,
+            ({"d": 0.0, "p": 0.003, "s": 0.002, "tot": 0.005}, ... )
+        chemical_shielding (dict): Chemical shielding on each ion as a dictionary with core and valence contributions.
+        unsym_cs_tensor (list): Unsymmetrized chemical shielding tensor matrixes on each ion as a list.
+            e.g., [[[sigma11, sigma12, sigma13], [sigma21, sigma22, sigma23], [sigma31, sigma32, sigma33]], ...]
+        cs_g0_contribution (numpy.ndarray): G=0 contribution to chemical shielding. 2D rank 3 matrix.
+        cs_core_contribution (dict): Core contribution to chemical shielding. dict. e.g.,
+            {'Mg': -412.8, 'C': -200.5, 'O': -271.1}
+        efg (tuple): Electric Field Gradient (EFG) tensor on each ion as a tuple of dict, e.g.,
+            ({"cq": 0.1, "eta", 0.2, "nuclear_quadrupole_moment": 0.3}, {"cq": 0.7, "eta", 0.8,
+            "nuclear_quadrupole_moment": 0.9}, ...)
+        charge (tuple): Charge on each ion as a tuple of dict, e.g.,
+            ({"p": 0.154, "s": 0.078, "d": 0.0, "tot": 0.232}, ...)
+        is_stopped (bool): True if OUTCAR is from a stopped run (using STOPCAR, see VASP Manual).
+        run_stats (dict): Various useful run stats as a dict including "System time (sec)", "Total CPU time used (sec)",
+            "Elapsed time (sec)", "Maximum memory used (kb)", "Average memory used (kb)", "User time (sec)", "cores".
+        elastic_tensor (numpy.ndarray): Total elastic moduli (Kbar) is given in a 6x6 array matrix.
+        drift (numpy.ndarray): Total drift for each step in eV/Atom.
+        ngf (tuple): Dimensions for the Augmentation grid.
+        sampling_radii (numpy.ndarray): Size of the sampling radii in VASP for the test charges for the electrostatic
+            potential at each atom. Total array size is the number of elements present in the calculation.
+        electrostatic_potential (numpy.ndarray): Average electrostatic potential at each atomic position in order of
+            the atoms in POSCAR.
+        final_energy_contribs (dict): Individual contributions to the total final energy as a dictionary.
+            Include contributions from keys, e.g.:
+            {'DENC': -505778.5184347, 'EATOM': 15561.06492564, 'EBANDS': -804.53201231, 'EENTRO': -0.08932659,
+            'EXHF': 0.0, 'Ediel_sol': 0.0, 'PAW double counting': 664.6726974100002, 'PSCENC': 742.48691646,
+            'TEWEN': 489742.86847338, 'XCENC': -169.64189814}
+        efermi (float): Fermi energy.
+        filename (str): Filename.
+        final_energy (float): Final energy after extrapolation of sigma back to 0, i.e. energy(sigma->0).
+        final_energy_wo_entrp (float): Final energy before extrapolation of sigma, i.e. energy without entropy.
+        final_fr_energy (float): Final "free energy", i.e. free energy TOTEN.
+        has_onsite_density_matrices (bool): Boolean for if onsite density matrices have been set.
+        lcalcpol (bool): If LCALCPOL has been set.
+        lepsilon (bool): If LEPSILON has been set.
+        nelect (float): Returns the number of electrons in the calculation.
+        spin (bool): If spin-polarization was enabled via ISPIN.
+        total_mag (float): Total magnetization (in terms of the number of unpaired electrons).
 
     One can then call a specific reader depending on the type of run being
     performed. These are currently: read_igpar(), read_lepsilon() and
@@ -1889,16 +1728,16 @@ class Outcar:
                 else:
                     m = re.match(r"\s*(\d+)\s+(([\d\.\-]+)\s+)+", clean)
                     if m:
-                        toks = [float(i) for i in re.findall(r"[\d\.\-]+", clean)]
-                        toks.pop(0)
+                        tokens = [float(i) for i in re.findall(r"[\d\.\-]+", clean)]
+                        tokens.pop(0)
                         if read_charge:
-                            charge.append(dict(zip(header, toks)))
+                            charge.append(dict(zip(header, tokens)))
                         elif read_mag_x:
-                            mag_x.append(dict(zip(header, toks)))
+                            mag_x.append(dict(zip(header, tokens)))
                         elif read_mag_y:
-                            mag_y.append(dict(zip(header, toks)))
+                            mag_y.append(dict(zip(header, tokens)))
                         elif read_mag_z:
-                            mag_z.append(dict(zip(header, toks)))
+                            mag_z.append(dict(zip(header, tokens)))
                     elif clean.startswith("tot"):
                         read_charge = False
                         read_mag_x = False
@@ -2234,10 +2073,12 @@ class Outcar:
         Method to parse lines with values in scientific notation and potentially
         without spaces in between the values. This assumes that the scientific
         notation always lists two digits for the exponent, e.g. 3.535E-02
+
         Args:
             line: line to parse.
 
-        Returns: an array of numbers if found, or empty array if not
+        Returns:
+            list[float]: numbers if found, empty ist if not
         """
         m = re.findall(r"[\.\-\d]+E[\+\-]\d{2}", line)
         if m:
@@ -2279,18 +2120,18 @@ class Outcar:
                 elif read_plasma and Outcar._parse_sci_notation(line):
                     plasma_frequencies[read_plasma].append(Outcar._parse_sci_notation(line))
                 elif read_dielectric:
-                    toks = None
+                    tokens = None
                     if re.match(row_pattern, line.strip()):
-                        toks = line.strip().split()
+                        tokens = line.strip().split()
                     elif Outcar._parse_sci_notation(line.strip()):
-                        toks = Outcar._parse_sci_notation(line.strip())
+                        tokens = Outcar._parse_sci_notation(line.strip())
                     elif re.match(r"\s*-+\s*", line):
                         count += 1
 
-                    if toks:
+                    if tokens:
                         if component == "IMAGINARY":
-                            energies.append(float(toks[0]))
-                        xx, yy, zz, xy, yz, xz = (float(t) for t in toks[1:])
+                            energies.append(float(tokens[0]))
+                        xx, yy, zz, xy, yz, xz = (float(t) for t in tokens[1:])
                         matrix = [[xx, xy, xz], [xy, yy, yz], [xz, yz, zz]]
                         data[component].append(matrix)
 
@@ -2332,13 +2173,10 @@ class Outcar:
         cs_valence_and_core = self.read_table_pattern(
             h2, row_pattern, footer_pattern, postprocess=float, last_one_only=True
         )
-        all_cs = {}
-        for name, cs_table in [
-            ["valence_only", cs_valence_only],
-            ["valence_and_core", cs_valence_and_core],
-        ]:
-            all_cs[name] = cs_table
-        self.data["chemical_shielding"] = all_cs
+        self.data["chemical_shielding"] = {
+            "valence_only": cs_valence_only,
+            "valence_and_core": cs_valence_and_core,
+        }
 
     def read_cs_g0_contribution(self):
         """
@@ -2369,7 +2207,7 @@ class Outcar:
         Parse the core contribution of NMR chemical shielding.
 
         Returns:
-        G0 contribution matrix as list of list.
+            list[list]: G0 contribution matrix.
         """
         header_pattern = r"^\s+Core NMR properties\s*$\n\n^\s+typ\s+El\s+Core shift \(ppm\)\s*$\n^\s+-{20,}$\n"
         row_pattern = r"\d+\s+(?P<element>[A-Z][a-z]?\w?)\s+(?P<shift>[-]?\d+\.\d+)"
@@ -2537,8 +2375,9 @@ class Outcar:
         Reads the dipol qudropol corrections into the
         Outcar.data["dipol_quadrupol_correction"].
 
-        :param reverse: Whether to start from end of OUTCAR.
-        :param terminate_on_match: Whether to terminate once match is found.
+        Args:
+            reverse (bool): Whether to start from end of OUTCAR. Defaults to True.
+            terminate_on_match (bool): Whether to terminate once match is found. Defaults to True.
         """
         patterns = {"dipol_quadrupol_correction": r"dipol\+quadrupol energy correction\s+([\d\-\.]+)"}
         self.read_pattern(
@@ -3155,7 +2994,7 @@ class Outcar:
 
     def read_pseudo_zval(self):
         """Create pseudopotential ZVAL dictionary."""
-        # pylint: disable=E1101
+
         try:
 
             def atom_symbols(results, match):
@@ -3169,8 +3008,7 @@ class Outcar:
                 results.zvals = map(float, re.findall(r"-?\d+\.\d*", zvals))
 
             search = []
-            search.append([r"(?<=VRHFIN =)(.*)(?=:)", None, atom_symbols])
-            search.append([r"^\s+ZVAL.*=(.*)", None, zvals])
+            search.extend((["(?<=VRHFIN =)(.*)(?=:)", None, atom_symbols], ["^\\s+ZVAL.*=(.*)", None, zvals]))
 
             micro_pyawk(self.filename, search, self)
 
@@ -3265,8 +3103,8 @@ class Outcar:
         return aps
 
     def as_dict(self):
-        """:return: MSONable dict."""
-        d = {
+        """MSONable dict."""
+        dct = {
             "@module": type(self).__module__,
             "@class": type(self).__name__,
             "efermi": self.efermi,
@@ -3283,7 +3121,7 @@ class Outcar:
         }
 
         if self.lepsilon:
-            d.update(
+            dct.update(
                 {
                     "piezo_tensor": self.piezo_tensor,
                     "dielectric_tensor": self.dielectric_tensor,
@@ -3292,42 +3130,36 @@ class Outcar:
             )
 
         if self.dfpt:
-            d.update({"internal_strain_tensor": self.internal_strain_tensor})
+            dct["internal_strain_tensor"] = self.internal_strain_tensor
 
         if self.dfpt and self.lepsilon:
-            d.update(
-                {
-                    "piezo_ionic_tensor": self.piezo_ionic_tensor,
-                    "dielectric_ionic_tensor": self.dielectric_ionic_tensor,
-                }
+            dct.update(
+                piezo_ionic_tensor=self.piezo_ionic_tensor,
+                dielectric_ionic_tensor=self.dielectric_ionic_tensor,
             )
 
         if self.lcalcpol:
-            d.update({"p_elec": self.p_elec, "p_ion": self.p_ion})
+            dct.update({"p_elec": self.p_elec, "p_ion": self.p_ion})
             if self.spin and not self.noncollinear:
-                d.update({"p_sp1": self.p_sp1, "p_sp2": self.p_sp2})
-            d.update({"zval_dict": self.zval_dict})
+                dct.update({"p_sp1": self.p_sp1, "p_sp2": self.p_sp2})
+            dct["zval_dict"] = self.zval_dict
 
         if self.nmr_cs:
-            d.update(
-                {
-                    "nmr_cs": {
-                        "valence and core": self.data["chemical_shielding"]["valence_and_core"],
-                        "valence_only": self.data["chemical_shielding"]["valence_only"],
-                        "g0": self.data["cs_g0_contribution"],
-                        "core": self.data["cs_core_contribution"],
-                        "raw": self.data["unsym_cs_tensor"],
-                    }
+            dct.update(
+                nmr_cs={
+                    "valence and core": self.data["chemical_shielding"]["valence_and_core"],
+                    "valence_only": self.data["chemical_shielding"]["valence_only"],
+                    "g0": self.data["cs_g0_contribution"],
+                    "core": self.data["cs_core_contribution"],
+                    "raw": self.data["unsym_cs_tensor"],
                 }
             )
 
         if self.nmr_efg:
-            d.update(
-                {
-                    "nmr_efg": {
-                        "raw": self.data["unsym_efg_tensor"],
-                        "parameters": self.data["efg"],
-                    }
+            dct.update(
+                nmr_efg={
+                    "raw": self.data["unsym_efg_tensor"],
+                    "parameters": self.data["efg"],
                 }
             )
 
@@ -3335,9 +3167,9 @@ class Outcar:
             # cast Spin to str for consistency with electronic_structure
             # TODO: improve handling of Enum (de)serialization in monty
             onsite_density_matrices = [{str(k): v for k, v in d.items()} for d in self.data["onsite_density_matrices"]]
-            d.update({"onsite_density_matrices": onsite_density_matrices})
+            dct["onsite_density_matrices"] = onsite_density_matrices
 
-        return d
+        return dct
 
     def read_fermi_contact_shift(self):
         """
@@ -3428,7 +3260,7 @@ class VolumetricData(BaseVolumetricData):
         Returns:
             (poscar, data)
         """
-        # pylint: disable=E1136,E1126
+
         poscar_read = False
         poscar_string = []
         dataset = []
@@ -3462,7 +3294,7 @@ class VolumetricData(BaseVolumetricData):
                     if line != "" or len(poscar_string) == 0:
                         poscar_string.append(line)
                     elif line == "":
-                        poscar = Poscar.from_string("\n".join(poscar_string))
+                        poscar = Poscar.from_str("\n".join(poscar_string))
                         poscar_read = True
                 elif not dim:
                     dim = [int(i) for i in line.split()]
@@ -3522,7 +3354,7 @@ class VolumetricData(BaseVolumetricData):
                 data_aug = {"total": all_dataset_aug.get(0)}
             return poscar, data, data_aug
 
-    def write_file(self, file_name, vasp4_compatible=False):
+    def write_file(self, file_name: str | Path, vasp4_compatible: bool = False) -> None:
         """
         Write the VolumetricData object to a vasp compatible file.
 
@@ -3531,56 +3363,62 @@ class VolumetricData(BaseVolumetricData):
             vasp4_compatible (bool): True if the format is vasp4 compatible
         """
 
-        def _print_fortran_float(f):
-            """
-            Fortran codes print floats with a leading zero in scientific
+        def _print_fortran_float(flt):
+            """Fortran codes print floats with a leading zero in scientific
             notation. When writing CHGCAR files, we adopt this convention
             to ensure written CHGCAR files are byte-to-byte identical to
             their input files as far as possible.
-            :param f: float
-            :return: str.
+
+            Args:
+                flt (float): Float to print.
+
+            Returns:
+                str: String representation of float in Fortran format.
             """
-            s = f"{f:.10E}"
-            if f >= 0:
+            s = f"{flt:.10E}"
+            if flt >= 0:
                 return f"0.{s[0]}{s[2:12]}E{int(s[13:]) + 1:+03}"
             return f"-.{s[1]}{s[3:13]}E{int(s[14:]) + 1:+03}"
 
-        with zopen(file_name, "wt") as f:
-            p = Poscar(self.structure)
+        with zopen(file_name, "wt") as file:
+            poscar = Poscar(self.structure)
 
             # use original name if it's been set (e.g. from Chgcar)
-            comment = getattr(self, "name", p.comment)
+            comment = getattr(self, "name", poscar.comment)
 
             lines = comment + "\n"
             lines += "   1.00000000000000\n"
             for vec in self.structure.lattice.matrix:
                 lines += f" {vec[0]:12.6f}{vec[1]:12.6f}{vec[2]:12.6f}\n"
             if not vasp4_compatible:
-                lines += "".join(f"{s:5}" for s in p.site_symbols) + "\n"
-            lines += "".join(f"{x:6}" for x in p.natoms) + "\n"
+                lines += "".join(f"{s:5}" for s in poscar.site_symbols) + "\n"
+            lines += "".join(f"{x:6}" for x in poscar.natoms) + "\n"
             lines += "Direct\n"
             for site in self.structure:
-                a, b, c = site.frac_coords
-                lines += f"{a:10.6f}{b:10.6f}{c:10.6f}\n"
+                dim, b, c = site.frac_coords
+                lines += f"{dim:10.6f}{b:10.6f}{c:10.6f}\n"
             lines += " \n"
-            f.write(lines)
-            a = self.dim
+            file.write(lines)
+            dim = self.dim
 
             def write_spin(data_type):
                 lines = []
                 count = 0
-                f.write(f"   {a[0]}   {a[1]}   {a[2]}\n")
-                for k, j, i in itertools.product(list(range(a[2])), list(range(a[1])), list(range(a[0]))):
+                file.write(f"   {dim[0]}   {dim[1]}   {dim[2]}\n")
+                for k, j, i in itertools.product(list(range(dim[2])), list(range(dim[1])), list(range(dim[0]))):
                     lines.append(_print_fortran_float(self.data[data_type][i, j, k]))
                     count += 1
                     if count % 5 == 0:
-                        f.write(" " + "".join(lines) + "\n")
+                        file.write(" " + "".join(lines) + "\n")
                         lines = []
                     else:
                         lines.append(" ")
                 if count % 5 != 0:
-                    f.write(" " + "".join(lines) + " \n")
-                f.write("".join(self.data_aug.get(data_type, [])))
+                    file.write(" " + "".join(lines) + " \n")
+
+                data = self.data_aug.get(data_type, [])
+                if isinstance(data, Iterable):
+                    file.write("".join(data))
 
             write_spin("total")
             if self.is_spin_polarized and self.is_soc:
@@ -3605,13 +3443,15 @@ class Locpot(VolumetricData):
 
     @classmethod
     def from_file(cls, filename, **kwargs):
-        """
-        Reads a LOCPOT file.
+        """Read a LOCPOT file.
 
-        :param filename: Filename
-        :return: Locpot
+        Args:
+            filename (str): Path to LOCPOT file.
+
+        Returns:
+            Locpot
         """
-        (poscar, data, data_aug) = VolumetricData.parse_file(filename)
+        (poscar, data, _data_aug) = VolumetricData.parse_file(filename)
         return cls(poscar, data, **kwargs)
 
 
@@ -3621,37 +3461,39 @@ class Chgcar(VolumetricData):
     def __init__(self, poscar, data, data_aug=None):
         """
         Args:
-            poscar (Poscar or Structure): Object containing structure.
+            poscar (Poscar | Structure): Object containing structure.
             data: Actual data.
             data_aug: Augmentation charge data.
         """
         # allow for poscar or structure files to be passed
         if isinstance(poscar, Poscar):
-            tmp_struct = poscar.structure
+            struct = poscar.structure
             self.poscar = poscar
             self.name = poscar.comment
         elif isinstance(poscar, Structure):
-            tmp_struct = poscar
+            struct = poscar
             self.poscar = Poscar(poscar)
             self.name = None
 
-        super().__init__(tmp_struct, data, data_aug=data_aug)
+        super().__init__(struct, data, data_aug=data_aug)
         self._distance_matrix = {}
 
-    @staticmethod
-    def from_file(filename):
-        """
-        Reads a CHGCAR file.
+    @classmethod
+    def from_file(cls, filename: str):
+        """Read a CHGCAR file.
 
-        :param filename: Filename
-        :return: Chgcar
+        Args:
+            filename (str): Path to CHGCAR file.
+
+        Returns:
+            Chgcar
         """
-        (poscar, data, data_aug) = VolumetricData.parse_file(filename)
-        return Chgcar(poscar, data, data_aug=data_aug)
+        poscar, data, data_aug = VolumetricData.parse_file(filename)
+        return cls(poscar, data, data_aug=data_aug)
 
     @property
     def net_magnetization(self):
-        """:return: Net magnetization from Chgcar"""
+        """Net magnetization from Chgcar"""
         if self.is_spin_polarized:
             return np.sum(self.data["diff"])
         return None
@@ -3694,9 +3536,11 @@ class Elfcar(VolumetricData):
         Reads a ELFCAR file.
 
         :param filename: Filename
-        :return: Elfcar
+
+        Returns:
+            Elfcar
         """
-        (poscar, data, data_aug) = VolumetricData.parse_file(filename)
+        (poscar, data, _data_aug) = VolumetricData.parse_file(filename)
         return cls(poscar, data)
 
     def get_alpha(self):
@@ -3714,41 +3558,16 @@ class Procar:
     """
     Object for reading a PROCAR file.
 
-
-    .. attribute:: data
-
-        The PROCAR data of the form below. It should VASP uses 1-based indexing,
-        but all indices are converted to 0-based here.::
-
-            {
-                spin: nd.array accessed with (k-point index, band index,
-                                              ion index, orbital index)
-            }
-
-    .. attribute:: weights
-
-        The weights associated with each k-point as an nd.array of length
-        nkpoints.
-
-    ..attribute:: phase_factors
-
-        Phase factors, where present (e.g. LORBIT = 12). A dict of the form:
-        {
-            spin: complex nd.array accessed with (k-point index, band index,
-                                                  ion index, orbital index)
-        }
-
-    ..attribute:: nbands
-
-        Number of bands
-
-    ..attribute:: nkpoints
-
-        Number of k-points
-
-    ..attribute:: nions
-
-        Number of ions
+    Attributes:
+        data (dict): The PROCAR data of the form below. It should VASP uses 1-based indexing,
+            but all indices are converted to 0-based here.
+            { spin: nd.array accessed with (k-point index, band index, ion index, orbital index) }
+        weights (numpy.ndarray): The weights associated with each k-point as an nd.array of length nkpoints.
+        phase_factors (dict): Phase factors, where present (e.g. LORBIT = 12). A dict of the form:
+            { spin: complex nd.array accessed with (k-point index, band index, ion index, orbital index) }
+        nbands (int): Number of bands.
+        nkpoints (int): Number of k-points.
+        nions (int): Number of ions.
     """
 
     def __init__(self, filename):
@@ -3769,7 +3588,7 @@ class Procar:
             done = False
             spin = Spin.down
             weights = None
-            # pylint: disable=E1137
+
             for line in file_handle:
                 line = line.strip()
                 if bandexpr.match(line):
@@ -3798,14 +3617,14 @@ class Procar:
                         )
                     )
                 elif expr.match(line):
-                    toks = line.split()
-                    index = int(toks.pop(0)) - 1
-                    num_data = np.array([float(t) for t in toks[: len(headers)]])
+                    tokens = line.split()
+                    index = int(tokens.pop(0)) - 1
+                    num_data = np.array([float(t) for t in tokens[: len(headers)]])
                     if not done:
                         data[spin][current_kpoint, current_band, index, :] = num_data
-                    elif len(toks) > len(headers):
+                    elif len(tokens) > len(headers):
                         # new format of PROCAR (vasp 5.4.4)
-                        num_data = np.array([float(t) for t in toks[: 2 * len(headers)]])
+                        num_data = np.array([float(t) for t in tokens[: 2 * len(headers)]])
                         for orb in range(len(headers)):
                             phase_factors[spin][current_kpoint, current_band, index, orb] = complex(
                                 num_data[2 * orb], num_data[2 * orb + 1]
@@ -3850,7 +3669,7 @@ class Procar:
             name = structure.species[iat].symbol
             for spin, d in self.data.items():
                 for k, b in itertools.product(range(self.nkpoints), range(self.nbands)):
-                    dico[spin][b][k][name] = np.sum(d[k, b, iat, :])
+                    dico[spin][b][k][name] += np.sum(d[k, b, iat, :])
 
         return dico
 
@@ -3885,23 +3704,17 @@ class Oszicar:
     recommend that you use the Vasprun parser instead, which gives far richer
     information about a run.
 
-    .. attribute:: electronic_steps
-
-            All electronic steps as a list of list of dict. e.g.,
-            [[{"rms": 160.0, "E": 4507.24605593, "dE": 4507.2, "N": 1,
-            "deps": -17777.0, "ncg": 16576}, ...], [....]
-            where electronic_steps[index] refers the list of electronic steps
-            in one ionic_step, electronic_steps[index][subindex] refers to a
-            particular electronic step at subindex in ionic step at index. The
-            dict of properties depends on the type of VASP run, but in general,
-            "E", "dE" and "rms" should be present in almost all runs.
-
-    .. attribute:: ionic_steps:
-
-            All ionic_steps as a list of dict, e.g.,
-            [{"dE": -526.36, "E0": -526.36024, "mag": 0.0, "F": -526.36024},
-            ...]
-            This is the typical output from VASP at the end of each ionic step.
+    Attributes:
+        electronic_steps (list): All electronic steps as a list of list of dict. e.g.,
+            [[{"rms": 160.0, "E": 4507.24605593, "dE": 4507.2, "N": 1, "deps": -17777.0, "ncg": 16576}, ...], [....]
+            where electronic_steps[index] refers the list of electronic steps in one ionic_step,
+            electronic_steps[index][subindex] refers to a particular electronic step at subindex in ionic step at
+            index. The dict of properties depends on the type of VASP run, but in general, "E", "dE" and "rms" should
+            be present in almost all runs.
+        ionic_steps (list): All ionic_steps as a list of dict, e.g.,
+            [{"dE": -526.36, "E0": -526.36024, "mag": 0.0, "F": -526.36024}, ...]
+            This is the typical output from VASP at the end of each ionic step. The stored dict might be different
+            depending on the type of VASP run.
     """
 
     def __init__(self, filename):
@@ -3911,22 +3724,7 @@ class Oszicar:
         """
         electronic_steps = []
         ionic_steps = []
-        ionic_pattern = re.compile(r"(\d+)\s+F=\s*([\d\-\.E\+]+)\s+E0=\s*([\d\-\.E\+]+)\s+d\s*E\s*=\s*([\d\-\.E\+]+)$")
-        ionic_mag_pattern = re.compile(
-            r"(\d+)\s+F=\s*([\d\-\.E\+]+)\s+"
-            r"E0=\s*([\d\-\.E\+]+)\s+"
-            r"d\s*E\s*=\s*([\d\-\.E\+]+)\s+"
-            r"mag=\s*([\d\-\.E\+]+)"
-        )
-        ionic_MD_pattern = re.compile(
-            r"(\d+)\s+T=\s*([\d\-\.E\+]+)\s+"
-            r"E=\s*([\d\-\.E\+]+)\s+"
-            r"F=\s*([\d\-\.E\+]+)\s+"
-            r"E0=\s*([\d\-\.E\+]+)\s+"
-            r"EK=\s*([\d\-\.E\+]+)\s+"
-            r"SP=\s*([\d\-\.E\+]+)\s+"
-            r"SK=\s*([\d\-\.E\+]+)"
-        )
+        ionic_general_pattern = re.compile(r"(\w+)=\s*(\S+)")
         electronic_pattern = re.compile(r"\s*\w+\s*:(.*)")
 
         def smart_convert(header, num):
@@ -3940,49 +3738,21 @@ class Oszicar:
         header = []
         with zopen(filename, "rt") as fid:
             for line in fid:
-                line = line.strip()
-                m = electronic_pattern.match(line)
+                m = electronic_pattern.match(line.strip())
                 if m:
-                    toks = m.group(1).split()
-                    data = {header[i]: smart_convert(header[i], toks[i]) for i in range(len(toks))}
-                    if toks[0] == "1":
+                    tokens = m.group(1).split()
+                    data = {header[i]: smart_convert(header[i], tokens[i]) for i in range(len(tokens))}
+                    if tokens[0] == "1":
                         electronic_steps.append([data])
                     else:
                         electronic_steps[-1].append(data)
-                elif ionic_pattern.match(line.strip()):
-                    m = ionic_pattern.match(line.strip())
-                    ionic_steps.append(
-                        {
-                            "F": float(m.group(2)),
-                            "E0": float(m.group(3)),
-                            "dE": float(m.group(4)),
-                        }
-                    )
-                elif ionic_mag_pattern.match(line.strip()):
-                    m = ionic_mag_pattern.match(line.strip())
-                    ionic_steps.append(
-                        {
-                            "F": float(m.group(2)),
-                            "E0": float(m.group(3)),
-                            "dE": float(m.group(4)),
-                            "mag": float(m.group(5)),
-                        }
-                    )
-                elif ionic_MD_pattern.match(line.strip()):
-                    m = ionic_MD_pattern.match(line.strip())
-                    ionic_steps.append(
-                        {
-                            "T": float(m.group(2)),
-                            "E": float(m.group(3)),
-                            "F": float(m.group(4)),
-                            "E0": float(m.group(5)),
-                            "EK": float(m.group(6)),
-                            "SP": float(m.group(7)),
-                            "SK": float(m.group(8)),
-                        }
-                    )
-                elif re.match(r"^\s*N\s+E\s*", line):
+                elif re.match(r"^\s*N\s+E\s*", line.strip()):
                     header = line.strip().replace("d eps", "deps").split()
+                elif line.strip() != "":
+                    # remove space first and apply field agnostic extraction
+                    matches = re.findall(ionic_general_pattern, re.sub(r"d E ", "dE", line))
+                    ionic_steps.append({key: float(value) for key, value in matches})
+
         self.electronic_steps = electronic_steps
         self.ionic_steps = ionic_steps
 
@@ -4007,14 +3777,14 @@ class Oszicar:
         return self.ionic_steps[-1]["E0"]
 
     def as_dict(self):
-        """:return: MSONable dict"""
+        """MSONable dict"""
         return {
             "electronic_steps": self.electronic_steps,
             "ionic_steps": self.ionic_steps,
         }
 
 
-class VaspParserError(Exception):
+class VaspParseError(ParseError):
     """Exception class for VASP parsing."""
 
 
@@ -4037,7 +3807,7 @@ def get_band_structure_from_vasp_multiple_branches(dir_name, efermi=None, projec
         A BandStructure Object
     """
     # TODO: Add better error handling!!!
-    if os.path.exists(os.path.join(dir_name, "branch_0")):
+    if os.path.exists(f"{dir_name}/branch_0"):
         # get all branch dir names
         branch_dir_names = [os.path.abspath(d) for d in glob(f"{dir_name}/branch_*") if os.path.isdir(d)]
 
@@ -4047,7 +3817,7 @@ def get_band_structure_from_vasp_multiple_branches(dir_name, efermi=None, projec
         # populate branches with Bandstructure instances
         branches = []
         for dname in sorted_branch_dir_names:
-            xml_file = os.path.join(dname, "vasprun.xml")
+            xml_file = f"{dname}/vasprun.xml"
             if os.path.exists(xml_file):
                 run = Vasprun(xml_file, parse_projected_eigen=projections)
                 branches.append(run.get_band_structure(efermi=efermi))
@@ -4057,7 +3827,7 @@ def get_band_structure_from_vasp_multiple_branches(dir_name, efermi=None, projec
 
         return get_reconstructed_band_structure(branches, efermi)
 
-    xml_file = os.path.join(dir_name, "vasprun.xml")
+    xml_file = f"{dir_name}/vasprun.xml"
     # Better handling of Errors
     if os.path.exists(xml_file):
         return Vasprun(xml_file, parse_projected_eigen=projections).get_band_structure(
@@ -4071,12 +3841,10 @@ class Xdatcar:
     """
     Class representing an XDATCAR file. Only tested with VASP 5.x files.
 
-    .. attribute:: structures
+    Attributes:
+        structures (list): List of structures parsed from XDATCAR.
+        comment (str): Optional comment string.
 
-        List of structures parsed from XDATCAR.
-    .. attribute:: comment
-
-        Optional comment string.
     Authors: Ram Balachandran
     """
 
@@ -4099,7 +3867,6 @@ class Xdatcar:
         if ionicstep_end is not None and ionicstep_start < 1:
             raise Exception("End ionic step cannot be less than 1")
 
-        # pylint: disable=E1136
         ionicstep_cnt = 1
         with zopen(filename, "rt") as file:
             for line in file:
@@ -4109,7 +3876,7 @@ class Xdatcar:
                     title = line
                 elif title == line:
                     preamble_done = False
-                    p = Poscar.from_string("\n".join([*preamble, "Direct", *coords_str]))
+                    p = Poscar.from_str("\n".join([*preamble, "Direct", *coords_str]))
                     if ionicstep_end is None:
                         if ionicstep_cnt >= ionicstep_start:
                             structures.append(p.structure)
@@ -4134,7 +3901,7 @@ class Xdatcar:
                     else:
                         preamble.append(line)
                 elif line == "" or "Direct configuration=" in line:
-                    p = Poscar.from_string("\n".join([*preamble, "Direct", *coords_str]))
+                    p = Poscar.from_str("\n".join([*preamble, "Direct", *coords_str]))
                     if ionicstep_end is None:
                         if ionicstep_cnt >= ionicstep_start:
                             structures.append(p.structure)
@@ -4147,7 +3914,7 @@ class Xdatcar:
                     coords_str = []
                 else:
                     coords_str.append(line)
-            p = Poscar.from_string("\n".join([*preamble, "Direct", *coords_str]))
+            p = Poscar.from_str("\n".join([*preamble, "Direct", *coords_str]))
             if ionicstep_end is None:
                 if ionicstep_cnt >= ionicstep_start:
                     structures.append(p.structure)
@@ -4182,9 +3949,8 @@ class Xdatcar:
             filename (str): Filename of XDATCAR file to be concatenated.
             ionicstep_start (int): Starting number of ionic step.
             ionicstep_end (int): Ending number of ionic step.
-        TODO(rambalachandran):
-           Requires a check to ensure if the new concatenating file has the
-           same lattice structure and atoms as the Xdatcar class.
+        TODO (rambalachandran): Requires a check to ensure if the new concatenating file
+            has the same lattice structure and atoms as the Xdatcar class.
         """
         preamble = None
         coords_str = []
@@ -4195,7 +3961,6 @@ class Xdatcar:
         if ionicstep_end is not None and ionicstep_start < 1:
             raise Exception("End ionic step cannot be less than 1")
 
-        # pylint: disable=E1136
         ionicstep_cnt = 1
         with zopen(filename, "rt") as f:
             for line in f:
@@ -4215,7 +3980,7 @@ class Xdatcar:
                     else:
                         preamble.append(line)
                 elif line == "" or "Direct configuration=" in line:
-                    p = Poscar.from_string("\n".join([*preamble, "Direct", *coords_str]))
+                    p = Poscar.from_str("\n".join([*preamble, "Direct", *coords_str]))
                     if ionicstep_end is None:
                         if ionicstep_cnt >= ionicstep_start:
                             structures.append(p.structure)
@@ -4225,7 +3990,7 @@ class Xdatcar:
                     coords_str = []
                 else:
                     coords_str.append(line)
-            p = Poscar.from_string("\n".join([*preamble, "Direct", *coords_str]))
+            p = Poscar.from_str("\n".join([*preamble, "Direct", *coords_str]))
             if ionicstep_end is None:
                 if ionicstep_cnt >= ionicstep_start:
                     structures.append(p.structure)
@@ -4233,7 +3998,11 @@ class Xdatcar:
                 structures.append(p.structure)
         self.structures = structures
 
-    def get_string(self, ionicstep_start=1, ionicstep_end=None, significant_figures=8):
+    @np.deprecate(message="Use get_str instead")
+    def get_string(self, *args, **kwargs) -> str:
+        return self.get_str(*args, **kwargs)
+
+    def get_str(self, ionicstep_start: int = 1, ionicstep_end: int | None = None, significant_figures: int = 8) -> str:
         """
         Write  Xdatcar class to a string.
 
@@ -4250,8 +4019,7 @@ class Xdatcar:
         if np.linalg.det(latt.matrix) < 0:
             latt = Lattice(-latt.matrix)
         lines = [self.comment, "1.0", str(latt)]
-        lines.append(" ".join(self.site_symbols))
-        lines.append(" ".join(str(x) for x in self.natoms))
+        lines.extend((" ".join(self.site_symbols), " ".join(str(x) for x in self.natoms)))
         format_str = f"{{:.{significant_figures}f}}"
         ionicstep_cnt = 1
         output_cnt = 1
@@ -4259,14 +4027,14 @@ class Xdatcar:
             ionicstep_cnt = cnt + 1
             if ionicstep_end is None:
                 if ionicstep_cnt >= ionicstep_start:
-                    lines.append("Direct configuration=" + " " * (7 - len(str(output_cnt))) + str(output_cnt))
+                    lines.append(f"Direct configuration={' ' * (7 - len(str(output_cnt)))}{output_cnt}")
                     for site in structure:
                         coords = site.frac_coords
                         line = " ".join(format_str.format(c) for c in coords)
                         lines.append(line)
                     output_cnt += 1
             elif ionicstep_start <= ionicstep_cnt < ionicstep_end:
-                lines.append("Direct configuration=" + " " * (7 - len(str(output_cnt))) + str(output_cnt))
+                lines.append(f"Direct configuration={' ' * (7 - len(str(output_cnt)))}{output_cnt}")
                 for site in structure:
                     coords = site.frac_coords
                     line = " ".join(format_str.format(c) for c in coords)
@@ -4276,31 +4044,30 @@ class Xdatcar:
 
     def write_file(self, filename, **kwargs):
         """
-        Write  Xdatcar class into a file.
+        Write Xdatcar class into a file.
 
         Args:
             filename (str): Filename of output XDATCAR file.
-            The supported kwargs are the same as those for the
-            Xdatcar.get_string method and are passed through directly.
+            **kwargs: Supported kwargs are the same as those for the
+                Xdatcar.get_string method and are passed through directly.
         """
         with zopen(filename, "wt") as f:
-            f.write(self.get_string(**kwargs))
+            f.write(self.get_str(**kwargs))
 
     def __str__(self):
-        return self.get_string()
+        return self.get_str()
 
 
 class Dynmat:
     """
     Object for reading a DYNMAT file.
 
-    .. attribute:: data
-
-        A nested dict containing the DYNMAT data of the form::
-        [atom <int>][disp <int>]['dispvec'] =
-            displacement vector (part of first line in dynmat block, e.g. "0.01 0 0")
-        [atom <int>][disp <int>]['dynmat'] =
-                <list> list of dynmat lines for this atom and this displacement
+    Attributes:
+        data (dict): A nested dict containing the DYNMAT data of the form:
+            [atom <int>][disp <int>]['dispvec'] =
+                displacement vector (part of first line in dynmat block, e.g. "0.01 0 0")
+            [atom <int>][disp <int>]['dynmat'] =
+                    <list> list of dynmat lines for this atom and this displacement
 
     Authors: Patrick Huck
     """
@@ -4365,34 +4132,34 @@ class Dynmat:
 
 def get_adjusted_fermi_level(efermi, cbm, band_structure):
     """
-    When running a band structure computations the fermi level needs to be
+    When running a band structure computations the Fermi level needs to be
     take from the static run that gave the charge density used for the non-self
-    consistent band structure run. Sometimes this fermi level is however a
+    consistent band structure run. Sometimes this Fermi level is however a
     little too low because of the mismatch between the uniform grid used in
     the static run and the band structure k-points (e.g., the VBM is on Gamma
     and the Gamma point is not in the uniform mesh). Here we use a procedure
-    consisting in looking for energy levels higher than the static fermi level
+    consisting in looking for energy levels higher than the static Fermi level
     (but lower than the LUMO) if any of these levels make the band structure
     appears insulating and not metallic anymore, we keep this adjusted fermi
     level. This procedure has shown to detect correctly most insulators.
 
     Args:
-        efermi (float): Fermi energy of the static run
-        cbm (float): Conduction band minimum of the static run
-        run_bandstructure: a band_structure object
+        efermi (float): The Fermi energy of the static run.
+        cbm (float): The conduction band minimum of the static run.
+        band_structure (BandStructureSymmLine): A band structure object.
 
     Returns:
-        a new adjusted fermi level
+        float: A new adjusted Fermi level.
     """
     # make a working copy of band_structure
     bs_working = BandStructureSymmLine.from_dict(band_structure.as_dict())
     if bs_working.is_metal():
-        e = efermi
-        while e < cbm:
-            e += 0.01
-            bs_working._efermi = e
+        energy = efermi
+        while energy < cbm:
+            energy += 0.01
+            bs_working._efermi = energy
             if not bs_working.is_metal():
-                return e
+                return energy
     return efermi
 
 
@@ -4421,73 +4188,33 @@ class Wavecar:
     be seen in the work of Shen et al. 2017
     (https://doi.org/10.1103/PhysRevMaterials.1.065001).
 
-    .. attribute:: filename
-
-        String of the input file (usually WAVECAR)
-
-    .. attribute:: vasp_type
-
-        String that determines VASP type the WAVECAR was generated with (either
-        'std', 'gam', or 'ncl')
-
-    .. attribute:: nk
-
-        Number of k-points from the WAVECAR
-
-    .. attribute:: nb
-
-        Number of bands per k-point
-
-    .. attribute:: encut
-
-        Energy cutoff (used to define G_{cut})
-
-    .. attribute:: efermi
-
-        Fermi energy
-
-    .. attribute:: a
-
-        Primitive lattice vectors of the cell (e.g. a_1 = self.a[0, :])
-
-    .. attribute:: b
-
-        Reciprocal lattice vectors of the cell (e.g. b_1 = self.b[0, :])
-
-    .. attribute:: vol
-
-        The volume of the unit cell in real space
-
-    .. attribute:: kpoints
-
-        The list of k-points read from the WAVECAR file
-
-    .. attribute:: band_energy
-
-        The list of band eigenenergies (and corresponding occupancies) for
-        each kpoint, where the first index corresponds to the index of the
-        k-point (e.g. self.band_energy[kp])
-
-    .. attribute:: Gpoints
-
-        The list of generated G-points for each k-point (a double list), which
-        are used with the coefficients for each k-point and band to recreate
-        the wavefunction (e.g. self.Gpoints[kp] is the list of G-points for
-        k-point kp). The G-points depend on the k-point and reciprocal lattice
-        and therefore are identical for each band at the same k-point. Each
-        G-point is represented by integer multipliers (e.g. assuming
-        Gpoints[kp][n] == [n_1, n_2, n_3], then
-        G_n = n_1*b_1 + n_2*b_2 + n_3*b_3)
-
-    .. attribute:: coeffs
-
-        The list of coefficients for each k-point and band for reconstructing
-        the wavefunction. For non-spin-polarized, the first index corresponds
-        to the kpoint and the second corresponds to the band (e.g.
-        self.coeffs[kp][b] corresponds to k-point kp and band b). For
-        spin-polarized calculations, the first index is for the spin.
-        If the calculation was non-collinear, then self.coeffs[kp][b] will have
-        two columns (one for each component of the spinor).
+    Attributes:
+        filename (str): String of the input file (usually WAVECAR).
+        vasp_type (str): String that determines VASP type the WAVECAR was generated with.
+            One of 'std', 'gam', 'ncl'.
+        nk (int): Number of k-points from the WAVECAR.
+        nb (int): Number of bands per k-point.
+        encut (float): Energy cutoff (used to define G_{cut}).
+        efermi (float): Fermi energy.
+        a (numpy.ndarray): Primitive lattice vectors of the cell (e.g. a_1 = self.a[0, :]).
+        b (numpy.ndarray): Reciprocal lattice vectors of the cell (e.g. b_1 = self.b[0, :]).
+        vol (float): The volume of the unit cell in real space.
+        kpoints (numpy.ndarray): The list of k-points read from the WAVECAR file.
+        band_energy (list): The list of band eigenenergies (and corresponding occupancies) for each kpoint,
+            where the first index corresponds to the index of the k-point (e.g. self.band_energy[kp]).
+        Gpoints (list): The list of generated G-points for each k-point (a double list), which
+            are used with the coefficients for each k-point and band to recreate
+            the wavefunction (e.g. self.Gpoints[kp] is the list of G-points for
+            k-point kp). The G-points depend on the k-point and reciprocal lattice
+            and therefore are identical for each band at the same k-point. Each
+            G-point is represented by integer multipliers (e.g. assuming
+            Gpoints[kp][n] == [n_1, n_2, n_3], then
+            G_n = n_1*b_1 + n_2*b_2 + n_3*b_3)
+        coeffs (list): The list of coefficients for each k-point and band for reconstructing the wavefunction.
+            For non-spin-polarized, the first index corresponds to the kpoint and the second corresponds to the band
+            (e.g. self.coeffs[kp][b] corresponds to k-point kp and band b). For spin-polarized calculations,
+            the first index is for the spin. If the calculation was non-collinear, then self.coeffs[kp][b] will have
+            two columns (one for each component of the spinor).
 
     Acknowledgments:
         This code is based upon the Fortran program, WaveTrans, written by
@@ -4506,10 +4233,9 @@ class Wavecar:
             filename (str): input file (default: WAVECAR)
             verbose (bool): determines whether processing information is shown
             precision (str): determines how fine the fft mesh is (normal or
-                             accurate), only the first letter matters
+                accurate), only the first letter matters
             vasp_type (str): determines the VASP type that is used, allowed
-                             values are ['std', 'gam', 'ncl']
-                             (only first letter is required)
+                values are ['std', 'gam', 'ncl'] (only first letter is required)
         """
         self.filename = filename
         valid_types = ["std", "gam", "ncl"]
@@ -4539,7 +4265,7 @@ class Wavecar:
                 # and occupations in way that does not span FORTRAN records, but
                 # reader below appears to assume that record boundaries can be ignored
                 # (see OUTWAV vs. OUTWAV_4 in vasp fileio.F)
-                raise ValueError(f"invalid {rtag=}, must be one of {valid_rtags}")
+                raise ValueError(f"Invalid {rtag=}, must be one of {valid_rtags}")
 
             # padding to end of fortran REC=1
             np.fromfile(f, dtype=np.float64, count=recl8 - 3)
@@ -4605,7 +4331,7 @@ class Wavecar:
                     if ispin == 0:
                         self.kpoints.append(kpoint)
                     else:
-                        assert np.allclose(self.kpoints[ink], kpoint)
+                        assert_allclose(self.kpoints[ink], kpoint)
 
                     if verbose:
                         print(f"kpoint {ink: 4} with {nplane: 5} plane waves at {kpoint}")
@@ -4776,15 +4502,13 @@ class Wavecar:
         preferred method of evaluation (see Wavecar.fft_mesh).
 
         Args:
-            kpoint (int): the index of the kpoint where the wavefunction
-                            will be evaluated
-            band (int): the index of the band where the wavefunction will be
-                            evaluated
+            kpoint (int): the index of the kpoint where the wavefunction will be evaluated
+            band (int): the index of the band where the wavefunction will be evaluated
             r (np.array): the position where the wavefunction will be evaluated
-            spin (int):  spin index for the desired wavefunction (only for
-                            ISPIN = 2, default = 0)
+            spin (int): spin index for the desired wavefunction (only for
+                ISPIN = 2, default = 0)
             spinor (int): component of the spinor that is evaluated (only used
-                            if vasp_type == 'ncl')
+                if vasp_type == 'ncl')
 
         Returns:
             a complex value corresponding to the evaluation of the wavefunction
@@ -4812,16 +4536,15 @@ class Wavecar:
             evals = np.fft.ifftn(mesh)
 
         Args:
-            kpoint (int): the index of the kpoint where the wavefunction
-                            will be evaluated
-            band (int): the index of the band where the wavefunction will be
-                            evaluated
-            spin (int):  the spin of the wavefunction for the desired
-                            wavefunction (only for ISPIN = 2, default = 0)
+            kpoint (int): the index of the kpoint where the wavefunction will be evaluated
+            band (int): the index of the band where the wavefunction will be evaluated
+            spin (int): the spin of the wavefunction for the desired
+                wavefunction (only for ISPIN = 2, default = 0)
             spinor (int): component of the spinor that is evaluated (only used
-                            if vasp_type == 'ncl')
+                if vasp_type == 'ncl')
             shift (bool): determines if the zero frequency coefficient is
-                            placed at index (0, 0, 0) or centered
+                placed at index (0, 0, 0) or centered
+
         Returns:
             a numpy ndarray representing the 3D mesh of coefficients
         """
@@ -4952,7 +4675,7 @@ class Wavecar:
 
         N = np.prod(self.ng)
         for ik in range(self.nk):
-            fname = f"UNK{ik+1:05d}."
+            fname = f"UNK{ik + 1:05d}."
             if self.vasp_type.lower()[0] == "n":
                 data = np.empty((self.nb, 2, *self.ng), dtype=np.complex128)
                 for ib in range(self.nb):
@@ -4964,51 +4687,25 @@ class Wavecar:
                 for ispin in range(self.spin):
                     for ib in range(self.nb):
                         data[ib, :, :, :] = np.fft.ifftn(self.fft_mesh(ik, ib, spin=ispin)) * N
-                    Unk(ik + 1, data).write_file(str(out_dir / f"{fname}{ispin+1}"))
+                    Unk(ik + 1, data).write_file(str(out_dir / f"{fname}{ispin + 1}"))
 
 
 class Eigenval:
     """
     Object for reading EIGENVAL file.
 
-    .. attribute:: filename
-
-        string containing input filename
-
-    .. attribute:: occu_tol
-
-        tolerance for determining occupation in band properties
-
-    .. attribute:: ispin
-
-        spin polarization tag (int)
-
-    .. attribute:: nelect
-
-        number of electrons
-
-    .. attribute:: nkpt
-
-        number of kpoints
-
-    .. attribute:: nbands
-
-        number of bands
-
-    .. attribute:: kpoints
-
-        list of kpoints
-
-    .. attribute:: kpoints_weights
-
-        weights of each kpoint in the BZ, should sum to 1.
-
-    .. attribute:: eigenvalues
-
-        Eigenvalues as a dict of {(spin): np.ndarray(shape=(nkpt, nbands, 2))}.
-        This representation is based on actual ordering in VASP and is meant as
-        an intermediate representation to be converted into proper objects. The
-        kpoint index is 0-based (unlike the 1-based indexing in VASP).
+    Attributes:
+        filename (str): String containing input filename.
+        occu_tol (float): Tolerance for determining occupation in band properties.
+        ispin (int): Spin polarization tag.
+        nelect (int): Number of electrons.
+        nkpt (int): Number of kpoints.
+        nbands (int): Number of bands.
+        kpoints (list): List of kpoints.
+        kpoints_weights (list): Weights of each kpoint in the BZ, should sum to 1.
+        eigenvalues (dict): Eigenvalues as a dict of {(spin): np.ndarray(shape=(nkpt, nbands, 2))}.
+            This representation is based on actual ordering in VASP and is meant as an intermediate representation
+            to be converted into proper objects. The kpoint index is 0-based (unlike the 1-based indexing in VASP).
     """
 
     def __init__(self, filename, occu_tol=1e-8, separate_spins=False):
@@ -5192,11 +4889,8 @@ class Waveder(MSONable):
         """
         with open(filename, "rb") as fp:
 
-            def readData(dtype):
-                """
-                Read records from Fortran binary file
-                and convert to np.array of given dtype.
-                """
+            def read_data(dtype):
+                """Read records from Fortran binary file and convert to np.array of given dtype."""
                 data = b""
                 while True:
                     prefix = np.fromfile(fp, dtype=np.int32, count=1)[0]
@@ -5210,11 +4904,11 @@ class Waveder(MSONable):
                         break
                 return np.frombuffer(data, dtype=dtype)
 
-            nbands, nelect, nk, ispin = readData(np.int32)
-            _ = readData(np.float_)  # nodes_in_dielectric_function
-            _ = readData(np.float_)  # wplasmon
+            nbands, nelect, nk, ispin = read_data(np.int32)
+            _ = read_data(np.float_)  # nodes_in_dielectric_function
+            _ = read_data(np.float_)  # wplasmon
             me_datatype = np.dtype(data_type)
-            cder = readData(me_datatype)
+            cder = read_data(me_datatype)
 
             cder_data = cder.reshape((3, ispin, nk, nelect, nbands)).T
             return cls(cder_data.real, cder_data.imag)
@@ -5267,7 +4961,7 @@ class WSWQ(MSONable):
     r"""
     Class for reading a WSWQ file.
     The WSWQ file is used to calculation the wave function overlaps between
-        - W: Wavefunctions in the currenct directory's WAVECAR file
+        - W: Wavefunctions in the current directory's WAVECAR file
         - WQ: Wavefunctions stored in a filed named the WAVECAR.qqq.
 
     The overlap is computed using the overlap operator S
@@ -5301,11 +4995,11 @@ class WSWQ(MSONable):
         return self.me_real + 1j * self.me_imag
 
     @classmethod
-    def from_file(cls, filename) -> WSWQ:
+    def from_file(cls, filename: str) -> WSWQ:
         """Constructs a WSWQ object from a file.
 
         Args:
-            filename: Name of WSWQ file.
+            filename (str): Name of WSWQ file.
 
         Returns:
             WSWQ object.

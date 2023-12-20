@@ -7,34 +7,36 @@ Created on Nov 15, 2011.
 
 from __future__ import annotations
 
+import collections
 import json
 import re
 from itertools import product
 
+import requests
+from bs4 import BeautifulSoup
 from monty.serialization import dumpfn, loadfn
 from ruamel import yaml
 
-from pymatgen.core import Element
-from pymatgen.core.periodic_table import get_el_sp
+from pymatgen.core import Element, get_el_sp
 
 
 def test_yaml():
-    with open("periodic_table.yaml") as f:
-        data = yaml.load(f)
+    with open("periodic_table.yaml") as file:
+        data = yaml.load(file)
         print(data)
 
 
 def test_json():
-    with open("periodic_table.json") as f:
-        data = json.load(f)
+    with open("periodic_table.json") as file:
+        data = json.load(file)
         print(data)
 
 
 def parse_oxi_state():
-    with open("periodic_table.yaml") as f:
-        data = yaml.load(f)
-    with open("oxidation_states.txt") as f:
-        oxi_data = f.read()
+    with open("periodic_table.yaml") as file:
+        data = yaml.load(file)
+    with open("oxidation_states.txt") as file:
+        oxi_data = file.read()
     oxi_data = re.sub("[\n\r]", "", oxi_data)
     patt = re.compile("<tr>(.*?)</tr>", re.MULTILINE)
 
@@ -65,8 +67,8 @@ def parse_oxi_state():
             data[el]["Common oxidation states"] = common_oxi
         else:
             print(el)
-    with open("periodic_table2.yaml", "w") as f:
-        yaml.dump(data, f)
+    with open("periodic_table2.yaml", "w") as file:
+        yaml.dump(data, file)
 
 
 def parse_ionic_radii():
@@ -78,16 +80,16 @@ def parse_ionic_radii():
     header = radii_data[0].split(",")
     for idx in range(1, len(radii_data)):
         line = radii_data[idx]
-        toks = line.strip().split(",")
+        tokens = line.strip().split(",")
         suffix = ""
-        name = toks[1]
+        name = tokens[1]
         if len(name.split(" ")) > 1:
             suffix = "_" + name.split(" ")[1]
-        el = toks[2]
+        el = tokens[2]
 
         ionic_radii = {}
-        for j in range(3, len(toks)):
-            m = re.match(r"^\s*([0-9\.]+)", toks[j])
+        for j in range(3, len(tokens)):
+            m = re.match(r"^\s*([0-9\.]+)", tokens[j])
             if m:
                 ionic_radii[int(header[j])] = float(m.group(1))
 
@@ -105,27 +107,26 @@ def parse_radii():
     with open("periodic_table.yaml") as f:
         data = yaml.load(f)
     with open("radii.csv") as f:
-        radiidata = f.read()
-    radiidata = radiidata.split("\r")
+        radii_data = f.read()
+    radii_data = radii_data.split("\r")
 
-    for i in range(1, len(radiidata)):
-        line = radiidata[i]
-        toks = line.strip().split(",")
-        el = toks[1]
+    for line in radii_data:
+        tokens = line.strip().split(",")
+        el = tokens[1]
         try:
-            atomic_radii = float(toks[3]) / 100
+            atomic_radii = float(tokens[3]) / 100
         except Exception:
-            atomic_radii = toks[3]
-
-        try:
-            atomic_radii_calc = float(toks[4]) / 100
-        except Exception:
-            atomic_radii_calc = toks[4]
+            atomic_radii = tokens[3]
 
         try:
-            vdw_radii = float(toks[5]) / 100
+            atomic_radii_calc = float(tokens[4]) / 100
         except Exception:
-            vdw_radii = toks[5]
+            atomic_radii_calc = tokens[4]
+
+        try:
+            vdw_radii = float(tokens[5]) / 100
+        except Exception:
+            vdw_radii = tokens[5]
 
         if el in data:
             data[el]["Atomic radius"] = atomic_radii
@@ -162,7 +163,6 @@ def update_ionic_radii():
 def parse_shannon_radii():
     with open("periodic_table.yaml") as f:
         data = yaml.load(f)
-    import collections
 
     from openpyxl import load_workbook
 
@@ -252,10 +252,8 @@ def gen_iupac_ordering():
 
 def add_electron_affinities():
     """Update the periodic table data file with electron affinities."""
-    import requests
-    from bs4 import BeautifulSoup
 
-    req = requests.get("https://en.wikipedia.org/wiki/Electron_affinity_(data_page)")
+    req = requests.get("https://wikipedia.org/wiki/Electron_affinity_(data_page)")
     soup = BeautifulSoup(req.text, "html.parser")
     for t in soup.find_all("table"):
         if "Hydrogen" in t.text:
@@ -278,9 +276,6 @@ def add_electron_affinities():
 
 def add_ionization_energies():
     """Update the periodic table data file with ground level and ionization energies from NIST."""
-    import collections
-
-    from bs4 import BeautifulSoup
 
     with open("NIST Atomic Ionization Energies Output.html") as f:
         soup = BeautifulSoup(f.read(), "html.parser")

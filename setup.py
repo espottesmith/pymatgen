@@ -24,19 +24,14 @@ long_description = (
 
 setup(
     name="pymatgen",
-    packages=find_namespace_packages(
-        include=["pymatgen.*", "pymatgen.analysis.*", "pymatgen.io.*", "pymatgen.ext.*", "cmd_line"],
-        exclude=["pymatgen.*.tests", "pymatgen.*.*.tests", "pymatgen.*.*.*.tests"],
-    ),
-    version="2023.06.23",
-    python_requires=">=3.8",
+    packages=find_namespace_packages(include=["pymatgen.*", "pymatgen.**.*", "cmd_line"]),
+    version="2023.12.18",
+    python_requires=">=3.9",
     install_requires=[
-        "frozendict",
         "matplotlib>=1.5",
         "monty>=3.0.2",
-        "mp-api>=0.27.3,<0.34.0",
         "networkx>=2.2",
-        "numpy>=1.20.1",
+        "numpy>=1.25.0",
         "palettable>=3.1.1",
         "pandas",
         "plotly>=4.5.0",
@@ -49,6 +44,7 @@ setup(
         "tabulate",
         "tqdm",
         "uncertainties>=3.1.4",
+        "joblib",
     ],
     extras_require={
         "ase": ["ase>=3.3"],
@@ -58,7 +54,6 @@ setup(
         "relaxation": ["matgl", "chgnet"],
         "electronic_structure": ["fdint>=2.0.2"],
         "dev": [
-            "black",
             "mypy",
             "pre-commit",
             "pytest-cov",
@@ -89,9 +84,7 @@ setup(
             # "hiphive>=0.6",
             # "openbabel>=3.1.1; platform_system=='Linux'",
         ],
-        "numba": [
-            "numba",
-        ],
+        "numba": ["numba"],
     },
     # All package data has to be explicitly defined. Do not use automated codes like last time. It adds
     # all sorts of useless files like test files and is prone to path errors.
@@ -106,9 +99,10 @@ setup(
         "pymatgen.analysis.diffraction": ["*.json"],
         "pymatgen.analysis.magnetism": ["default_magmoms.yaml"],
         "pymatgen.analysis.solar": ["am1.5G.dat"],
-        "pymatgen.entries": ["py.typed", "*.json.gz", "*.yaml", "data/*.json"],
-        "pymatgen.core": ["py.typed", "*.json"],
-        "pymatgen.io.vasp": ["*.yaml", "*.json"],
+        "pymatgen.entries": ["*.json.gz", "*.yaml", "data/*.json"],
+        "pymatgen.core": ["*.json"],
+        "pymatgen": ["py.typed"],
+        "pymatgen.io.vasp": ["*.yaml", "*.json", "*.json.gz", "*.json.bz2"],
         "pymatgen.io.feff": ["*.yaml"],
         "pymatgen.io.cp2k": ["*.yaml"],
         "pymatgen.io.lobster": ["lobster_basis/*.yaml"],
@@ -120,9 +114,9 @@ setup(
         "cmd_line": ["**/*"],
     },
     author="Pymatgen Development Team",
-    author_email="ongsp@eng.ucsd.edu",
+    author_email="ongsp@ucsd.edu",
     maintainer="Shyue Ping Ong, Matthew Horton, Janosh Riebesell",
-    maintainer_email="ongsp@eng.ucsd.edu, mkhorton@lbl.gov, janosh.riebesell@gmail.com",
+    maintainer_email="ongsp@ucsd.edu, mkhorton@lbl.gov, janosh.riebesell@gmail.com",
     url="https://pymatgen.org",
     license="MIT",
     project_urls={
@@ -159,7 +153,6 @@ setup(
         "Intended Audience :: Science/Research",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
@@ -185,7 +178,6 @@ setup(
             "pmg = pymatgen.cli.pmg:main",
             "feff_plot_cross_section = pymatgen.cli.feff_plot_cross_section:main",
             "feff_plot_dos = pymatgen.cli.feff_plot_dos:main",
-            "gaussian_analyzer = pymatgen.cli.gaussian_analyzer:main",
             "get_environment = pymatgen.cli.get_environment:main",
         ]
     },

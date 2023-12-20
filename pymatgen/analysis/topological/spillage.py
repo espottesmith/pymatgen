@@ -38,7 +38,7 @@ class SOCSpillage:
     @staticmethod
     def orth(A):
         """Helper function to create orthonormal basis."""
-        u, s, vh = np.linalg.svd(A, full_matrices=False)
+        u, s, _vh = np.linalg.svd(A, full_matrices=False)
         M, N = A.shape
         eps = np.finfo(float).eps
         tol = max(M, N) * np.amax(s) * eps
@@ -157,7 +157,6 @@ class SOCSpillage:
 
                     if np.array(noso.coeffs[1][nk1 - 1]).shape[1] == vs // 2:
                         # if nk1==10 and nk2==10:
-                        # print (np.array(noso.coeffs[1][nk1-1]).shape[1], )
                         # prepare matrices
                         for n1 in range(1, nelec_up + 1):
                             Vnoso[0 : vs // 2, n1 - 1] = np.array(noso.coeffs[0][nk1 - 1][n1 - 1])[0 : vs // 2]
@@ -169,16 +168,16 @@ class SOCSpillage:
                             t = so.coeffs[nk2 - 1][n1 - 1].flatten()
                             Vso[0 : vs // 2, n1 - 1] = t[0 : vs // 2]
                             Vso[vs // 2 : vs, n1 - 1] = t[n_so // 2 : n_so // 2 + vs // 2]
-                        Qnoso, num_noso = self.orth(Vnoso)  # make orthonormal basis?
+                        Qnoso, _num_noso = self.orth(Vnoso)  # make orthonormal basis?
 
-                        Qso, num_so = self.orth(Vso)
+                        Qso, _num_so = self.orth(Vso)
 
                         gamma_k.append(nelec_tot)
                         a = []
-                        for n1 in range(0, nelec_tot):  # noso occupied bands
+                        for n1 in range(nelec_tot):  # noso occupied bands
                             v1 = Qnoso[:, n1]
                             aa = 0.0
-                            for n2 in range(0, nelec_tot):  # so occupied bands
+                            for n2 in range(nelec_tot):  # so occupied bands
                                 v2 = Qso[:, n2]
 
                                 t = np.dot(np.conj(v1), v2)

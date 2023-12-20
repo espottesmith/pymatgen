@@ -33,7 +33,7 @@ def quick_view(
     Args:
         structure: pymatgen Structure
         bonds: (bool) visualize bonds. Bonds are found by comparing distances
-                        to added covalent radii of pairs. Defaults to True.
+            to added covalent radii of pairs. Defaults to True.
         conventional: (bool) use conventional cell. Defaults to False.
         transform: (list) can be used to make supercells with pymatgen.Structure.make_supercell method
         show_box: (bool) unit cell is shown. Defaults to True.
@@ -49,35 +49,30 @@ def quick_view(
 
     if transform:
         struct.make_supercell(transform)
-    atom_types = [i.symbol for i in struct.species]
+    atom_types = [specie.symbol for specie in struct.species]
 
     if bonds:
         bonds = []
-        for i in range(struct.num_sites - 1):
-            sym_i = struct[i].specie.symbol
-            for j in range(i + 1, struct.num_sites):
+        for idx in range(len(struct) - 1):
+            sym_i = struct[idx].specie.symbol
+            for j in range(idx + 1, len(struct)):
                 sym_j = struct[j].specie.symbol
                 max_d = CovalentRadius.radius[sym_i] + CovalentRadius.radius[sym_j] + bond_tol
-                if struct.get_distance(i, j, np.array([0, 0, 0])) < max_d:
-                    bonds.append((i, j))
+                if struct.get_distance(idx, j, np.array([0, 0, 0])) < max_d:
+                    bonds.append((idx, j))
     bonds = bonds or None
 
     mv = MolecularViewer(struct.cart_coords, topology={"atom_types": atom_types, "bonds": bonds})
 
     if bonds:
         mv.ball_and_sticks(stick_radius=stick_radius)
-    for i in struct.sites:
-        el = i.specie.symbol
-        coord = i.coords
-        r = CovalentRadius.radius[el]
+    for site in struct:
+        el = site.specie.symbol
+        coord = site.coords
+        rad = CovalentRadius.radius[el]
         mv.add_representation(
             "spheres",
-            {
-                "coordinates": coord.astype("float32"),
-                "colors": [get_atom_color(el)],
-                "radii": [r * 0.5],
-                "opacity": 1.0,
-            },
+            {"coordinates": coord.astype(float), "colors": [get_atom_color(el)], "radii": [rad * 0.5], "opacity": 1},
         )
     if show_box:
         o = np.array([0, 0, 0])

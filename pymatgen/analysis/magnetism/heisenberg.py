@@ -157,10 +157,8 @@ class HeisenbergMapper:
         return unique_site_ids, wyckoff_ids
 
     def _get_nn_dict(self):
-        """Get dict of unique nearest neighbor interactions.
-
-        Returns:
-            None: (sets self.nn_interactions and self.dists instance variables)
+        """Sets self.nn_interactions and self.dists instance variables describing unique
+        nearest neighbor interactions.
         """
         tol = self.tol  # tolerance on NN distances
         sgraph = self.sgraphs[0]
@@ -173,7 +171,7 @@ class HeisenbergMapper:
         all_dists = []
 
         # Loop over unique sites and get neighbor distances up to NNNN
-        for k in unique_site_ids:  # pylint: disable=C0206
+        for k in unique_site_ids:
             i = k[0]
             i_key = unique_site_ids[k]
             connected_sites = sgraph.get_connected_sites(i)
@@ -200,7 +198,7 @@ class HeisenbergMapper:
         dists = dict(zip(labels, all_dists))
 
         # Get dictionary keys for interactions
-        for k in unique_site_ids:  # pylint: disable=C0206
+        for k in unique_site_ids:
             i = k[0]
             i_key = unique_site_ids[k]
             connected_sites = sgraph.get_connected_sites(i)
@@ -229,13 +227,9 @@ class HeisenbergMapper:
         """
         Loop over all sites in a graph and count the number and types of
         nearest neighbor interactions, computing +-|S_i . S_j| to construct
-        a Heisenberg Hamiltonian for each graph.
+        a Heisenberg Hamiltonian for each graph. Sets self.ex_mat instance variable.
 
-        Returns:
-            None: (sets self.ex_mat instance variable)
-
-        Todo:
-            * Deal with large variance in |S| across configs
+        TODO Deal with large variance in |S| across configs
         """
         sgraphs = self.sgraphs
         tol = self.tol
@@ -253,8 +247,8 @@ class HeisenbergMapper:
         # Get labels of unique NN interactions
         for k0, v0 in nn_interactions.items():
             for idx, j in v0.items():  # i and j indices
-                c = str(idx) + "-" + str(j) + "-" + str(k0)
-                c_rev = str(j) + "-" + str(idx) + "-" + str(k0)
+                c = f"{idx}-{j}-{k0}"
+                c_rev = f"{j}-{idx}-{k0}"
                 if c not in columns and c_rev not in columns:
                     columns.append(c)
 
@@ -311,8 +305,8 @@ class HeisenbergMapper:
                             order = "-nnn"
                         elif abs(dist - dists["nnnn"]) <= tol:
                             order = "-nnnn"
-                        j_ij = str(i_index) + "-" + str(j_index) + order
-                        j_ji = str(j_index) + "-" + str(i_index) + order
+                        j_ij = f"{i_index}-{j_index}{order}"
+                        j_ji = f"{j_index}-{i_index}{order}"
 
                         if j_ij in ex_mat.columns:
                             ex_row.loc[sgraph_index, j_ij] -= s_i * s_j
@@ -370,7 +364,7 @@ class HeisenbergMapper:
             return ex_params
 
         # Solve eigenvalue problem for more than 1 NN interaction
-        H = np.array(ex_mat.loc[:, ex_mat.columns != "E"].values).astype("float64")
+        H = np.array(ex_mat.loc[:, ex_mat.columns != "E"].values).astype(float)
         H_inv = np.linalg.inv(H)
         j_ij = np.dot(H_inv, E)
 
@@ -475,14 +469,12 @@ class HeisenbergMapper:
 
         m_avg = np.mean([np.sqrt(m**2) for m in magmoms])
 
-        # If m_avg for FM config is < 1 we won't get sensibile results.
+        # If m_avg for FM config is < 1 we won't get sensible results.
         if m_avg < 1:
-            iamthedanger = """
-                Local magnetic moments are small (< 1 muB / atom). The
-                exchange parameters may be wrong, but <J> and the mean
-                field critical temperature estimate may be OK.
-                """
-            logging.warning(iamthedanger)
+            logging.warning(
+                "Local magnetic moments are small (< 1 muB / atom). The exchange parameters may "
+                "be wrong, but <J> and the mean field critical temperature estimate may be OK."
+            )
 
         delta_e = afm_e - fm_e  # J > 0 -> FM
         j_avg = delta_e / (m_avg**2)  # eV / magnetic ion
@@ -493,7 +485,7 @@ class HeisenbergMapper:
     def get_mft_temperature(self, j_avg):
         """
         Crude mean field estimate of critical temperature based on <J> for
-        one sublattice, or solving the coupled equations for a multisublattice
+        one sublattice, or solving the coupled equations for a multi-sublattice
         material.
 
         Args:
@@ -502,15 +494,15 @@ class HeisenbergMapper:
         Returns:
             mft_t (float): Critical temperature (K)
         """
-        num_sublattices = len(self.unique_site_ids)
+        num_sub_lattices = len(self.unique_site_ids)
         k_boltzmann = 0.0861733  # meV/K
 
         # Only 1 magnetic sublattice
-        if num_sublattices == 1:
+        if num_sub_lattices == 1:
             mft_t = 2 * abs(j_avg) / 3 / k_boltzmann
 
         else:  # multiple magnetic sublattices
-            omega = np.zeros((num_sublattices, num_sublattices))
+            omega = np.zeros((num_sub_lattices, num_sub_lattices))
             ex_params = self.ex_params
             ex_params = {k: v for (k, v) in ex_params.items() if k != "E0"}  # ignore E0
             for k in ex_params:
@@ -522,15 +514,14 @@ class HeisenbergMapper:
                 omega[j, i] += ex_params[k]
 
             omega = omega * 2 / 3 / k_boltzmann
-            eigenvals, eigenvecs = np.linalg.eig(omega)
-            mft_t = max(eigenvals)
+            eigen_vals, _eigen_vecs = np.linalg.eig(omega)
+            mft_t = max(eigen_vals)
 
         if mft_t > 1500:  # Not sensible!
-            stayoutofmyterritory = """
-                This mean field estimate is too high! Probably
-                the true low energy orderings were not given as inputs.
-                """
-            logging.warning(stayoutofmyterritory)
+            logging.warning(
+                "This mean field estimate is too high! Probably "
+                "the true low energy orderings were not given as inputs."
+            )
 
         return mft_t
 
@@ -611,8 +602,8 @@ class HeisenbergMapper:
         elif abs(dist - self.dists["nnnn"]) <= self.tol:
             order = "-nnnn"
 
-        j_ij = str(i_index) + "-" + str(j_index) + order
-        j_ji = str(j_index) + "-" + str(i_index) + order
+        j_ij = f"{i_index}-{j_index}{order}"
+        j_ji = f"{j_index}-{i_index}{order}"
 
         if j_ij in self.ex_params:
             j_exc = self.ex_params[j_ij]
@@ -631,7 +622,7 @@ class HeisenbergMapper:
         """Save results of mapping to a HeisenbergModel object.
 
         Returns:
-            hmodel (HeisenbergModel): MSONable object.
+            HeisenbergModel: MSONable object.
         """
         # Original formula unit with nonmagnetic ions
         hm_formula = str(self.ordered_structures_[0].composition.reduced_formula)
@@ -981,8 +972,8 @@ class HeisenbergModel(MSONable):
         elif abs(dist - self.dists["nnnn"]) <= self.tol:
             order = "-nnnn"
 
-        j_ij = str(i_index) + "-" + str(j_index) + order
-        j_ji = str(j_index) + "-" + str(i_index) + order
+        j_ij = f"{i_index}-{j_index}{order}"
+        j_ji = f"{j_index}-{i_index}{order}"
 
         if j_ij in self.ex_params:
             j_exc = self.ex_params[j_ij]

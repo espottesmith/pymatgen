@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import itertools
 
-from frozendict import frozendict
 from monty.json import MSONable
 
 from pymatgen.util.due import Doi, due
@@ -34,7 +33,7 @@ class CovalentRadius:
     Beatriz C. et al. Dalton Trans. 2008, 2832-2838. https://doi.org/10.1039/b801115j
     """
 
-    radius = frozendict(
+    radius = dict(
         H=0.31,
         He=0.28,
         Li=1.28,
@@ -193,6 +192,7 @@ class MoleculeStructureComparator(MSONable):
             priority_bonds ():
 
         Returns:
+            tuple: 13 bonds
         """
         all_bond_pairs = list(itertools.combinations(priority_bonds, r=2))
         all_2_bond_atoms = [set(b1 + b2) for b1, b2 in all_bond_pairs]
@@ -204,8 +204,7 @@ class MoleculeStructureComparator(MSONable):
         return tuple(sorted(bonds_13))
 
     def _get_bonds(self, mol):
-        """
-        Find all the bond in a molcule.
+        """Find all bonds in a molecule.
 
         Args:
             mol: the molecule. pymatgen Molecule object
@@ -222,7 +221,7 @@ class MoleculeStructureComparator(MSONable):
             covalent_atoms = list(range(num_atoms))
         all_pairs = list(itertools.combinations(covalent_atoms, 2))
         pair_dists = [mol.get_distance(*p) for p in all_pairs]
-        unavailable_elements = list(set(mol.composition.as_dict()) - set(self.covalent_radius))
+        unavailable_elements = set(mol.composition.as_dict()) - set(self.covalent_radius)
         if len(unavailable_elements) > 0:
             raise ValueError(f"The covalent radius for element {unavailable_elements} is not available")
         bond_13 = self.get_13_bonds(self.priority_bonds)

@@ -39,25 +39,11 @@ eV_to_recip_cm = 1.0 / (physical_constants["Planck constant in eV s"][0] * speed
 
 def get_dir_indir_gap(run=""):
     """Get direct and indirect bandgaps for a vasprun.xml."""
-    v = Vasprun(run)
-    bandstructure = v.get_band_structure()
+    vasp_run = Vasprun(run)
+    bandstructure = vasp_run.get_band_structure()
     dir_gap = bandstructure.get_direct_band_gap()
     indir_gap = bandstructure.get_band_gap()["energy"]
     return dir_gap, indir_gap
-
-
-def matrix_eigvals(matrix):
-    """
-    Calculate the eigenvalues of a matrix.
-
-    Args:
-        matrix (np.array): The matrix to diagonalise.
-
-    Returns:
-        (np.array): Array of the matrix eigenvalues.
-    """
-    eigvals, eigvecs = np.linalg.eig(matrix)
-    return eigvals
 
 
 def to_matrix(xx, yy, zz, xy, yz, xz):
@@ -86,14 +72,13 @@ def parse_dielectric_data(data):
 
     Args:
         data (list): length N list of dielectric data. Each entry should be
-                     a list of ``[xx, yy, zz, xy, xz, yz ]`` dielectric
-                     tensor elements.
+            a list of ``[xx, yy, zz, xy , xz, yz ]`` dielectric tensor elements.
 
     Returns:
-        (np.array):  a Nx3 numpy array. Each row contains the eigenvalues
-                     for the corresponding row in `data`.
+        np.array: a Nx3 numpy array. Each row contains the eigenvalues
+            for the corresponding row in `data`.
     """
-    return np.array([matrix_eigvals(to_matrix(*e)) for e in data])
+    return np.array([np.linalg.eig(to_matrix(*e))[0] for e in data])
 
 
 def absorption_coefficient(dielectric):
@@ -103,10 +88,10 @@ def absorption_coefficient(dielectric):
 
     Args:
         dielectric (list): A list containing the dielectric response function
-                           in the pymatgen vasprun format.
-                           | element 0: list of energies
-                           | element 1: real dielectric tensors, in ``[xx, yy, zz, xy, xz, yz]`` format.
-                           | element 2: imaginary dielectric tensors, in ``[xx, yy, zz, xy, xz, yz]`` format.
+            in the pymatgen vasprun format.
+            - element 0: list of energies
+            - element 1: real dielectric tensors, in ``[xx, yy, zz, xy, xz, yz]`` format.
+            - element 2: imaginary dielectric tensors, in ``[xx, yy, zz, xy, xz, yz]`` format.
 
     Returns:
         (np.array): absorption coefficient using eV as frequency units (cm^-1).
@@ -170,7 +155,6 @@ def slme(
 
     Returns:
         The calculated maximum efficiency.
-
     """
     # Defining constants for tidy equations
     c = constants.c  # speed of light, m/s
@@ -231,7 +215,7 @@ def slme(
     )
 
     material_interpolated_absorbance = np.zeros(len(solar_spectra_wavelength_meters))
-    for i in range(0, len(solar_spectra_wavelength_meters)):
+    for i in range(len(solar_spectra_wavelength_meters)):
         # Cutting off absorption data below the gap. This is done to deal
         # with VASPs broadening of the calculated absorption data
 
@@ -271,7 +255,7 @@ def slme(
 
     max_power = power(test_voltage)
 
-    # Calculate the maximized efficience
+    # Calculate the maximized efficiency
     efficiency = max_power / power_in
 
     if plot_current_voltage:
@@ -280,6 +264,5 @@ def slme(
         plt.plot(V, power(V), linestyle="--")
         plt.savefig("pp.png")
         plt.close()
-        # print(power(V_Pmax))
 
     return 100.0 * efficiency

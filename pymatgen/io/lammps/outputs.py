@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from glob import glob
 from io import StringIO
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,9 @@ from monty.io import zopen
 from monty.json import MSONable
 
 from pymatgen.io.lammps.data import LammpsBox
+
+if TYPE_CHECKING:
+    from typing import Any
 
 __author__ = "Kiran Mathew, Zhi Deng"
 __copyright__ = "Copyright 2018, The Materials Virtual Lab"
@@ -27,7 +31,7 @@ __date__ = "Aug 1, 2018"
 class LammpsDump(MSONable):
     """Object for representing dump data for a single snapshot."""
 
-    def __init__(self, timestep, natoms, box, data):
+    def __init__(self, timestep: int, natoms: int, box: LammpsBox, data: pd.DataFrame) -> None:
         """
         Base constructor.
 
@@ -43,7 +47,12 @@ class LammpsDump(MSONable):
         self.data = data
 
     @classmethod
-    def from_string(cls, string):
+    @np.deprecate(message="Use from_str instead")
+    def from_string(cls, *args, **kwargs) -> LammpsDump:
+        return cls.from_str(*args, **kwargs)
+
+    @classmethod
+    def from_str(cls, string: str) -> LammpsDump:
         """
         Constructor from string parsing.
 
@@ -67,7 +76,7 @@ class LammpsDump(MSONable):
         return cls(timestep, n_atoms, box, data)
 
     @classmethod
-    def from_dict(cls, d):
+    def from_dict(cls, d: dict) -> LammpsDump:
         """
         Args:
             d (dict): Dict representation.
@@ -80,9 +89,9 @@ class LammpsDump(MSONable):
         items["data"] = pd.read_json(d["data"], orient="split")
         return cls(**items)
 
-    def as_dict(self):
+    def as_dict(self) -> dict[str, Any]:
         """Returns: MSONable dict."""
-        dct = {}
+        dct: dict[str, Any] = {}
         dct["@module"] = type(self).__module__
         dct["@class"] = type(self).__name__
         dct["timestep"] = self.timestep
@@ -103,7 +112,6 @@ def parse_lammps_dumps(file_pattern):
 
     Yields:
         LammpsDump for each available snapshot.
-
     """
     files = glob(file_pattern)
     if len(files) > 1:
@@ -116,14 +124,14 @@ def parse_lammps_dumps(file_pattern):
             for line in f:
                 if line.startswith("ITEM: TIMESTEP"):
                     if len(dump_cache) > 0:
-                        yield LammpsDump.from_string("".join(dump_cache))
+                        yield LammpsDump.from_str("".join(dump_cache))
                     dump_cache = [line]
                 else:
                     dump_cache.append(line)
-            yield LammpsDump.from_string("".join(dump_cache))
+            yield LammpsDump.from_str("".join(dump_cache))
 
 
-def parse_lammps_log(filename="log.lammps"):
+def parse_lammps_log(filename: str = "log.lammps") -> list[pd.DataFrame]:
     """
     Parses log file with focus on thermo data. Both one and multi line
     formats are supported. Any incomplete runs (no "Loop time" marker)
@@ -139,7 +147,6 @@ def parse_lammps_log(filename="log.lammps"):
 
     Returns:
         [pd.DataFrame] containing thermo data for each completed run.
-
     """
     with zopen(filename, "rt") as f:
         lines = f.readlines()
@@ -155,7 +162,7 @@ def parse_lammps_log(filename="log.lammps"):
         elif line.startswith(end_flag):
             ends.append(idx)
 
-    def _parse_thermo(lines):
+    def _parse_thermo(lines: list[str]) -> pd.DataFrame:
         multi_pattern = r"-+\s+Step\s+([0-9]+)\s+-+"
         # multi line thermo data
         if re.match(multi_pattern, lines[0]):
@@ -165,7 +172,9 @@ def parse_lammps_log(filename="log.lammps"):
             kv_pattern = r"([0-9A-Za-z_\[\]]+)\s+=\s+([0-9eE\.+-]+)"
             for ts in timesteps:
                 data = {}
-                data["Step"] = int(re.match(multi_pattern, ts[0]).group(1))
+                step = re.match(multi_pattern, ts[0])
+                assert step is not None
+                data["Step"] = int(step.group(1))
                 data.update({k: float(v) for k, v in re.findall(kv_pattern, "".join(ts[1:]))})
                 dicts.append(data)
             df = pd.DataFrame(dicts)

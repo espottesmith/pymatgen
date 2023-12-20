@@ -16,7 +16,7 @@ from operator import mul
 
 from monty.design_patterns import cached_class
 
-from pymatgen.core.periodic_table import Species, get_el_sp
+from pymatgen.core import Species, get_el_sp
 from pymatgen.util.due import Doi, due
 
 __author__ = "Will Richards, Geoffroy Hautier"
@@ -57,7 +57,7 @@ class SubstitutionProbability:
             self._lambda_table = lambda_table
         else:
             module_dir = os.path.dirname(__file__)
-            json_file = os.path.join(module_dir, "data", "lambda.json")
+            json_file = f"{module_dir}/data/lambda.json"
             with open(json_file) as f:
                 self._lambda_table = json.load(f)
 
@@ -67,8 +67,8 @@ class SubstitutionProbability:
         self.species = set()
         for row in self._lambda_table:
             if "D1+" not in row:
-                s1 = Species.from_string(row[0])
-                s2 = Species.from_string(row[1])
+                s1 = Species.from_str(row[0])
+                s2 = Species.from_str(row[1])
                 self.species.add(s1)
                 self.species.add(s2)
                 self._l[frozenset([s1, s2])] = float(row[2])
@@ -85,8 +85,8 @@ class SubstitutionProbability:
     def get_lambda(self, s1, s2):
         """
         Args:
-            s1 (Structure): 1st Structure
-            s2 (Structure): 2nd Structure.
+            s1 (Element/Species/str/int): Describes Ion in 1st Structure
+            s2 (Element/Species/str/int): Describes Ion in 2nd Structure.
 
         Returns:
             Lambda values

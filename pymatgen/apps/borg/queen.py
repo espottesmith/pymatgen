@@ -17,8 +17,7 @@ logger = logging.getLogger("BorgQueen")
 
 
 class BorgQueen:
-    """
-    The Borg Queen controls the drones to assimilate data in an entire
+    """The Borg Queen controls the drones to assimilate data in an entire
     directory tree. Uses multiprocessing to speed up things considerably. It
     also contains convenience methods to save and load data between sessions.
     """
@@ -27,7 +26,7 @@ class BorgQueen:
         """
         Args:
             drone (Drone): An implementation of
-                :class:`pymatgen.apps.borg.hive.AbstractDrone` to use for
+                pymatgen.apps.borg.hive.AbstractDrone to use for
                 assimilation.
             rootpath (str): The root directory to start assimilation. Leave it
                 as None if you want to do assimilation later, or is using the
@@ -81,7 +80,7 @@ class BorgQueen:
             newdata = self._drone.assimilate(path)
             self._data.append(newdata)
             count += 1
-            logger.info(f"{count}/{total} ({count / total :.2%}) done")
+            logger.info(f"{count}/{total} ({count / total:.2%}) done")
         for d in data:
             self._data.append(json.loads(d, cls=MontyDecoder))
 
@@ -90,8 +89,7 @@ class BorgQueen:
         return self._data
 
     def save_data(self, filename):
-        """
-        Save the assimilated data to a file.
+        """Save the assimilated data to a file.
 
         Args:
             filename (str): filename to save the assimilated data to. Note
@@ -116,4 +114,4 @@ def order_assimilation(args):
     status["count"] += 1
     count = status["count"]
     total = status["total"]
-    logger.info(f"{count}/{total} ({count / total :.2%}) done")
+    logger.info(f"{count}/{total} ({count / total:.2%}) done")

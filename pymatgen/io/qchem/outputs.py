@@ -7,8 +7,9 @@ import logging
 import math
 import os
 import re
+import struct
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 import numpy as np
@@ -32,6 +33,8 @@ try:
 except ImportError:
     openbabel = None
 
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 __author__ = "Samuel Blau, Brandon Wood, Shyam Dwaraknath, Evan Spotte-Smith, Ryan Kingsbury"
 __copyright__ = "Copyright 2018-2022, The Materials Project"
@@ -65,11 +68,8 @@ class QCOutput(MSONable):
         ).get("key")
         if self.data.get("multiple_outputs") is not None and self.data.get("multiple_outputs") != [["1"]]:
             raise ValueError(
-                "ERROR: multiple calculation outputs found in file "
-                + filename
-                + ". Please instead call QCOutput.mulitple_outputs_from_file(QCOutput,'"
-                + filename
-                + "')"
+                f"ERROR: multiple calculation outputs found in file {filename}. "
+                f"Please instead call QCOutput.mulitple_outputs_from_file(QCOutput, {filename!r})"
             )
 
         # Parse the Q-Chem major version
@@ -289,7 +289,7 @@ class QCOutput(MSONable):
             for val in temp_solvent:
                 if val[0] != temp_solvent[0][0]:
                     if val[0] != "for":
-                        self.data["warnings"]["SMD_two_solvents"] = str(temp_solvent[0][0]) + " and " + str(val[0])
+                        self.data["warnings"]["SMD_two_solvents"] = f"{temp_solvent[0][0]} and {val[0]}"
                     elif (
                         "unrecognized_solvent" not in self.data["errors"]
                         and "unrecognized_solvent" not in self.data["warnings"]
@@ -637,12 +637,12 @@ class QCOutput(MSONable):
         if text[0] == "":
             text = text[1:]
         for i, sub_text in enumerate(text):
-            with open(filename + "." + str(i), "w") as temp:
+            with open(f"{filename}.{i}", "w") as temp:
                 temp.write(sub_text)
-            tempOutput = QCOutput(filename + "." + str(i))
+            tempOutput = QCOutput(f"{filename}.{i}")
             to_return.append(tempOutput)
             if not keep_sub_files:
-                os.remove(filename + "." + str(i))
+                os.remove(f"{filename}.{i}")
         return to_return
 
     def _read_eigenvalues(self):
@@ -948,9 +948,10 @@ class QCOutput(MSONable):
     def _read_charges_and_dipoles(self):
         """
         Parses Mulliken/ESP/RESP charges.
-        Parses associated dipoles.
+        Parses associated dipole/multipole moments.
         Also parses spins given an unrestricted SCF.
         """
+
         self.data["dipoles"] = {}
         temp_dipole_total = read_pattern(
             self.text, {"key": r"X\s*[\d\-\.]+\s*Y\s*[\d\-\.]+\s*Z\s*[\d\-\.]+\s*Tot\s*([\d\-\.]+)"}
@@ -971,10 +972,85 @@ class QCOutput(MSONable):
                     total[ii] = float(val[0])
                 self.data["dipoles"]["total"] = total
                 dipole = np.zeros(shape=(len(temp_dipole_total), 3))
-                for ii, _entry in enumerate(temp_dipole):
+                for ii in range(len(temp_dipole)):
                     for jj, _val in enumerate(temp_dipole[ii]):
                         dipole[ii][jj] = temp_dipole[ii][jj]
                 self.data["dipoles"]["dipole"] = dipole
+
+        self.data["multipoles"] = dict()
+
+        quad_mom_pat = (
+            r"\s*Quadrupole Moments \(Debye\-Ang\)\s+XX\s+([\-\.0-9]+)\s+XY\s+([\-\.0-9]+)\s+YY"
+            r"\s+([\-\.0-9]+)\s+XZ\s+([\-\.0-9]+)\s+YZ\s+([\-\.0-9]+)\s+ZZ\s+([\-\.0-9]+)"
+        )
+        temp_quadrupole_moment = read_pattern(self.text, {"key": quad_mom_pat}).get("key")
+        if temp_quadrupole_moment is not None:
+            keys = ("XX", "XY", "YY", "XZ", "YZ", "ZZ")
+            if len(temp_quadrupole_moment) == 1:
+                self.data["multipoles"]["quadrupole"] = {
+                    key: float(temp_quadrupole_moment[0][idx]) for idx, key in enumerate(keys)
+                }
+            else:
+                self.data["multipoles"]["quadrupole"] = list()
+                for qpole in temp_quadrupole_moment:
+                    self.data["multipoles"]["quadrupole"].append(
+                        {key: float(qpole[idx]) for idx, key in enumerate(keys)}
+                    )
+
+        octo_mom_pat = (
+            r"\s*Octopole Moments \(Debye\-Ang\^2\)\s+XXX\s+([\-\.0-9]+)\s+XXY\s+([\-\.0-9]+)"
+            r"\s+XYY\s+([\-\.0-9]+)\s+YYY\s+([\-\.0-9]+)\s+XXZ\s+([\-\.0-9]+)\s+XYZ\s+([\-\.0-9]+)"
+            r"\s+YYZ\s+([\-\.0-9]+)\s+XZZ\s+([\-\.0-9]+)\s+YZZ\s+([\-\.0-9]+)\s+ZZZ\s+([\-\.0-9]+)"
+        )
+        temp_octopole_moment = read_pattern(self.text, {"key": octo_mom_pat}).get("key")
+        if temp_octopole_moment is not None:
+            keys = ("XXX", "XXY", "XYY", "YYY", "XXZ", "XYZ", "YYZ", "XZZ", "YZZ", "ZZZ")
+            if len(temp_octopole_moment) == 1:
+                self.data["multipoles"]["octopole"] = {
+                    key: float(temp_octopole_moment[0][idx]) for idx, key in enumerate(keys)
+                }
+            else:
+                self.data["multipoles"]["octopole"] = list()
+                for opole in temp_octopole_moment:
+                    self.data["multipoles"]["octopole"].append({key: float(opole[idx]) for idx, key in enumerate(keys)})
+
+        hexadeca_mom_pat = (
+            r"\s*Hexadecapole Moments \(Debye\-Ang\^3\)\s+XXXX\s+([\-\.0-9]+)\s+XXXY\s+([\-\.0-9]+)"
+            r"\s+XXYY\s+([\-\.0-9]+)\s+XYYY\s+([\-\.0-9]+)\s+YYYY\s+([\-\.0-9]+)\s+XXXZ\s+([\-\.0-9]+)"
+            r"\s+XXYZ\s+([\-\.0-9]+)\s+XYYZ\s+([\-\.0-9]+)\s+YYYZ\s+([\-\.0-9]+)\s+XXZZ\s+([\-\.0-9]+)"
+            r"\s+XYZZ\s+([\-\.0-9]+)\s+YYZZ\s+([\-\.0-9]+)\s+XZZZ\s+([\-\.0-9]+)\s+YZZZ\s+([\-\.0-9]+)"
+            r"\s+ZZZZ\s+([\-\.0-9]+)"
+        )
+        temp_hexadecapole_moment = read_pattern(self.text, {"key": hexadeca_mom_pat}).get("key")
+        if temp_hexadecapole_moment is not None:
+            keys = (
+                "XXXX",
+                "XXXY",
+                "XXYY",
+                "XYYY",
+                "YYYY",
+                "XXXZ",
+                "XXYZ",
+                "XYYZ",
+                "YYYZ",
+                "XXZZ",
+                "XYZZ",
+                "YYZZ",
+                "XZZZ",
+                "YZZZ",
+                "ZZZZ",
+            )
+
+            if len(temp_hexadecapole_moment) == 1:
+                self.data["multipoles"]["hexadecapole"] = {
+                    key: float(temp_hexadecapole_moment[0][idx]) for idx, key in enumerate(keys)
+                }
+            else:
+                self.data["multipoles"]["hexadecapole"] = list()
+                for hpole in temp_hexadecapole_moment:
+                    self.data["multipoles"]["hexadecapole"].append(
+                        {key: float(hpole[idx]) for idx, key in enumerate(keys)}
+                    )
 
         if self.data.get("unrestricted", []):
             header_pattern = (
@@ -1043,7 +1119,7 @@ class QCOutput(MSONable):
                         RESP_total[ii] = float(val[0])
                     self.data["dipoles"]["RESP_total"] = RESP_total
                     RESP_dipole = np.zeros(shape=(len(temp_RESP_dipole_total), 3))
-                    for ii, _entry in enumerate(temp_RESP_dipole):
+                    for ii in range(len(temp_RESP_dipole)):
                         for jj, _val in enumerate(temp_RESP_dipole[ii]):
                             RESP_dipole[ii][jj] = temp_RESP_dipole[ii][jj]
                     self.data["dipoles"]["RESP_dipole"] = RESP_dipole
@@ -1179,7 +1255,7 @@ class QCOutput(MSONable):
             )
             table_pattern = r"\s*\d+\s+[a-zA-Z]+\s*([\d\-\.]+)\s*([\d\-\.]+)\s*([\d\-\.]+)\s*"
             footer_pattern = r"\s*-+"
-        else:  # pylint: disable=line-too-long
+        else:
             header_pattern = (
                 r"Finished Iterative Coordinate Back-Transformation\s+-+\s+Standard Nuclear Orientation "
                 r"\(Angstroms\)\s+I\s+Atom\s+X\s+Y\s+Z\s+-+"
@@ -1267,7 +1343,7 @@ class QCOutput(MSONable):
             if read_pattern(self.text, {"key": pattern}, terminate_on_match=True).get("key") != [[]]:
                 found_end = True
             else:
-                pattern = pattern + r"\s+" + str(index)
+                pattern = f"{pattern}\\s+{index}"
                 index += 1
         return index - 2
 
@@ -1385,11 +1461,7 @@ class QCOutput(MSONable):
                     self.text,
                     {"key": r"Maximum number of iterations reached during minimization algorithm"},
                     terminate_on_match=True,
-                ).get(
-                    "key"
-                ) == [
-                    []
-                ]:
+                ).get("key") == [[]]:
                     self.data["errors"] += ["out_of_opt_cycles"]
                 elif read_pattern(
                     self.text,
@@ -1777,7 +1849,7 @@ class QCOutput(MSONable):
             },
         )
 
-        for key, _v in temp_dict.items():
+        for key in temp_dict:
             if temp_dict.get(key) is None:
                 self.data["solvent_data"]["isosvp"][key] = None
             elif len(temp_dict.get(key)) == 1:
@@ -1824,7 +1896,7 @@ class QCOutput(MSONable):
             },
         )
 
-        for key, _v in temp_dict.items():
+        for key in temp_dict:
             if temp_dict.get(key) is None:
                 self.data["solvent_data"]["cmirs"][key] = None
             elif len(temp_dict.get(key)) == 1:
@@ -2048,9 +2120,7 @@ class QCOutput(MSONable):
             "key"
         ) == [[]] or read_pattern(self.text, {"key": r"Out of Iterations- IterZ"}, terminate_on_match=True).get(
             "key"
-        ) == [
-            []
-        ]:
+        ) == [[]]:
             self.data["errors"] += ["failed_cpscf"]
         elif read_pattern(
             self.text,
@@ -2357,7 +2427,7 @@ def parse_hyperbonds(lines: list[str]) -> list[pd.DataFrame]:
                     continue
 
                 # Extract the values
-                entry: dict[str, str | int | float] = {}
+                entry: dict[str, str | float] = {}
                 entry["hyperbond index"] = int(line[0:4].strip())
                 entry["bond atom 1 symbol"] = str(line[5:8].strip())
                 entry["bond atom 1 index"] = int(line[8:11].strip())
@@ -2399,7 +2469,7 @@ def parse_hybridization_character(lines: list[str]) -> list[pd.DataFrame]:
     orbitals = ["s", "p", "d", "f"]
 
     no_failures = True
-    lp_and_bd_and_tc_dfs = []
+    lp_and_bd_and_tc_dfs: list[pd.DataFrame] = []
 
     while no_failures:
         # NBO Analysis
@@ -2440,7 +2510,7 @@ def parse_hybridization_character(lines: list[str]) -> list[pd.DataFrame]:
 
                 # Lone pair
                 if "LP" in line or "LV" in line:
-                    LPentry: dict[str, str | int | float] = {orbital: 0.0 for orbital in orbitals}
+                    LPentry: dict[str, str | float] = {orbital: 0.0 for orbital in orbitals}
                     LPentry["bond index"] = line[0:4].strip()
                     LPentry["occupancy"] = line[7:14].strip()
                     LPentry["type"] = line[16:19].strip()
@@ -2467,7 +2537,7 @@ def parse_hybridization_character(lines: list[str]) -> list[pd.DataFrame]:
 
                 # Bonding
                 if "BD" in line:
-                    BDentry: dict[str, str | int | float] = {
+                    BDentry: dict[str, str | float] = {
                         f"atom {i} {orbital}": 0.0 for orbital in orbitals for i in range(1, 3)
                     }
                     BDentry["bond index"] = line[0:4].strip()
@@ -2527,7 +2597,7 @@ def parse_hybridization_character(lines: list[str]) -> list[pd.DataFrame]:
 
                 # 3-center bond
                 if "3C" in line:
-                    TCentry: dict[str, str | int | float] = {
+                    TCentry: dict[str, str | float] = {
                         f"atom {i} {orbital}": 0.0 for orbital in orbitals for i in range(1, 4)
                     }
                     TCentry["bond index"] = line[0:4].strip()
@@ -2610,9 +2680,9 @@ def parse_hybridization_character(lines: list[str]) -> list[pd.DataFrame]:
                     tc_data.append(TCentry)
 
             # Store values in a dataframe
-            lp_and_bd_and_tc_dfs.append(pd.DataFrame(data=lp_data))
-            lp_and_bd_and_tc_dfs.append(pd.DataFrame(data=bd_data))
-            lp_and_bd_and_tc_dfs.append(pd.DataFrame(data=tc_data))
+            lp_and_bd_and_tc_dfs.extend(
+                (pd.DataFrame(data=lp_data), pd.DataFrame(data=bd_data), pd.DataFrame(data=tc_data))
+            )
 
     return lp_and_bd_and_tc_dfs
 
@@ -2667,7 +2737,7 @@ def parse_perturbation_energy(lines: list[str]) -> list[pd.DataFrame]:
                     continue
 
                 # Extract the values
-                entry: dict[str, str | int | float] = {}
+                entry: dict[str, str | float] = {}
                 first_3C = False
                 second_3C = False
                 if line[7] == "3":
@@ -2790,3 +2860,66 @@ def nbo_parser(filename: str) -> dict[str, list[pd.DataFrame]]:
     dfs["hyperbonds"] = parse_hyperbonds(lines)
     dfs["perturbation_energy"] = parse_perturbation_energy(lines)
     return dfs
+
+
+def gradient_parser(filename: str = "131.0") -> NDArray:
+    """
+    Parse the gradient data from a gradient scratch file.
+
+    Args:
+        filename: Path to the gradient scratch file. Defaults to "131.0".
+
+    Returns:
+        NDArray: The gradient, in units of Hartree/Bohr.
+    """
+    # Read the gradient scratch file in 8 byte chunks
+    tmp_grad_data: list[float] = []
+    with zopen(filename, mode="rb") as file:
+        binary = file.read()
+    tmp_grad_data.extend(struct.unpack("d", binary[ii * 8 : (ii + 1) * 8])[0] for ii in range(len(binary) // 8))
+    grad = [
+        [
+            float(tmp_grad_data[ii * 3]),
+            float(tmp_grad_data[ii * 3 + 1]),
+            float(tmp_grad_data[ii * 3 + 2]),
+        ]
+        for ii in range(len(tmp_grad_data) // 3)
+    ]
+    return np.array(grad)
+
+
+def hessian_parser(filename: str = "132.0", n_atoms: int | None = None) -> NDArray:
+    """
+    Parse the Hessian data from a Hessian scratch file.
+
+    Args:
+        filename: Path to the Hessian scratch file. Defaults to "132.0".
+        n_atoms: Number of atoms in the molecule. If None, no reshaping will be done.
+
+    Returns:
+        NDArray: Hessian, formatted as 3n_atoms x 3n_atoms. Units are Hartree/Bohr^2/amu.
+    """
+    hessian: list[float] = []
+    with zopen(filename, mode="rb") as file:
+        binary = file.read()
+    hessian.extend(struct.unpack("d", binary[ii * 8 : (ii + 1) * 8])[0] for ii in range(len(binary) // 8))
+    if n_atoms:
+        return np.reshape(hessian, (n_atoms * 3, n_atoms * 3))
+    return np.array(hessian)
+
+
+def orbital_coeffs_parser(filename: str = "53.0") -> NDArray:
+    """
+    Parse the orbital coefficients from a scratch file.
+
+    Args:
+        filename: Path to the orbital coefficients file. Defaults to "53.0".
+
+    Returns:
+        NDArray: The orbital coefficients
+    """
+    orbital_coeffs: list[float] = []
+    with zopen(filename, mode="rb") as file:
+        binary = file.read()
+    orbital_coeffs.extend(struct.unpack("d", binary[ii * 8 : (ii + 1) * 8])[0] for ii in range(len(binary) // 8))
+    return np.array(orbital_coeffs)

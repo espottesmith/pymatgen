@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from monty.serialization import loadfn
 
-from pymatgen.core.periodic_table import Element, Species, get_el_sp
+from pymatgen.core import Element, Species, get_el_sp
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 if TYPE_CHECKING:
@@ -26,13 +26,13 @@ module_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Read in BV parameters.
 BV_PARAMS = {}
-for key, val in loadfn(os.path.join(module_dir, "bvparam_1991.yaml")).items():
+for key, val in loadfn(f"{module_dir}/bvparam_1991.yaml").items():
     BV_PARAMS[Element(key)] = val
 
 # Read in yaml containing data-mined ICSD BV data.
-all_data = loadfn(os.path.join(module_dir, "icsd_bv.yaml"))
-ICSD_BV_DATA = {Species.from_string(sp): data for sp, data in all_data["bvsum"].items()}
-PRIOR_PROB = {Species.from_string(sp): data for sp, data in all_data["occurrence"].items()}
+all_data = loadfn(f"{module_dir}/icsd_bv.yaml")
+ICSD_BV_DATA = {Species.from_str(sp): data for sp, data in all_data["bvsum"].items()}
+PRIOR_PROB = {Species.from_str(sp): data for sp, data in all_data["occurrence"].items()}
 
 
 def calculate_bv_sum(site, nn_list, scale_factor=1.0):
@@ -117,13 +117,13 @@ class BVAnalyzer:
     is selected.
     """
 
-    CHARGE_NEUTRALITY_TOLERANCE = 0.00001
+    CHARGE_NEUTRALITY_TOLERANCE = 0.000_01
 
     def __init__(
         self,
         symm_tol=0.1,
         max_radius=4,
-        max_permutations=100000,
+        max_permutations=100_000,
         distance_scale_factor=1.015,
         charge_neutrality_tolerance=CHARGE_NEUTRALITY_TOLERANCE,
         forbidden_species=None,
@@ -221,10 +221,10 @@ class BVAnalyzer:
         Raises:
             A ValueError if the valences cannot be determined.
         """
-        els = [Element(el.symbol) for el in structure.composition.elements]
+        els = [Element(el.symbol) for el in structure.elements]
 
-        if not set(els).issubset(set(BV_PARAMS)):
-            raise ValueError("Structure contains elements not in set of BV parameters!")
+        if diff := set(els) - set(BV_PARAMS):
+            raise ValueError(f"Structure contains elements not in set of BV parameters: {diff}")
 
         # Perform symmetry determination and get sites grouped by symmetry.
         if self.symm_tol:
@@ -272,8 +272,8 @@ class BVAnalyzer:
         # make variables needed for recursion
         if structure.is_ordered:
             n_sites = np.array(list(map(len, equi_sites)))
-            vmin = np.array(list(map(min, valences)))
-            vmax = np.array(list(map(max, valences)))
+            valence_min = np.array(list(map(min, valences)))
+            valence_max = np.array(list(map(max, valences)))
 
             self._n = 0
             self._best_score = 0
@@ -300,12 +300,12 @@ class BVAnalyzer:
                     assigned = []
 
                 i = len(assigned)
-                highest = vmax.copy()
+                highest = valence_max.copy()
                 highest[:i] = assigned
                 highest *= n_sites
                 highest = np.sum(highest)
 
-                lowest = vmin.copy()
+                lowest = valence_min.copy()
                 lowest[:i] = assigned
                 lowest *= n_sites
                 lowest = np.sum(lowest)
@@ -324,13 +324,13 @@ class BVAnalyzer:
                 return
 
         else:
-            n_sites = np.array([len(i) for i in equi_sites])
+            n_sites = np.array([len(sites) for sites in equi_sites])
             tmp = []
             attrib = []
-            for insite, nsite in enumerate(n_sites):
-                for _ in valences[insite]:
-                    tmp.append(nsite)
-                    attrib.append(insite)
+            for idx, n_site in enumerate(n_sites):
+                for _ in valences[idx]:
+                    tmp.append(n_site)
+                    attrib.append(idx)
             new_nsites = np.array(tmp)
             fractions = []
             elements = []
@@ -338,13 +338,10 @@ class BVAnalyzer:
                 for sp, occu in get_z_ordered_elmap(sites[0].species):
                     elements.append(sp.symbol)
                     fractions.append(occu)
-            fractions = np.array(fractions, np.float_)  # type: ignore[assignment]
-            new_valences = []
-            for vals in valences:
-                for val in vals:
-                    new_valences.append(val)
-            vmin = np.array([min(i) for i in new_valences], np.float_)
-            vmax = np.array([max(i) for i in new_valences], np.float_)
+            fractions = np.array(fractions, float)  # type: ignore[assignment]
+            new_valences = [val for vals in valences for val in vals]
+            valence_min = np.array([min(i) for i in new_valences], float)
+            valence_max = np.array([max(i) for i in new_valences], float)
 
             self._n = 0
             self._best_score = 0
@@ -378,13 +375,13 @@ class BVAnalyzer:
                     assigned = []
 
                 i = len(assigned)
-                highest = vmax.copy()
+                highest = valence_max.copy()
                 highest[:i] = assigned
                 highest *= new_nsites
                 highest *= fractions
                 highest = np.sum(highest)
 
-                lowest = vmin.copy()
+                lowest = valence_min.copy()
                 lowest[:i] = assigned
                 lowest *= new_nsites
                 lowest *= fractions

@@ -1,5 +1,3 @@
-# Distributed under the terms of the MIT License
-
 """This module implements reading and writing of ShengBTE CONTROL files."""
 
 from __future__ import annotations
@@ -90,16 +88,13 @@ class Control(MSONable, dict):
                 with the keys "min", "max", "step".
             **kwargs: Other ShengBTE parameters. Several parameters are required
                 for ShengBTE to run - we have listed these parameters below:
-
                 - nelements (int): number of different elements in the compound
                 - natoms (int): number of atoms in the unit cell
-                - lattvec (size 3x3 array): real-space lattice vectors, in units
-                  of lfactor
+                - lattvec (size 3x3 array): real-space lattice vectors, in units of lfactor
                 - lfactor (float): unit of measurement for lattice vectors (nm).
                     I.e., set to 0.1 if lattvec given in Angstrom.
                 - types (size natom list): a vector of natom integers, ranging
-                  from 1 to nelements, assigning an element to each atom in the
-                  system
+                  from 1 to nelements, assigning an element to each atom in the system
                 - elements (size natom list): a vector of element names
                 - positions (size natomx3 array): atomic positions in lattice
                   coordinates
@@ -214,7 +209,7 @@ class Control(MSONable, dict):
         Returns:
             A ShengBTE control object.
         """
-        elements = list(map(str, structure.composition.elements))
+        elements = list(map(str, structure.elements))
 
         unique_nums = np.unique(structure.atomic_numbers)
         types_dict = dict(zip(unique_nums, range(len(unique_nums))))
@@ -222,7 +217,7 @@ class Control(MSONable, dict):
 
         control_dict = {
             "nelements": structure.ntypesp,
-            "natoms": structure.num_sites,
+            "natoms": len(structure),
             "norientations": 0,
             "lfactor": 0.1,
             "lattvec": structure.lattice.matrix.tolist(),

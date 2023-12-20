@@ -13,7 +13,6 @@ from pymatgen.cli.pmg_analyze import analyze
 from pymatgen.cli.pmg_config import configure_pmg
 from pymatgen.cli.pmg_plot import plot
 from pymatgen.cli.pmg_potcar import generate_potcar
-from pymatgen.cli.pmg_query import do_query
 from pymatgen.cli.pmg_structure import analyze_structures
 from pymatgen.core import SETTINGS
 from pymatgen.core.structure import Structure
@@ -21,8 +20,7 @@ from pymatgen.io.vasp import Incar, Potcar
 
 
 def parse_view(args):
-    """
-    Handle view commands.
+    """Handle view commands.
 
     :param args: Args from command.
     """
@@ -37,8 +35,7 @@ def parse_view(args):
 
 
 def diff_incar(args):
-    """
-    Handle diff commands.
+    """Handle diff commands.
 
     :param args: Args from command.
     """
@@ -125,7 +122,7 @@ def main():
         "--add",
         dest="var_spec",
         nargs="+",
-        help="Variables to add in the form of space separated key value pairs. E.g., PMG_VASP_PSP_DIR ~/psps",
+        help="Variables to add in the form of space separated key value pairs. E.g., PMG_VASP_PSP_DIR ~/PSPs",
     )
 
     groups.add_argument(
@@ -246,7 +243,6 @@ def main():
         "By default, the Materials Project id, formula, spacegroup, "
         "energy per atom, energy above hull are shown.",
     )
-    parser_query.set_defaults(func=do_query)
 
     parser_plot = subparsers.add_parser("plot", help="Plotting tool for DOS, CHGCAR, XRD, etc.")
     group = parser_plot.add_mutually_exclusive_group(required=True)

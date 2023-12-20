@@ -191,7 +191,7 @@ class ORCAOutput(MSONable):
     def _parse_runtime(self):
         run_match = read_pattern(
             self.text,
-            {"key": r"TOTAL RUN TIME: (\d+) days (\d+) hours (\d+) seconds (\d+) msec"},
+            {"key": r"TOTAL RUN TIME: (\d+) days (\d+) hours (\d+) minutes (\d+) seconds (\d+) msec"},
             terminate_on_match=True,
         ).get("key")
 
